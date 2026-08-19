@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned toolchain
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup target add wasm32-unknown-unknown --toolchain 1.89.0
+          cargo install wasm-tools --version 1.236.1 --locked
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build the component
+        run: ./build.sh
+
+      # The component is what runs under broker authority, so its provenance is the thing worth
+      # attesting. A consumer verifies the digest before the broker ever compiles it.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: gh-provider.wasm
+
+      - name: Publish the release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            gh-provider.wasm gh-provider.wasm.sha256
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Same artifact, second channel. An image build can pull it by digest without a GitHub API
+      # call, which is what the Dockerfile in dekopon-agents/dekopon does.
+      - name: Publish the OCI artifact
+        run: |
+          curl -fsSL https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz \
+            | tar -xz -C /usr/local/bin oras
+          version="${GITHUB_REF_NAME#v}"
+          oras push "ghcr.io/dekopon-agents/provider-gh:${version}" \
+            --artifact-type application/vnd.dekopon.provider.v1+wasm \
+            gh-provider.wasm:application/wasm

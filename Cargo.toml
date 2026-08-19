@@ -1,0 +1,24 @@
+[workspace]
+
+[package]
+name = "dekopon-gh-provider"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89.0"
+license = "MIT OR Apache-2.0"
+description = "GitHub repository, pull-request, and issue capabilities for Dekopon, as a Wasm component"
+repository = "https://github.com/dekopon-agents/dekopon-provider-gh"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+base64 = "0.22.1"
+# Pinned to the branch that introduces `dekopon:provider@0.2.0` and the command-word surface.
+# Moves to plain crates.io versions once dekopon publishes 0.5.0.
+dekopon-provider-http = { git = "https://github.com/dekopon-agents/dekopon", branch = "feat/broker-command-protocol" }
+dekopon-provider-sdk = { git = "https://github.com/dekopon-agents/dekopon", branch = "feat/broker-command-protocol" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+wit-bindgen = { version = "0.44.0", default-features = false, features = ["macros", "realloc"] }
