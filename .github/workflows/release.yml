@@ -18,8 +18,11 @@ jobs:
 
       - name: Install the pinned toolchain
         run: |
-          rustup toolchain install 1.89.0 --profile minimal
-          rustup target add wasm32-unknown-unknown --toolchain 1.89.0
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup target add wasm32-unknown-unknown --toolchain 1.97.0
+          # Without this the toolchain is merely installed and `cargo test` below runs on the
+          # runner default. build.sh pins itself with `rustup run`, but the test step does not.
+          rustup override set 1.97.0
           cargo install wasm-tools --version 1.236.1 --locked
 
       - name: Test
@@ -27,6 +30,15 @@ jobs:
 
       - name: Build the component
         run: ./build.sh
+
+      # Reproducibility and provenance answer different questions: the attestation below proves
+      # which workflow in which repository produced this file, and the rebuild proves the file
+      # follows from the source. A release should not ship without both.
+      - name: Rebuild and compare
+        run: |
+          set -euo pipefail
+          CARGO_TARGET_DIR="$RUNNER_TEMP/rebuild" ./build.sh "$RUNNER_TEMP/rebuild.wasm"
+          cmp gh-provider.wasm "$RUNNER_TEMP/rebuild.wasm"
 
       # The component is what runs under broker authority, so its provenance is the thing worth
       # attesting. A consumer verifies the digest before the broker ever compiles it.
@@ -52,7 +64,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Same artifact, second channel. An image build can pull it by digest without a GitHub API
-      # call, which is what the Dockerfile in dekopon-agents/dekopon does.
+      # call, alongside the way dekopon's `ci/stage-image-context.sh` consumes an out-of-tree
+      # provider: release asset, published .sha256, and `gh attestation verify`.
       - name: Publish the OCI artifact
         run: |
           curl -fsSL https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz \
