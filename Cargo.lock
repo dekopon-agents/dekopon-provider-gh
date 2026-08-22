@@ -22,8 +22,9 @@ checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 
 [[package]]
 name = "dekopon-capability"
-version = "0.4.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=feat%2Fbroker-command-protocol#f0795eb24530f71cc4dff56f85758ba33632a023"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e7fa4fe0eb66c6c50e3c30aa7cfc9d4aa1216624dfeaca48f705f0d29dcff15"
 dependencies = [
  "dekopon-core",
  "schemars",
@@ -34,8 +35,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-core"
-version = "0.4.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=feat%2Fbroker-command-protocol#f0795eb24530f71cc4dff56f85758ba33632a023"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b4cd916f89b215b587589cd404d0c2f19e0fba5bde97de4ea722cf5b9695277"
 dependencies = [
  "schemars",
  "serde",
@@ -56,16 +58,18 @@ dependencies = [
 
 [[package]]
 name = "dekopon-provider-http"
-version = "0.4.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=feat%2Fbroker-command-protocol#f0795eb24530f71cc4dff56f85758ba33632a023"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a56d40c4196bd60e8752ee43b64cffc0a84c9e2efff26c285a1b5855ef49db4c"
 dependencies = [
  "wit-bindgen",
 ]
 
 [[package]]
 name = "dekopon-provider-sdk"
-version = "0.4.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=feat%2Fbroker-command-protocol#f0795eb24530f71cc4dff56f85758ba33632a023"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f28eeb33257c9b641328085b5b96401b1866092b11c3dbf040ea005e4f781e34"
 dependencies = [
  "dekopon-capability",
  "dekopon-core",
