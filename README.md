@@ -44,7 +44,10 @@ with the shell's `jq` builtin.
 The component grants nothing on its own. An operator points `dekopon-brokerd` at it and writes a
 constraint set per capability — allowed hosts, methods, request counts, timeouts, and the symbolic
 credential to inject. See [the broker's configuration reference](https://github.com/dekopon-agents/dekopon/blob/main/crates/dekopon-brokerd/README.md)
-and the `examples/rubber-stamper` walkthrough.
+and [`examples/pr-summarizer-linter/`](examples/pr-summarizer-linter/README.md), an end-to-end
+walkthrough of a Slack-driven pull-request reviewer built on these capabilities. It moved here from
+the dekopon tree with the provider, because it exercises this component rather than dekopon's own
+machinery.
 
 Drop `gh-provider.wasm` into a provider directory the broker loads:
 
@@ -61,14 +64,27 @@ Each tag publishes `gh-provider.wasm` two ways:
   `gh attestation verify gh-provider.wasm --repo dekopon-agents/dekopon-provider-gh`;
 - an **OCI artifact** at `ghcr.io/dekopon-agents/provider-gh`, pullable by tag or digest.
 
+The release workflow rebuilds the component a second time into a clean target directory and
+byte-compares before publishing, so a tag that ships is a tag that reproduced. Attestation proves
+who built the artifact; the rebuild proves what it was built from.
+
 ## Building
 
-Requires the pinned `wasm-tools`, because component encoding is not stable across versions:
+Both pins are exact, because neither Rust codegen nor component encoding is stable across
+versions and the build asserts its own reproducibility:
 
 ```console
+rustup toolchain install 1.97.0 --profile minimal
 cargo install wasm-tools --version 1.236.1 --locked
 ./build.sh
 ```
+
+`build.sh` is a self-contained port of dekopon's `examples/providers/build-component.sh`, and it
+keeps every mechanism that made the in-tree component reproducible: a `rustc` proxy that
+normalizes `-Cmetadata` to a fixed salt (`dekopon-provider-repro-v1`), `--remap-path-prefix` for
+the source root, the Cargo home and the toolchain sysroot, `-Ccodegen-units=1`, and a final scan
+that fails the build if any local path survives into the component. Given the same source and the
+same two pins, it lands on the same bytes on any machine.
 
 `cargo test` runs the subcommand table and capability mapping natively; nothing contacts GitHub.
 

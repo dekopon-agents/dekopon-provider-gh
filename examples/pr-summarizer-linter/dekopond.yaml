@@ -1,0 +1,80 @@
+# dekopond — the unprivileged half. It hears the question and asks the model; it decides nothing.
+#
+# It holds a Slack app token, a Slack bot token, and a model endpoint. It holds no provider
+# credential, no policy, and no authorization. Every capability call a session makes is submitted
+# to the broker as an on-behalf-of proposal naming the sender's canonical subject, and the broker
+# alone turns that subject into a principal.
+#
+# chmod 0600 dekopond.yaml. Relative paths resolve against this file's own directory.
+apiVersion: dekopon.dev/dekopond/v1alpha1
+
+catalogPath: dekopon.yaml
+
+broker:
+  # Must be the socketPath from broker.yaml. serverUid is the UID that owns the broker process;
+  # the client verifies it before sending anything.
+  socketPath: /home/xavier/.local/run/dekopon/broker.sock
+  serverUid: 501
+
+transports:
+  - name: workspace-slack
+    kind: slackSocketMode
+    # Environment variable NAMES, never values. Pasting a token here is a startup failure, and a
+    # missing variable is reported by name. See dekopon's examples/slack/README.md for creating
+    # the app and both tokens.
+    appTokenEnv: DEKOPOND_SLACK_APP_TOKEN
+    botTokenEnv: DEKOPOND_SLACK_BOT_TOKEN
+    # This example uses examples/slack/manifest-agent.yaml. Agent DMs are thread-scoped; if the
+    # workspace plan/admin disables Agent status, the fixed tangerine reaction is used instead.
+    experience: agent
+    activity:
+      mode: native
+      classicFallback: reaction
+
+models:
+  - name: local-reasoning
+    kind: openaiCompatible
+    # Local Ollama. Any OpenAI-compatible chat-completions endpoint works here — llama.cpp, vLLM,
+    # a hosted API with `apiKeyEnv` naming the variable holding its key. The model never sees a
+    # provider credential either way; it only ever writes shell scripts.
+    endpoint: http://127.0.0.1:11434/v1
+    model: qwen3
+    timeoutMs: 120000
+    # Matched against the agent's `modelClass` when a route names no model explicitly.
+    classes: [reasoning]
+
+routes:
+  - transport: workspace-slack
+    match: { kind: directMessage }
+    agent: pr-summarizer-linter
+    limits:
+      # One review is a handful of steps: inspect metadata, files, diff, checks, optional source
+      # context, then post one comment and answer. Too little budget cannot finish; too much loops.
+      maxSteps: 8
+      maxCapabilityCalls: 16
+    conversation:
+      # Remembered, so "and the second one?" is a question this bot can answer. Omit this block
+      # entirely for `mode: oneShot`, where every message starts from an empty prompt. The window
+      # is what bounds the bill: it applies however long a conversation has been alive.
+      mode: persistent
+      idleTimeoutMs: 900000
+      maxTurns: 12
+      maxBytes: 65536
+
+sessions:
+  maxConcurrent: 4
+  replyOnBusy: true
+  # Conversations tracked at once, across every persistent route. Reaching it evicts the least
+  # recently used conversation rather than refusing a message.
+  maxConversations: 1024
+
+shutdownGraceMs: 120000
+
+# Optional, same shape as broker.yaml's. `telemetryPayloads: true` would add chat text and the
+# canonical subject to spans, which declares the sink in scope for every message this gateway sees.
+# telemetry:
+#   endpoint: http://127.0.0.1:5080/api/default
+#   transport: http
+#   serviceName: dekopond
+#   exportTimeoutMs: 10000
+#   telemetryPayloads: false
