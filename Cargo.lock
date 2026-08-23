@@ -22,12 +22,11 @@ checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 
 [[package]]
 name = "dekopon-capability"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e7fa4fe0eb66c6c50e3c30aa7cfc9d4aa1216624dfeaca48f705f0d29dcff15"
+checksum = "0f6a2fff5f53099535024d8d275edf9f6bdce80a483048d181fb10aff7b967de"
 dependencies = [
  "dekopon-core",
- "schemars",
  "serde",
  "serde_json",
  "thiserror",
@@ -35,11 +34,10 @@ dependencies = [
 
 [[package]]
 name = "dekopon-core"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b4cd916f89b215b587589cd404d0c2f19e0fba5bde97de4ea722cf5b9695277"
+checksum = "90be891ad2e16c29ee872a8f44e50e01865e49b13ee9aae1e56455251743dbf5"
 dependencies = [
- "schemars",
  "serde",
  "thiserror",
 ]
@@ -58,32 +56,25 @@ dependencies = [
 
 [[package]]
 name = "dekopon-provider-http"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a56d40c4196bd60e8752ee43b64cffc0a84c9e2efff26c285a1b5855ef49db4c"
+checksum = "8fd5a73cdd837e1abef853cf7a6fd03195f2b927470198a60756cd3496f867ef"
 dependencies = [
  "wit-bindgen",
 ]
 
 [[package]]
 name = "dekopon-provider-sdk"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f28eeb33257c9b641328085b5b96401b1866092b11c3dbf040ea005e4f781e34"
+checksum = "f20ddcf8a29c733fffb0bb3cc4e4963fb70bb3026a18dce8397d0bfbe0390545"
 dependencies = [
  "dekopon-capability",
  "dekopon-core",
  "serde",
  "serde_json",
- "thiserror",
  "wit-bindgen",
 ]
-
-[[package]]
-name = "dyn-clone"
-version = "1.0.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "equivalent"
@@ -189,51 +180,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ref-cast"
-version = "1.0.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "216e8f773d7923bcba9ceb86a86c93cabb3903a11872fc3f138c49630e50b96d"
-dependencies = [
- "ref-cast-impl",
-]
-
-[[package]]
-name = "ref-cast-impl"
-version = "1.0.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c9283685feec7d69af75fb0e858d5e7378f33fe4fc699383b2916ab9273e03c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.3",
-]
-
-[[package]]
-name = "schemars"
-version = "1.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a"
-dependencies = [
- "dyn-clone",
- "ref-cast",
- "schemars_derive",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "schemars_derive"
-version = "1.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d98c67716b46af2f0b8cf752abc930f6f9aecfbf671ecfb531db8a31dbe4e2ba"
-dependencies = [
- "proc-macro2",
- "quote",
- "serde_derive_internals",
- "syn 3.0.3",
-]
-
-[[package]]
 name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -263,17 +209,6 @@ name = "serde_derive"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.3",
-]
-
-[[package]]
-name = "serde_derive_internals"
-version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd"
 dependencies = [
  "proc-macro2",
  "quote",
