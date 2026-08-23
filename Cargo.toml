@@ -15,13 +15,15 @@ crate-type = ["cdylib"]
 
 [dependencies]
 base64 = "0.22.1"
-# Plain crates.io versions, pinned exactly and together so the two cannot skew. Both carry
-# `dekopon:provider@0.2.0` and the command-word surface (`command_words`, `resolve_command`,
-# `CommandInvocation`, `export_provider_with_commands!`) as of 0.9.0. This deliberately does not
-# use a git dependency: the earlier branch pin rotted the moment that branch was deleted upstream,
+# Plain crates.io versions, pinned exactly and to the same Dekopon release so the SDK and brokered
+# HTTP binding cannot skew. `dekopon-provider-sdk` supplies `dekopon:provider@0.2.0` and the
+# command-word surface (`command_words`, `resolve_command`, `CommandInvocation`,
+# `export_provider_with_commands!`); `dekopon-provider-http` supplies the brokered
+# `dekopon:http/client@1.0.0` guest binding. This deliberately does not use a git dependency: the
+# earlier branch pin rotted the moment that branch was deleted upstream,
 # and a `branch =` dependency resolves by fetching the ref, so a cold cache could not build at all.
-dekopon-provider-http = "=0.9.0"
-dekopon-provider-sdk = "=0.9.0"
+dekopon-provider-http = "=0.10.0"
+dekopon-provider-sdk = "=0.10.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 wit-bindgen = { version = "0.44.0", default-features = false, features = ["macros", "realloc"] }
