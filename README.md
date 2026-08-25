@@ -39,6 +39,15 @@ with the shell's `jq` builtin.
 | `gh.issue.read` / `.list` / `gh.issue-comments.read` | read-only |
 | `gh.issue.comment` | external-write |
 
+`gh.pull-request.status` reads the pull request's head, then lists GitHub Actions workflow runs and
+legacy commit statuses at that SHA. This deliberately avoids the Checks REST API: GitHub documents
+`checks:read` for fine-grained personal access tokens but does not expose that permission in the
+token editor. The replacement uses the available **Actions: Read-only** and **Commit statuses:
+Read-only** permissions, stays entirely on bounded GET requests, and reports the two sources
+separately rather than pretending workflow runs are check runs. Checks-only third-party integrations
+remain outside this capability. The constraint set must allow three GETs (pull metadata, Actions,
+then commit statuses); a two-request constraint from v0.1.0 fails closed before the final read.
+
 ## Using it
 
 The component grants nothing on its own. An operator points `dekopon-brokerd` at it and writes a

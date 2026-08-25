@@ -86,14 +86,15 @@ kind: Capability
 metadata:
   name: gh.pull-request.status
 spec:
-  description: Reads one pull request's head check runs
+  description: Reads one pull request's head Actions workflow runs and legacy commit statuses
   provider: gh
   effect: read-only
   risk: Low
   idempotency: idempotent
   permissions:
     - operation: pull_requests:read
-    - operation: checks:read
+    - operation: actions:read
+    - operation: statuses:read
 status: Unknown
 ---
 apiVersion: dekopon.dev/v1alpha1

@@ -141,11 +141,13 @@ constraintSets:
       maxOutputBytes: 131072
       http:
         allowedHosts: [api.github.com]
-        # The provider first reads the pull request to discover its head SHA, then its check runs.
+        # Three bounded GETs: pull metadata for the head SHA, Actions workflow runs at that head,
+        # then legacy commit statuses. Fine-grained PATs expose both read permissions but not the
+        # Checks permission required by the check-runs endpoint.
         allowedMethods: [GET]
-        maxRequests: 2
+        maxRequests: 3
         maxRequestBytes: 16384
-        maxResponseBytes: 1048576
+        maxResponseBytes: 4194304
         allowPlaintextLoopback: false
   gh.pull-request.comment:
     provider: gh

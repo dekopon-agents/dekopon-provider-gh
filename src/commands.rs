@@ -292,8 +292,8 @@ fn build_call(area: &str, verb: &str, mut options: Options) -> Result<Call, Prov
                 input,
             }
         }
-        // `status` is the primary spelling; `checks` is accepted because it is what real `gh`
-        // calls the same question and both dispatch to the identical capability.
+        // `status` is the primary spelling; `checks` is accepted because real `gh` uses it for
+        // the same CI-status question. Both dispatch to the identical bounded capability.
         ("pr", "status" | "checks") => {
             let number = require_number(&mut options, &command)?;
             let (owner, repo) = options.require_repo(&command)?;

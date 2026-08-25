@@ -114,7 +114,8 @@ impl Provider for Gh {
 ///
 /// The send function is injected so native tests script exact request/response exchanges without
 /// any network. It is `FnMut` rather than `FnOnce` because the write capabilities perform a
-/// pre-read before their write, and `gh.pull-request.status` reads twice.
+/// pre-read before their write, and `gh.pull-request.status` reads the pull, Actions workflow runs,
+/// and legacy commit statuses.
 fn invoke_with<F>(
     capability: &CapabilityId,
     input: Value,
@@ -280,7 +281,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             "gh.pull-request.status",
-            "Reads one pull request's head check runs",
+            "Reads one pull request's head Actions workflow runs and legacy commit statuses",
             repo_schema(json!({"number": number_property()}), &["number"]),
         ),
         // Tier 3 — broader read surface plus the two remaining writes.
