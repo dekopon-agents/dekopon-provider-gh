@@ -29,7 +29,8 @@ deny table. Config and gateway tests load the same files through their productio
 ## What “lint” means here
 
 The agent reviews bounded GitHub data: pull-request metadata, changed-file patches, a unified diff,
-head check runs, and selected files at the observed head SHA. It can identify likely correctness,
+head Actions workflow runs, legacy commit statuses, and selected files at the observed head SHA. It
+can identify likely correctness,
 security, reliability, maintainability, and test-coverage problems. It cannot check out the branch,
 run repository commands, or claim that a compiler or project linter passed. Its standing orders
 require it to say when truncation or missing context limits a conclusion.
@@ -53,7 +54,13 @@ Create a fine-grained personal access token scoped to only the repositories this
 
 - **Contents: Read-only** — `gh.content.read`
 - **Pull requests: Read and write** — pull-request reads and one `COMMENT` review
-- **Checks: Read-only** — `gh.pull-request.status`
+- **Actions: Read-only** — Actions workflow runs returned by `gh.pull-request.status`
+- **Commit statuses: Read-only** — legacy statuses returned by `gh.pull-request.status`
+
+GitHub's fine-grained token editor does not expose the `Checks: Read-only` permission required by
+the check-runs REST endpoint, even though its endpoint documentation names that permission. The
+status capability therefore uses the two read permissions the editor does expose. It reports
+workflow runs and legacy statuses separately and cannot see checks-only third-party integrations.
 
 GitHub has no comment-only pull-request permission. Dekopon narrows that provider permission by
 exposing comment, approval, request-changes, and merge as separate capabilities. This deployment
@@ -157,7 +164,8 @@ $ gh pr diff 7 -R owner/repo
 {"diff":"diff --git a/...","truncated":false}
 
 $ gh pr status 7 -R owner/repo
-{"headSha":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26","checkRuns":[...]}
+{"headSha":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26",
+ "workflowRuns":[...],"commitStatuses":[...]}
 
 $ gh content view crates/dekopon-broker-host/src/lib.rs -R owner/repo \
     --ref 4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26

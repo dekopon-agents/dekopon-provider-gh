@@ -6,10 +6,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    ACCEPT_DIFF, ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_DIFF_OUT_BYTES, MAX_LIST_ITEMS,
-    MAX_PATCH_OUT_BYTES, MAX_PR_BODY_OUT_BYTES, MAX_TITLE_OUT_BYTES, RawUser, bounded_optional,
-    decode, endpoint, has_next_link, invalid_input, invalid_response, is_sha, login_out,
-    percent_encode, send_get, timestamp, truncate_text, validate_login, validate_number,
+    ACCEPT_DIFF, ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_DESCRIPTION_OUT_BYTES, MAX_DIFF_OUT_BYTES,
+    MAX_LIST_ITEMS, MAX_PATCH_OUT_BYTES, MAX_PR_BODY_OUT_BYTES, MAX_TITLE_OUT_BYTES, RawUser,
+    bounded_optional, decode, endpoint, has_next_link, invalid_input, invalid_response, is_sha,
+    login_out, percent_encode, send_get, timestamp, truncate_text, validate_login, validate_number,
     validate_page, validate_repo,
 };
 
@@ -430,18 +430,57 @@ pub(crate) fn reviews(
 // gh.pull-request.status
 // ---------------------------------------------------------------------------
 
+const MAX_STATUS_TOKEN_BYTES: usize = 64;
+
 #[derive(Debug, Deserialize)]
-struct RawCheckRuns {
+struct RawWorkflowRuns {
     total_count: u64,
-    check_runs: Vec<RawCheckRun>,
+    workflow_runs: Vec<RawWorkflowRun>,
 }
 
 #[derive(Debug, Deserialize)]
-struct RawCheckRun {
-    name: String,
-    status: String,
+struct RawWorkflowRun {
+    id: u64,
+    #[serde(default)]
+    name: Option<String>,
+    display_title: String,
+    event: String,
+    #[serde(default)]
+    status: Option<String>,
     #[serde(default)]
     conclusion: Option<String>,
+    head_sha: String,
+    run_number: u64,
+    #[serde(default)]
+    run_attempt: Option<u64>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCombinedStatus {
+    state: String,
+    sha: String,
+    total_count: u64,
+    statuses: Vec<RawCommitStatus>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCommitStatus {
+    id: u64,
+    state: String,
+    context: String,
+    #[serde(default)]
+    description: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+fn status_token(value: &str) -> Result<&str, ProviderError> {
+    if value.is_empty() || value.len() > MAX_STATUS_TOKEN_BYTES {
+        return Err(invalid_response());
+    }
+    Ok(value)
 }
 
 pub(crate) fn status(
@@ -455,36 +494,118 @@ pub(crate) fn status(
     let endpoint = endpoint(input.endpoint.as_deref())?;
 
     let pull = fetch_pull(send, &endpoint, &input.owner, &input.repo, input.number)?;
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/commits/{}/check-runs",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        pull.head.sha,
-    );
-    let response = send_get(send, uri, ACCEPT_JSON)?;
-    let checks = decode::<RawCheckRuns>(&response.body)?;
+    let owner = percent_encode(&input.owner);
+    let repo = percent_encode(&input.repo);
+    let head = percent_encode(&pull.head.sha);
 
-    let truncated = checks.check_runs.len() > MAX_LIST_ITEMS;
-    let runs = checks
-        .check_runs
+    // Fine-grained personal access tokens expose Actions and Commit statuses permissions, but not
+    // the Checks permission required by `/check-runs`. Workflow runs give the useful GitHub
+    // Actions result at the same head without widening this read capability to a POST surface.
+    let workflows_uri = format!(
+        "{endpoint}/repos/{owner}/{repo}/actions/runs?head_sha={head}&page=1&per_page={MAX_LIST_ITEMS}"
+    );
+    let workflows_response = send_get(send, workflows_uri, ACCEPT_JSON)?;
+    let workflows = decode::<RawWorkflowRuns>(&workflows_response.body)?;
+    if workflows.total_count < workflows.workflow_runs.len() as u64 {
+        return Err(invalid_response());
+    }
+    let workflow_runs_truncated = workflows.total_count > MAX_LIST_ITEMS as u64
+        || workflows.workflow_runs.len() > MAX_LIST_ITEMS;
+    let workflow_runs = workflows
+        .workflow_runs
         .into_iter()
         .take(MAX_LIST_ITEMS)
         .map(|run| {
-            let (name, _) = truncate_text(&run.name, MAX_TITLE_OUT_BYTES);
-            json!({
+            if run.head_sha != pull.head.sha || run.display_title.is_empty() {
+                return Err(invalid_response());
+            }
+            let raw_name = run.name.as_deref().unwrap_or(&run.display_title);
+            if raw_name.is_empty() {
+                return Err(invalid_response());
+            }
+            let (name, name_truncated) = truncate_text(raw_name, MAX_TITLE_OUT_BYTES);
+            let (display_title, display_title_truncated) =
+                truncate_text(&run.display_title, MAX_TITLE_OUT_BYTES);
+            let status = run
+                .status
+                .as_deref()
+                .map(status_token)
+                .transpose()?
+                .map(str::to_owned);
+            let conclusion = run
+                .conclusion
+                .as_deref()
+                .map(status_token)
+                .transpose()?
+                .map(str::to_owned);
+            Ok(json!({
+                "runId": run.id,
                 "name": name,
-                "status": run.status,
-                "conclusion": run.conclusion,
-            })
+                "nameTruncated": name_truncated,
+                "displayTitle": display_title,
+                "displayTitleTruncated": display_title_truncated,
+                "event": status_token(&run.event)?,
+                "status": status,
+                "conclusion": conclusion,
+                "runNumber": run.run_number,
+                "runAttempt": run.run_attempt,
+                "createdAt": timestamp(&run.created_at)?,
+                "updatedAt": timestamp(&run.updated_at)?,
+            }))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, ProviderError>>()?;
+
+    // Legacy commit statuses are a separate GitHub surface and still back some external CI. Keep
+    // them alongside Actions rather than flattening two APIs into a misleading check-run shape.
+    let statuses_uri = format!(
+        "{endpoint}/repos/{owner}/{repo}/commits/{head}/status?page=1&per_page={MAX_LIST_ITEMS}"
+    );
+    let statuses_response = send_get(send, statuses_uri, ACCEPT_JSON)?;
+    let statuses = decode::<RawCombinedStatus>(&statuses_response.body)?;
+    if statuses.sha != pull.head.sha || statuses.total_count < statuses.statuses.len() as u64 {
+        return Err(invalid_response());
+    }
+    let commit_statuses_truncated =
+        statuses.total_count > MAX_LIST_ITEMS as u64 || statuses.statuses.len() > MAX_LIST_ITEMS;
+    let commit_statuses = statuses
+        .statuses
+        .into_iter()
+        .take(MAX_LIST_ITEMS)
+        .map(|status| {
+            if status.context.is_empty() {
+                return Err(invalid_response());
+            }
+            let (context, context_truncated) = truncate_text(&status.context, MAX_TITLE_OUT_BYTES);
+            let (description, description_truncated) =
+                bounded_optional(status.description.as_deref(), MAX_DESCRIPTION_OUT_BYTES);
+            Ok(json!({
+                "statusId": status.id,
+                "context": context,
+                "contextTruncated": context_truncated,
+                "state": status_token(&status.state)?,
+                "description": description,
+                "descriptionTruncated": description_truncated,
+                "createdAt": timestamp(&status.created_at)?,
+                "updatedAt": timestamp(&status.updated_at)?,
+            }))
+        })
+        .collect::<Result<Vec<_>, ProviderError>>()?;
+    // GitHub returns `pending` for an empty combined-status collection. Null avoids presenting
+    // that API default as a real pending check to a model.
+    let commit_status_state = (statuses.total_count > 0)
+        .then(|| status_token(&statuses.state).map(str::to_owned))
+        .transpose()?;
 
     Ok(json!({
         "pullNumber": pull.number,
         "headSha": pull.head.sha,
-        "totalCount": checks.total_count,
-        "checkRuns": runs,
-        "checkRunsTruncated": truncated,
+        "workflowRunCount": workflows.total_count,
+        "workflowRuns": workflow_runs,
+        "workflowRunsTruncated": workflow_runs_truncated,
+        "commitStatusState": commit_status_state,
+        "commitStatusCount": statuses.total_count,
+        "commitStatuses": commit_statuses,
+        "commitStatusesTruncated": commit_statuses_truncated,
     }))
 }
 
@@ -735,16 +856,21 @@ mod tests {
     }
 
     #[test]
-    fn status_reads_the_pull_then_its_head_check_runs() {
+    fn status_reads_actions_and_legacy_statuses_at_the_pull_head() {
         let head = "a".repeat(40);
-        let expected_checks_uri =
-            format!("https://api.github.com/repos/octo/hello/commits/{head}/check-runs");
+        let expected_workflows_uri = format!(
+            "https://api.github.com/repos/octo/hello/actions/runs?head_sha={head}&page=1&per_page=50"
+        );
+        let expected_statuses_uri = format!(
+            "https://api.github.com/repos/octo/hello/commits/{head}/status?page=1&per_page=50"
+        );
         let output = invoke_with(
             &capability("gh.pull-request.status"),
             json!({"owner": "octo", "repo": "hello", "number": 7}),
             scripted(vec![
                 step(
                     |request| {
+                        assert_eq!(request.method, "GET");
                         assert_eq!(
                             request.uri,
                             "https://api.github.com/repos/octo/hello/pulls/7"
@@ -754,16 +880,63 @@ mod tests {
                 ),
                 step(
                     move |request| {
-                        assert_eq!(request.uri, expected_checks_uri);
+                        assert_eq!(request.method, "GET");
+                        assert_eq!(request.uri, expected_workflows_uri);
                     },
                     json_response(
                         200,
                         &json!({
                             "total_count": 2,
-                            "check_runs": [
-                                {"name": "ci", "status": "completed", "conclusion": "success"},
-                                {"name": "lint", "status": "in_progress", "conclusion": null},
-                            ],
+                            "workflow_runs": [
+                                {
+                                    "id": 101,
+                                    "name": "ci",
+                                    "display_title": "Run the suite",
+                                    "event": "pull_request",
+                                    "status": "completed",
+                                    "conclusion": "success",
+                                    "head_sha": head,
+                                    "run_number": 42,
+                                    "run_attempt": 1,
+                                    "created_at": "2026-08-10T00:00:00Z",
+                                    "updated_at": "2026-08-10T00:05:00Z"
+                                },
+                                {
+                                    "id": 102,
+                                    "name": "lint",
+                                    "display_title": "Lint the branch",
+                                    "event": "pull_request",
+                                    "status": "in_progress",
+                                    "conclusion": null,
+                                    "head_sha": head,
+                                    "run_number": 43,
+                                    "run_attempt": 2,
+                                    "created_at": "2026-08-10T00:01:00Z",
+                                    "updated_at": "2026-08-10T00:06:00Z"
+                                }
+                            ]
+                        }),
+                    ),
+                ),
+                step(
+                    move |request| {
+                        assert_eq!(request.method, "GET");
+                        assert_eq!(request.uri, expected_statuses_uri);
+                    },
+                    json_response(
+                        200,
+                        &json!({
+                            "state": "failure",
+                            "sha": head,
+                            "total_count": 1,
+                            "statuses": [{
+                                "id": 201,
+                                "state": "failure",
+                                "context": "external-ci",
+                                "description": "A legacy status failed",
+                                "created_at": "2026-08-10T00:02:00Z",
+                                "updated_at": "2026-08-10T00:07:00Z"
+                            }]
                         }),
                     ),
                 ),
@@ -771,9 +944,183 @@ mod tests {
         )
         .expect("status succeeds");
 
-        assert_eq!(output["totalCount"], 2);
-        assert_eq!(output["checkRuns"][0]["conclusion"], "success");
-        assert_eq!(output["checkRuns"][1]["status"], "in_progress");
+        assert_eq!(output["workflowRunCount"], 2);
+        assert_eq!(output["workflowRuns"][0]["conclusion"], "success");
+        assert_eq!(output["workflowRuns"][1]["status"], "in_progress");
+        assert_eq!(output["workflowRuns"][1]["runAttempt"], 2);
+        assert_eq!(output["commitStatusState"], "failure");
+        assert_eq!(output["commitStatuses"][0]["context"], "external-ci");
         assert_eq!(output["headSha"], "a".repeat(40));
+    }
+
+    #[test]
+    fn status_does_not_report_githubs_empty_status_default_as_pending() {
+        let head = "a".repeat(40);
+        let output = invoke_with(
+            &capability("gh.pull-request.status"),
+            json!({"owner": "octo", "repo": "hello", "number": 7}),
+            scripted(vec![
+                step(
+                    |_| {},
+                    json_response(200, &pull_body(7, "open", false, false)),
+                ),
+                step(
+                    |_| {},
+                    json_response(200, &json!({"total_count": 0, "workflow_runs": []})),
+                ),
+                step(
+                    |_| {},
+                    json_response(
+                        200,
+                        &json!({
+                            "state": "pending",
+                            "sha": head,
+                            "total_count": 0,
+                            "statuses": []
+                        }),
+                    ),
+                ),
+            ]),
+        )
+        .expect("empty status succeeds");
+
+        assert_eq!(output["workflowRunCount"], 0);
+        assert_eq!(output["commitStatusCount"], 0);
+        assert_eq!(output["commitStatusState"], Value::Null);
+    }
+
+    #[test]
+    fn status_rejects_workflow_runs_for_a_different_head() {
+        let wrong = "c".repeat(40);
+        let error = invoke_with(
+            &capability("gh.pull-request.status"),
+            json!({"owner": "octo", "repo": "hello", "number": 7}),
+            scripted(vec![
+                step(
+                    |_| {},
+                    json_response(200, &pull_body(7, "open", false, false)),
+                ),
+                step(
+                    |_| {},
+                    json_response(
+                        200,
+                        &json!({
+                            "total_count": 1,
+                            "workflow_runs": [{
+                                "id": 101,
+                                "name": "ci",
+                                "display_title": "Run the suite",
+                                "event": "pull_request",
+                                "status": "completed",
+                                "conclusion": "success",
+                                "head_sha": wrong,
+                                "run_number": 42,
+                                "run_attempt": 1,
+                                "created_at": "2026-08-10T00:00:00Z",
+                                "updated_at": "2026-08-10T00:05:00Z"
+                            }]
+                        }),
+                    ),
+                ),
+            ]),
+        )
+        .expect_err("wrong workflow head fails");
+
+        assert_eq!(error.code(), "invalid-response");
+    }
+
+    #[test]
+    fn status_rejects_legacy_statuses_for_a_different_head() {
+        let error = invoke_with(
+            &capability("gh.pull-request.status"),
+            json!({"owner": "octo", "repo": "hello", "number": 7}),
+            scripted(vec![
+                step(
+                    |_| {},
+                    json_response(200, &pull_body(7, "open", false, false)),
+                ),
+                step(
+                    |_| {},
+                    json_response(200, &json!({"total_count": 0, "workflow_runs": []})),
+                ),
+                step(
+                    |_| {},
+                    json_response(
+                        200,
+                        &json!({
+                            "state": "success",
+                            "sha": "c".repeat(40),
+                            "total_count": 0,
+                            "statuses": []
+                        }),
+                    ),
+                ),
+            ]),
+        )
+        .expect_err("wrong legacy-status head fails");
+
+        assert_eq!(error.code(), "invalid-response");
+    }
+
+    #[test]
+    fn status_bounds_pages_and_accepts_nullable_workflow_fields() {
+        let head = "a".repeat(40);
+        let output = invoke_with(
+            &capability("gh.pull-request.status"),
+            json!({"owner": "octo", "repo": "hello", "number": 7}),
+            scripted(vec![
+                step(
+                    |_| {},
+                    json_response(200, &pull_body(7, "open", false, false)),
+                ),
+                step(
+                    |_| {},
+                    json_response(
+                        200,
+                        &json!({
+                            "total_count": 51,
+                            "workflow_runs": [{
+                                "id": 101,
+                                "name": null,
+                                "display_title": "Fallback title",
+                                "event": "workflow_dispatch",
+                                "status": null,
+                                "conclusion": null,
+                                "head_sha": head,
+                                "run_number": 42,
+                                "created_at": "2026-08-10T00:00:00Z",
+                                "updated_at": "2026-08-10T00:05:00Z"
+                            }]
+                        }),
+                    ),
+                ),
+                step(
+                    |_| {},
+                    json_response(
+                        200,
+                        &json!({
+                            "state": "success",
+                            "sha": head,
+                            "total_count": 51,
+                            "statuses": [{
+                                "id": 201,
+                                "state": "success",
+                                "context": "legacy",
+                                "description": null,
+                                "created_at": "2026-08-10T00:02:00Z",
+                                "updated_at": "2026-08-10T00:07:00Z"
+                            }]
+                        }),
+                    ),
+                ),
+            ]),
+        )
+        .expect("nullable workflow fields are valid");
+
+        assert_eq!(output["workflowRunsTruncated"], true);
+        assert_eq!(output["workflowRuns"][0]["name"], "Fallback title");
+        assert_eq!(output["workflowRuns"][0]["status"], Value::Null);
+        assert_eq!(output["workflowRuns"][0]["runAttempt"], Value::Null);
+        assert_eq!(output["commitStatusesTruncated"], true);
     }
 }
