@@ -26,12 +26,11 @@ const USAGE: &str = "gh: usage: gh <pr|repo|content|issue|branch|commit|user> <s
 
 /// Rewrites one `gh …` argv into the capability proposal it names.
 ///
-/// `argv[0]` is the command word itself.
+/// `argv` holds only the arguments after the command word. The broker selects the declaring
+/// provider by the word before the guest runs and carries it in its own protocol field, so it
+/// never reaches here: `gh pr view 7` arrives as `["pr", "view", "7"]`.
 pub(crate) fn resolve(argv: &[String]) -> Result<CommandInvocation, ProviderError> {
-    let Some((_word, arguments)) = argv.split_first() else {
-        return Err(usage(USAGE));
-    };
-    let Some((area, rest)) = arguments.split_first() else {
+    let Some((area, rest)) = argv.split_first() else {
         return Err(usage(USAGE));
     };
     if area == "api" {
@@ -592,19 +591,49 @@ mod tests {
 
     use super::resolve;
 
+    /// The argv one `gh …` command line reaches the guest as: the word is not part of it.
+    fn argv(arguments: &[&str]) -> Vec<String> {
+        arguments
+            .iter()
+            .map(|argument| (*argument).to_owned())
+            .collect()
+    }
+
     /// Rewrites one `gh …` argv, asserting it resolved.
     fn dispatch(arguments: &[&str]) -> (String, Value) {
-        let mut argv = vec!["gh".to_owned()];
-        argv.extend(arguments.iter().map(|argument| (*argument).to_owned()));
-        let invocation = resolve(&argv).expect("gh rewrites");
+        let invocation = resolve(&argv(arguments)).expect("gh rewrites");
         (invocation.capability.to_string(), invocation.input)
     }
 
     /// Rewrites one `gh …` argv, asserting it was refused.
     fn refuse(arguments: &[&str]) -> ProviderError {
-        let mut argv = vec!["gh".to_owned()];
-        argv.extend(arguments.iter().map(|argument| (*argument).to_owned()));
-        resolve(&argv).expect_err("gh must refuse")
+        resolve(&argv(arguments)).expect_err("gh must refuse")
+    }
+
+    /// The word is selected before the guest runs, so it is never in `argv`.
+    ///
+    /// `dekopon-provider-sdk`'s `Provider::resolve_command` says so outright — "the word is
+    /// selected before this call; `argv` contains only the arguments after it" — and the broker
+    /// protocol's `RunCommand` frame carries it in its own field. A parser that dropped the first
+    /// element read `view` as the area and failed every `gh <area> <verb>` with a usage error, so
+    /// this asserts the wire shape directly rather than only through the helper above.
+    #[test]
+    fn the_first_argument_is_the_area_not_the_command_word() {
+        let invocation = resolve(&argv(&["pr", "view", "7", "-R", "o/r"])).expect("gh rewrites");
+        assert_eq!(invocation.capability.to_string(), "gh.pull-request.read");
+        assert_eq!(
+            invocation.input,
+            json!({"owner": "o", "repo": "r", "number": 7})
+        );
+    }
+
+    /// A bare `gh` reaches the guest as an empty argv, not as `["gh"]`.
+    #[test]
+    fn an_empty_argv_is_a_usage_error() {
+        let failure = resolve(&[]).expect_err("bare gh must refuse");
+        assert_eq!(failure.code(), "usage");
+        let message = failure.message().to_owned();
+        assert!(message.contains("usage"), "{message}");
     }
 
     #[test]
@@ -821,7 +850,6 @@ mod tests {
         let message = refuse(&["pr", "create", "-R", "o/r"]).message().to_owned();
         assert!(message.contains("supported"), "{message}");
 
-        assert_eq!(refuse(&[]).code(), "usage");
         assert_eq!(refuse(&["pr"]).code(), "usage");
     }
 
