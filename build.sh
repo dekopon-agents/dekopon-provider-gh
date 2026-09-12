@@ -20,10 +20,10 @@ target_root=$(cd "$target_root" && pwd -P)
 core="$target_root/wasm32-unknown-unknown/release/dekopon_gh_provider.wasm"
 component=${1:-"$root/gh-provider.wasm"}
 
-rust_toolchain="1.97.0"
-required_rustc="rustc 1.97.0 (2d8144b78 2026-07-07)"
+rust_toolchain="1.98.1"
+required_rustc="rustc 1.98.1 (48a229cea 2026-09-01)"
 metadata_domain="dekopon-provider-repro-v1"
-required_wasm_tools_version="1.236.1"
+required_wasm_tools_version="1.259.0"
 
 command -v rustup >/dev/null 2>&1 || {
   echo "error: rustup with Rust $rust_toolchain is required" >&2

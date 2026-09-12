@@ -16,15 +16,17 @@ omission against the checked-in provider manifest.
 
 | File | What it is | Who reads it |
 |---|---|---|
-| [`dekopon.yaml`](dekopon.yaml) | Catalog: one agent, six capabilities, one provider | `dekopond`, `dekopon` |
+| [`dekopon.yaml`](dekopon.yaml) | Catalog: the agent, its standing orders, and the capability words it may spell | `dekopond` |
 | [`broker.yaml`](broker.yaml) | Identities, mappings, providers, and execution constraints | `dekopon-brokerd` |
 | [`policies.cedar`](policies.cedar) | Who may drive the agent and which actions it may reach | `dekopon-brokerd` |
 | [`broker-credentials.yaml.example`](broker-credentials.yaml.example) | GitHub token template | `dekopon-brokerd` |
 | [`dekopond.yaml`](dekopond.yaml) | Transport, model, route, and session bounds | `dekopond` |
 
-Nothing here is a mock. `crates/dekopon-brokerd/tests/examples.rs` loads the checked-in `gh`
-component, compiles this policy against the world these files declare, and asserts the allow and
-deny table. Config and gateway tests load the same files through their production decoders.
+Nothing here is a mock: these are the files a deployment runs, and the constraint sets in
+`broker.yaml` mirror this provider's manifest field for field, which the broker checks at startup
+and refuses to start on. The allow/deny table these files declare was asserted by
+`crates/dekopon-brokerd/tests/examples.rs` while the provider lived in the dekopon tree; the
+example came here with the component, and nothing in dekopon exercises it any more.
 
 ## What “lint” means here
 
@@ -103,16 +105,10 @@ chmod 700 ~/.local/run/dekopon ~/.local/state/dekopon
 chmod 600 broker.yaml policies.cedar dekopond.yaml
 ```
 
-Validate the unprivileged catalog first:
-
-```console
-$ dekopon --config dekopon.yaml validate
-configuration valid: 1 agent(s), 6 capability(ies), 1 provider(s)
-
-$ dekopon --config dekopon.yaml describe agent pr-summarizer-linter
-```
-
-This proves catalog cross-references and metadata only. Actual permission is decided by the broker.
+The catalog is validated where it is read: `dekopond` loads `catalogPath` at startup and refuses
+to start naming every problem at once. It proves the agent's own metadata and its skill files, and
+nothing about permission — capabilities and providers come from the broker, which builds them from
+the provider manifest and its own constraint sets.
 
 ## 4. Run the broker
 
@@ -223,7 +219,6 @@ The terminal comment record has this shape (hashes abbreviated):
     "policy_ids": ["pr-summarizer-linter-gh-surface"],
     "effect": "external-write",
     "risk": "Medium",
-    "idempotency": "conditional",
     "credential": "github-pat",
     "outcome": "Succeeded",
     "output_digest": "sha256:9ab4…",

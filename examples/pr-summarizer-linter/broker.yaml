@@ -70,7 +70,6 @@ constraintSets:
     provider: gh
     effect: read-only
     risk: Low
-    idempotency: idempotent
     credential: github-pat
     constraints:
       timeoutMs: 10000
@@ -86,7 +85,6 @@ constraintSets:
     provider: gh
     effect: read-only
     risk: Low
-    idempotency: idempotent
     credential: github-pat
     constraints:
       timeoutMs: 10000
@@ -102,7 +100,6 @@ constraintSets:
     provider: gh
     effect: read-only
     risk: Low
-    idempotency: idempotent
     credential: github-pat
     constraints:
       timeoutMs: 10000
@@ -118,7 +115,6 @@ constraintSets:
     provider: gh
     effect: read-only
     risk: Low
-    idempotency: idempotent
     credential: github-pat
     constraints:
       timeoutMs: 10000
@@ -134,7 +130,6 @@ constraintSets:
     provider: gh
     effect: read-only
     risk: Low
-    idempotency: idempotent
     credential: github-pat
     constraints:
       timeoutMs: 10000
@@ -153,7 +148,6 @@ constraintSets:
     provider: gh
     effect: external-write
     risk: Medium
-    idempotency: conditional
     credential: github-pat
     constraints:
       timeoutMs: 15000

@@ -10,19 +10,31 @@ credential can reach".
 The component never sets `authorization`. The broker injects a destination-bound credential at the
 native HTTP boundary, where no guest can observe it.
 
-## Command words
+## The `gh` command word
 
-The component exports `resolve-command`, so a model can type GitHub-CLI spellings:
+The component exports `run-command`, so the word behaves like the upstream command-line tool:
 
 ```
+gh --help
 gh pr view 7 -R owner/repo
 gh pr review 7 -R owner/repo --approve
 gh issue comment 3 -R owner/repo --body "..."
+echo "ship it" | gh pr review 7 -R owner/repo --comment --body-file -
 ```
 
-Each maps to exactly one `gh.*` capability. The rewrite is a pure function that *proposes*: the
-broker then authorizes it on the identical path a direct `gh.pull-request.read --number 7` takes.
-Naming a capability the caller was not granted produces a denial, not an escalation.
+`gh --help` and `gh pr view --help` render on stdout at status 0; `gh bogus` and a missing argument
+render a usage error on stderr at status 2, so `$(gh bogus)` captures nothing while the error still
+reaches the model. Neither renders from the network or grants anything.
+
+Every other argv maps to exactly one `gh.*` capability. The rewrite is a pure function that
+*proposes*: the broker then authorizes it on the identical path a direct
+`gh.pull-request.read --number 7` takes. Naming a capability the caller was not granted produces a
+denial, not an escalation.
+
+`--body-file -` is the one argument whose value is piped into the word; nothing piped is a usage
+error rather than an empty comment. There is no `gh api`, so nothing pipes into a passthrough —
+a path-level escape hatch would collapse per-capability policy into "everything the credential can
+reach", and typing it says so.
 
 Flags that would change what a command means — `--json`, `--jq`, `--web`, `--checkout` — are
 rejected by name rather than accepted as no-ops. Output is always a structured JSON value; filter it
@@ -83,8 +95,8 @@ Both pins are exact, because neither Rust codegen nor component encoding is stab
 versions and the build asserts its own reproducibility:
 
 ```console
-rustup toolchain install 1.97.0 --profile minimal
-cargo install wasm-tools --version 1.236.1 --locked
+rustup toolchain install 1.98.1 --profile minimal
+cargo install wasm-tools --version 1.259.0 --locked
 ./build.sh
 ```
 

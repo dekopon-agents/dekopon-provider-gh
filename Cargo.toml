@@ -2,9 +2,9 @@
 
 [package]
 name = "dekopon-gh-provider"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
-rust-version = "1.89.0"
+rust-version = "1.98.1"
 license = "MIT OR Apache-2.0"
 description = "GitHub repository, pull-request, and issue capabilities for Dekopon, as a Wasm component"
 repository = "https://github.com/dekopon-agents/dekopon-provider-gh"
@@ -16,14 +16,16 @@ crate-type = ["cdylib"]
 [dependencies]
 base64 = "0.22.1"
 # Plain crates.io versions, pinned exactly and to the same Dekopon release so the SDK and brokered
-# HTTP binding cannot skew. `dekopon-provider-sdk` supplies `dekopon:provider@0.2.0` and the
-# command-word surface (`command_words`, `resolve_command`, `CommandInvocation`,
-# `export_provider_with_commands!`); `dekopon-provider-http` supplies the brokered
-# `dekopon:http/client@1.0.0` guest binding. This deliberately does not use a git dependency: the
-# earlier branch pin rotted the moment that branch was deleted upstream,
+# HTTP binding cannot skew. `dekopon-provider-sdk` supplies `dekopon:provider@0.3.0` and the
+# command-line surface (`command_words`, `run_command`, `CommandRun`, `CommandInvocation`,
+# `export_provider_with_cli!`), plus — under its `clap` feature — the `cli::run_command` layer and
+# the exact `clap` it was built against, which is why no `clap` dependency is declared here: two
+# clap versions in one guest would render two different help pages. `dekopon-provider-http`
+# supplies the brokered `dekopon:http/client@1.0.0` guest binding. This deliberately does not use a
+# git dependency: the earlier branch pin rotted the moment that branch was deleted upstream,
 # and a `branch =` dependency resolves by fetching the ref, so a cold cache could not build at all.
-dekopon-provider-http = "=0.10.0"
-dekopon-provider-sdk = "=0.10.0"
+dekopon-provider-http = "=0.13.0"
+dekopon-provider-sdk = { version = "=0.13.0", features = ["clap"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-wit-bindgen = { version = "0.44.0", default-features = false, features = ["macros", "realloc"] }
+wit-bindgen = { version = "0.62.0", default-features = false, features = ["macros", "realloc"] }
