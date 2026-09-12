@@ -1,117 +1,14 @@
-# The gateway's catalog: which agent answers, and which capabilities it may propose.
+# The gateway's catalog: which agent answers, and on whose standing orders.
 #
-# This file grants nothing. It is read by `dekopond` (and by the `dekopon` CLI) to decide which
-# agent a route names and which capability words its shell session may even spell. Every proposal
-# still has to pass the broker's Cedar policy in `policies.cedar`; the broker never reads this
-# file. Deleting a capability here narrows what the agent can attempt, but adding one cannot grant
-# authority.
+# This file grants nothing. It is read by `dekopond` to decide which agent a route names, which
+# model serves it, and what its system prompt says. Every proposal still has to pass the broker's
+# Cedar policy in `policies.cedar` against the constraint sets in `broker.yaml` and the gh provider
+# manifest (src/lib.rs); the broker never reads this file. Deleting a capability here narrows what
+# the agent can attempt, but adding one cannot grant authority.
 #
-# Capability effect/risk/idempotency below match the gh provider manifest byte for byte
-# (src/lib.rs). The broker refuses to start if its constraint sets disagree
-# with the manifest, and a catalog that disagrees with either is a lie an operator would read.
-apiVersion: dekopon.dev/v1alpha1
-kind: Provider
-metadata:
-  name: gh
-  labels:
-    environment: local
-spec:
-  description: Narrow GitHub repository and pull-request operations over broker HTTP
-  type: github
-  # Symbolic only. The value lives in the broker's credentials file and nothing else ever sees it.
-  credentialRef: github-pat
-status: Unknown
----
-apiVersion: dekopon.dev/v1alpha1
-kind: Capability
-metadata:
-  name: gh.content.read
-spec:
-  description: Reads one file or directory listing at a path and optional ref
-  provider: gh
-  effect: read-only
-  risk: Low
-  idempotency: idempotent
-  permissions:
-    - operation: contents:read
-    - operation: metadata:read
-status: Unknown
----
-apiVersion: dekopon.dev/v1alpha1
-kind: Capability
-metadata:
-  name: gh.pull-request.read
-spec:
-  description: Reads one pull request's metadata, state, and head/base
-  provider: gh
-  effect: read-only
-  risk: Low
-  idempotency: idempotent
-  permissions:
-    - operation: pull_requests:read
-status: Unknown
----
-apiVersion: dekopon.dev/v1alpha1
-kind: Capability
-metadata:
-  name: gh.pull-request.files
-spec:
-  description: Lists one pull request's changed files with bounded patches
-  provider: gh
-  effect: read-only
-  risk: Low
-  idempotency: idempotent
-  permissions:
-    - operation: pull_requests:read
-      resource: files
-status: Unknown
----
-apiVersion: dekopon.dev/v1alpha1
-kind: Capability
-metadata:
-  name: gh.pull-request.diff
-spec:
-  description: Reads one pull request's unified diff, truncated with a marker
-  provider: gh
-  effect: read-only
-  risk: Low
-  idempotency: idempotent
-  permissions:
-    - operation: pull_requests:read
-      resource: diff
-status: Unknown
----
-apiVersion: dekopon.dev/v1alpha1
-kind: Capability
-metadata:
-  name: gh.pull-request.status
-spec:
-  description: Reads one pull request's head Actions workflow runs and legacy commit statuses
-  provider: gh
-  effect: read-only
-  risk: Low
-  idempotency: idempotent
-  permissions:
-    - operation: pull_requests:read
-    - operation: actions:read
-    - operation: statuses:read
-status: Unknown
----
-apiVersion: dekopon.dev/v1alpha1
-kind: Capability
-metadata:
-  name: gh.pull-request.comment
-spec:
-  description: Submits a COMMENT review pinned to the verified head SHA
-  provider: gh
-  effect: external-write
-  risk: Medium
-  idempotency: conditional
-  permissions:
-    - operation: pull_requests:write
-      resource: reviews
-status: Unknown
----
+# Capabilities and providers are no longer catalog documents: the broker builds them from provider
+# manifests and its own constraint sets, and a catalog carrying `kind: Capability` or
+# `kind: Provider` is refused at load.
 apiVersion: dekopon.dev/v1alpha1
 kind: Agent
 metadata:

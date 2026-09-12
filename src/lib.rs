@@ -25,7 +25,7 @@
 
 use dekopon_provider_http::{Header, HttpError, Request, Response, method};
 use dekopon_provider_sdk::{
-    CapabilityId, EffectKind, Idempotency, Provider, ProviderApiVersion, ProviderCapability,
+    CapabilityId, CommandRun, EffectKind, Provider, ProviderApiVersion, ProviderCapability,
     ProviderError, ProviderManifest, RiskLevel,
 };
 use serde::de::DeserializeOwned;
@@ -75,6 +75,33 @@ const MAX_LOGIN_OUT_BYTES: usize = 64;
 const MAX_LIST_ITEMS: usize = 50;
 const MAX_LABELS: usize = 20;
 
+/// Every capability identifier this component exports, named once.
+///
+/// `capabilities()`, `invoke_with`, and the `gh` command tree in [`commands`] all read these, so
+/// renaming a capability is a compile error rather than an exit code a model discovers
+/// mid-session.
+pub(crate) mod ids {
+    pub(crate) const CONTENT_READ: &str = "gh.content.read";
+    pub(crate) const PR_LIST: &str = "gh.pull-request.list";
+    pub(crate) const PR_READ: &str = "gh.pull-request.read";
+    pub(crate) const PR_FILES: &str = "gh.pull-request.files";
+    pub(crate) const PR_DIFF: &str = "gh.pull-request.diff";
+    pub(crate) const PR_REVIEWS: &str = "gh.pull-request.reviews";
+    pub(crate) const PR_STATUS: &str = "gh.pull-request.status";
+    pub(crate) const PR_APPROVE: &str = "gh.pull-request.approve";
+    pub(crate) const PR_COMMENT: &str = "gh.pull-request.comment";
+    pub(crate) const PR_REQUEST_CHANGES: &str = "gh.pull-request.request-changes";
+    pub(crate) const PR_MERGE: &str = "gh.pull-request.merge";
+    pub(crate) const REPO_READ: &str = "gh.repo.read";
+    pub(crate) const BRANCH_READ: &str = "gh.branch.read";
+    pub(crate) const COMMIT_READ: &str = "gh.commit.read";
+    pub(crate) const USER_READ: &str = "gh.user.read";
+    pub(crate) const ISSUE_READ: &str = "gh.issue.read";
+    pub(crate) const ISSUE_LIST: &str = "gh.issue.list";
+    pub(crate) const ISSUE_COMMENTS_READ: &str = "gh.issue-comments.read";
+    pub(crate) const ISSUE_COMMENT: &str = "gh.issue.comment";
+}
+
 mod bindings {
     wit_bindgen::generate!({
         path: "wit",
@@ -99,10 +126,8 @@ impl Provider for Gh {
         }
     }
 
-    fn resolve_command(
-        argv: &[String],
-    ) -> Result<dekopon_provider_sdk::CommandInvocation, ProviderError> {
-        commands::resolve(argv)
+    fn run_command(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, ProviderError> {
+        commands::run(argv, stdin)
     }
 
     fn invoke(capability: &CapabilityId, input: Value) -> Result<Value, ProviderError> {
@@ -126,25 +151,25 @@ where
 {
     let send: &mut dyn FnMut(Request) -> Result<Response, HttpError> = &mut send;
     match capability.as_str() {
-        "gh.content.read" => content::read(input, send),
-        "gh.pull-request.list" => pulls::list(input, send),
-        "gh.pull-request.read" => pulls::read(input, send),
-        "gh.pull-request.files" => pulls::files(input, send),
-        "gh.pull-request.diff" => pulls::diff(input, send),
-        "gh.pull-request.reviews" => pulls::reviews(input, send),
-        "gh.pull-request.status" => pulls::status(input, send),
-        "gh.pull-request.approve" => reviews::approve(input, send),
-        "gh.pull-request.comment" => reviews::comment(input, send),
-        "gh.pull-request.request-changes" => reviews::request_changes(input, send),
-        "gh.pull-request.merge" => reviews::merge(input, send),
-        "gh.repo.read" => repos::repo(input, send),
-        "gh.branch.read" => repos::branch(input, send),
-        "gh.commit.read" => repos::commit(input, send),
-        "gh.user.read" => repos::user(input, send),
-        "gh.issue.read" => issues::read(input, send),
-        "gh.issue.list" => issues::list(input, send),
-        "gh.issue-comments.read" => issues::comments(input, send),
-        "gh.issue.comment" => issues::comment(input, send),
+        ids::CONTENT_READ => content::read(input, send),
+        ids::PR_LIST => pulls::list(input, send),
+        ids::PR_READ => pulls::read(input, send),
+        ids::PR_FILES => pulls::files(input, send),
+        ids::PR_DIFF => pulls::diff(input, send),
+        ids::PR_REVIEWS => pulls::reviews(input, send),
+        ids::PR_STATUS => pulls::status(input, send),
+        ids::PR_APPROVE => reviews::approve(input, send),
+        ids::PR_COMMENT => reviews::comment(input, send),
+        ids::PR_REQUEST_CHANGES => reviews::request_changes(input, send),
+        ids::PR_MERGE => reviews::merge(input, send),
+        ids::REPO_READ => repos::repo(input, send),
+        ids::BRANCH_READ => repos::branch(input, send),
+        ids::COMMIT_READ => repos::commit(input, send),
+        ids::USER_READ => repos::user(input, send),
+        ids::ISSUE_READ => issues::read(input, send),
+        ids::ISSUE_LIST => issues::list(input, send),
+        ids::ISSUE_COMMENTS_READ => issues::comments(input, send),
+        ids::ISSUE_COMMENT => issues::comment(input, send),
         _ => Err(ProviderError::new(
             "unknown-capability",
             "unsupported gh capability",
@@ -162,23 +187,20 @@ fn capabilities() -> Vec<ProviderCapability> {
         description: description.to_owned(),
         effect: EffectKind::ReadOnly,
         risk: RiskLevel::Low,
-        idempotency: Idempotency::Idempotent,
         input_schema: schema,
     };
-    let write =
-        |id: &str, description: &str, risk, idempotency, schema: Value| ProviderCapability {
-            id: id.parse().expect("static capability ID is valid"),
-            description: description.to_owned(),
-            effect: EffectKind::ExternalWrite,
-            risk,
-            idempotency,
-            input_schema: schema,
-        };
+    let write = |id: &str, description: &str, risk, schema: Value| ProviderCapability {
+        id: id.parse().expect("static capability ID is valid"),
+        description: description.to_owned(),
+        effect: EffectKind::ExternalWrite,
+        risk,
+        input_schema: schema,
+    };
 
     vec![
         // Tier 1 — the review workflow slice.
         read(
-            "gh.content.read",
+            ids::CONTENT_READ,
             "Reads one file or directory listing at a path and optional ref",
             repo_schema(
                 json!({
@@ -189,7 +211,7 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         read(
-            "gh.pull-request.list",
+            ids::PR_LIST,
             "Lists pull requests with optional state and author filters",
             repo_schema(
                 json!({
@@ -202,12 +224,12 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         read(
-            "gh.pull-request.read",
+            ids::PR_READ,
             "Reads one pull request's metadata, state, and head/base",
             repo_schema(json!({"number": number_property()}), &["number"]),
         ),
         read(
-            "gh.pull-request.files",
+            ids::PR_FILES,
             "Lists one pull request's changed files with bounded patches",
             repo_schema(
                 json!({
@@ -220,10 +242,9 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         write(
-            "gh.pull-request.approve",
+            ids::PR_APPROVE,
             "Submits an APPROVE review pinned to the verified head SHA",
             RiskLevel::High,
-            Idempotency::Conditional,
             repo_schema(
                 json!({
                     "number": number_property(),
@@ -235,7 +256,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         // Tier 2 — review completeness.
         read(
-            "gh.pull-request.reviews",
+            ids::PR_REVIEWS,
             "Lists existing reviews on one pull request",
             repo_schema(
                 json!({
@@ -247,10 +268,9 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         write(
-            "gh.pull-request.comment",
+            ids::PR_COMMENT,
             "Submits a COMMENT review pinned to the verified head SHA",
             RiskLevel::Medium,
-            Idempotency::Conditional,
             repo_schema(
                 json!({
                     "number": number_property(),
@@ -261,10 +281,9 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         write(
-            "gh.pull-request.request-changes",
+            ids::PR_REQUEST_CHANGES,
             "Submits a REQUEST_CHANGES review pinned to the verified head SHA",
             RiskLevel::Medium,
-            Idempotency::Conditional,
             repo_schema(
                 json!({
                     "number": number_property(),
@@ -275,23 +294,23 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         read(
-            "gh.pull-request.diff",
+            ids::PR_DIFF,
             "Reads one pull request's unified diff, truncated with a marker",
             repo_schema(json!({"number": number_property()}), &["number"]),
         ),
         read(
-            "gh.pull-request.status",
+            ids::PR_STATUS,
             "Reads one pull request's head Actions workflow runs and legacy commit statuses",
             repo_schema(json!({"number": number_property()}), &["number"]),
         ),
         // Tier 3 — broader read surface plus the two remaining writes.
         read(
-            "gh.repo.read",
+            ids::REPO_READ,
             "Reads repository metadata: default branch, visibility, and flags",
             repo_schema(json!({}), &[]),
         ),
         read(
-            "gh.branch.read",
+            ids::BRANCH_READ,
             "Reads one branch's head SHA and protection flag",
             repo_schema(
                 json!({"branch": {"type": "string", "maxLength": MAX_REF_BYTES, "description": "Branch name."}}),
@@ -299,17 +318,17 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         read(
-            "gh.commit.read",
+            ids::COMMIT_READ,
             "Reads one commit's message, author, stats, and bounded file list",
             repo_schema(json!({"ref": ref_property()}), &["ref"]),
         ),
         read(
-            "gh.issue.read",
+            ids::ISSUE_READ,
             "Reads one issue with a bounded body",
             repo_schema(json!({"number": number_property()}), &["number"]),
         ),
         read(
-            "gh.issue.list",
+            ids::ISSUE_LIST,
             "Lists issues (GitHub includes pull requests; each item is flagged)",
             repo_schema(
                 json!({
@@ -321,7 +340,7 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         read(
-            "gh.issue-comments.read",
+            ids::ISSUE_COMMENTS_READ,
             "Lists comments on one issue or pull request",
             repo_schema(
                 json!({
@@ -333,10 +352,9 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         write(
-            "gh.issue.comment",
+            ids::ISSUE_COMMENT,
             "Posts one comment on an issue or pull request",
             RiskLevel::Medium,
-            Idempotency::NonIdempotent,
             repo_schema(
                 json!({
                     "number": number_property(),
@@ -346,10 +364,9 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         write(
-            "gh.pull-request.merge",
+            ids::PR_MERGE,
             "Merges one pull request, pinned to the verified head SHA",
             RiskLevel::High,
-            Idempotency::Conditional,
             repo_schema(
                 json!({
                     "number": number_property(),
@@ -360,7 +377,7 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         read(
-            "gh.user.read",
+            ids::USER_READ,
             "Reads one user's public profile",
             object_schema(
                 json!({
@@ -685,15 +702,26 @@ fn rate_limited() -> ProviderError {
     ProviderError::new("rate-limited", "endpoint rate limit is exhausted")
 }
 
-fn rate_limit_exhausted(response: &Response) -> bool {
+/// Returns all values for a case-insensitive header name, in wire order.
+///
+/// `dekopon-provider-http` carried this as `Response::header_values` until 0.13.0 deleted it as
+/// unreferenced; it is two callers' worth of code, and duplicate field names are preserved on the
+/// wire, so the whole point is that it is an iterator rather than a lookup.
+fn header_values<'a>(response: &'a Response, name: &'a str) -> impl Iterator<Item = &'a [u8]> {
     response
-        .header_values("x-ratelimit-remaining")
-        .any(|value| value == b"0")
+        .headers
+        .iter()
+        .filter(move |header| header.name.eq_ignore_ascii_case(name))
+        .map(|header| header.value.as_slice())
+}
+
+fn rate_limit_exhausted(response: &Response) -> bool {
+    header_values(response, "x-ratelimit-remaining").any(|value| value == b"0")
 }
 
 /// Reports whether a paginated response advertises another page via `Link: rel="next"`.
 fn has_next_link(response: &Response) -> bool {
-    response.header_values("link").any(|value| {
+    header_values(response, "link").any(|value| {
         core::str::from_utf8(value)
             .is_ok_and(|link| link.split(',').any(|part| part.contains("rel=\"next\"")))
     })
@@ -795,7 +823,7 @@ fn invalid_response() -> ProviderError {
     ProviderError::new("invalid-response", "endpoint returned an invalid resource")
 }
 
-dekopon_provider_sdk::export_provider_with_commands!(Gh, bindings);
+dekopon_provider_sdk::export_provider_with_cli!(Gh, bindings);
 
 // ---------------------------------------------------------------------------
 // Test support and shared tests
