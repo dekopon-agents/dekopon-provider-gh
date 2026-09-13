@@ -2,7 +2,7 @@
 
 [package]
 name = "dekopon-gh-provider"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.98.1"
 license = "MIT OR Apache-2.0"
@@ -24,8 +24,8 @@ base64 = "0.22.1"
 # supplies the brokered `dekopon:http/client@1.0.0` guest binding. This deliberately does not use a
 # git dependency: the earlier branch pin rotted the moment that branch was deleted upstream,
 # and a `branch =` dependency resolves by fetching the ref, so a cold cache could not build at all.
-dekopon-provider-http = "=0.13.0"
-dekopon-provider-sdk = { version = "=0.13.0", features = ["clap"] }
+dekopon-provider-http = "=0.15.0"
+dekopon-provider-sdk = { version = "=0.15.0", features = ["clap"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 wit-bindgen = { version = "0.62.0", default-features = false, features = ["macros", "realloc"] }

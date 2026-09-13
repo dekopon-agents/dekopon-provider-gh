@@ -554,6 +554,7 @@ fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocatio
             .parse()
             .expect("the subcommand table names valid capability identifiers"),
         input: Value::Object(input),
+        secret_use: None,
     })
 }
 
