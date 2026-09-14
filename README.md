@@ -38,7 +38,10 @@ reach", and typing it says so.
 
 Flags that would change what a command means — `--json`, `--jq`, `--web`, `--checkout` — are
 rejected by name rather than accepted as no-ops. Output is always a structured JSON value; filter it
-with the shell's `jq` builtin.
+with the shell's `jq` builtin. Every other flag real `gh` accepts on a command word this provider
+exposes is either wired to the underlying capability, defaulted to match gh's own behavior, or
+accepted and documented as a no-op; see [`docs/gh-parity.md`](docs/gh-parity.md) for the full
+per-flag matrix and the reasoning behind each rejection.
 
 ## Capabilities
 
