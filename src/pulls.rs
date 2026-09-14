@@ -7,10 +7,11 @@ use serde_json::{Value, json};
 
 use crate::{
     ACCEPT_DIFF, ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_DESCRIPTION_OUT_BYTES, MAX_DIFF_OUT_BYTES,
-    MAX_LIST_ITEMS, MAX_PATCH_OUT_BYTES, MAX_PR_BODY_OUT_BYTES, MAX_TITLE_OUT_BYTES, RawUser,
-    bounded_optional, decode, endpoint, has_next_link, invalid_input, invalid_response, is_sha,
-    login_out, percent_encode, send_get, timestamp, truncate_text, validate_label, validate_login,
-    validate_number, validate_page, validate_ref, validate_repo,
+    MAX_LIST_ITEMS, MAX_PATCH_OUT_BYTES, MAX_PR_BODY_OUT_BYTES, MAX_TITLE_OUT_BYTES,
+    RawSearchResponse, RawUser, bounded_optional, build_search_query, decode, endpoint,
+    has_next_link, invalid_input, invalid_response, is_sha, login_out, percent_encode,
+    search_conflicts_with_other_filters, send_get, timestamp, truncate_text, validate_label,
+    validate_login, validate_number, validate_page, validate_ref, validate_repo,
 };
 
 // ---------------------------------------------------------------------------
@@ -248,11 +249,29 @@ struct ListInput {
     #[serde(default)]
     draft: Option<bool>,
     #[serde(default)]
+    search: Option<String>,
+    #[serde(default)]
     page: Option<u32>,
     #[serde(default)]
     per_page: Option<u32>,
     #[serde(default)]
     endpoint: Option<String>,
+}
+
+/// One pull request as GitHub's search endpoint returns it: an "issue" shape carrying only what
+/// search results project, never `head`/`base` — a full pull-request read via `gh.pull-request.read`
+/// is the way to get a matched PR's ref/SHA once its number is known from a search.
+#[derive(Debug, Deserialize)]
+struct RawSearchPull {
+    number: u32,
+    title: String,
+    state: String,
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    user: Option<RawUser>,
+    created_at: String,
+    updated_at: String,
 }
 
 /// Applies every `gh.pull-request.list` filter GitHub's list endpoint cannot express itself:
@@ -301,6 +320,27 @@ pub(crate) fn list(
     let input = serde_json::from_value::<ListInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
+
+    if let Some(search) = input.search.as_deref() {
+        // `--search` and this capability's other structured filters are mutually exclusive: gh's
+        // own search qualifier syntax already covers state/author/assignee/label/base/head/draft
+        // (all allowlisted qualifiers, see `build_search_query`), so combining them here would
+        // just be two ways of saying the same thing that could silently disagree. `clap` already
+        // enforces this on the argv path; this is the invoke-time half of the same rule, since a
+        // capability is also directly invocable with arbitrary JSON input.
+        if input.state.is_some()
+            || input.author.is_some()
+            || input.assignee.is_some()
+            || input.base.is_some()
+            || input.head.is_some()
+            || input.labels.is_some()
+            || input.draft.is_some()
+        {
+            return Err(search_conflicts_with_other_filters());
+        }
+        return list_via_search(&input, search, send);
+    }
+
     if let Some(author) = input.author.as_deref() {
         validate_login(author)?;
     }
@@ -371,6 +411,58 @@ pub(crate) fn list(
                 "headRef": pull.head.name,
                 "headSha": pull.head.sha,
                 "baseRef": pull.base.name,
+                "createdAt": timestamp(&pull.created_at)?.to_owned(),
+                "updatedAt": timestamp(&pull.updated_at)?.to_owned(),
+            }))
+        })
+        .collect::<Result<Vec<_>, ProviderError>>()?;
+
+    Ok(json!({
+        "pullRequests": items,
+        "page": page,
+        "hasMore": has_more,
+    }))
+}
+
+/// The `--search` path for `gh.pull-request.list`: `build_search_query` has already parsed,
+/// allowlisted, and rebuilt `search` with this capability's own `repo:`/`is:pr` scope prepended,
+/// so what reaches GitHub here is never the caller's original bytes. GitHub's search endpoint
+/// returns issue-shaped results with no `head`/`base` at all, so those three fields are always
+/// null on a search-originated row — a full `gh.pull-request.read` on the matched number is the
+/// way to get them once a search has found it.
+fn list_via_search(
+    input: &ListInput,
+    search: &str,
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+) -> Result<Value, ProviderError> {
+    let query = build_search_query(&input.owner, &input.repo, "pr", search)?;
+    let (page, per_page) = validate_page(input.page, input.per_page)?;
+    let per_page = per_page.unwrap_or(30);
+    let endpoint = endpoint(input.endpoint.as_deref())?;
+
+    let uri = format!(
+        "{endpoint}/search/issues?q={}&page={page}&per_page={per_page}",
+        percent_encode(&query)
+    );
+    let response = send_get(send, uri, ACCEPT_JSON)?;
+    let raw = decode::<RawSearchResponse<RawSearchPull>>(&response.body)?;
+    let has_more = has_next_link(&response) || raw.items.len() > MAX_LIST_ITEMS;
+
+    let items = raw
+        .items
+        .into_iter()
+        .take(MAX_LIST_ITEMS)
+        .map(|pull| {
+            let (title, _) = truncate_text(&pull.title, MAX_TITLE_OUT_BYTES);
+            Ok(json!({
+                "number": pull.number,
+                "title": title,
+                "state": pull.state,
+                "draft": pull.draft,
+                "author": login_out(pull.user.as_ref()),
+                "headRef": Value::Null,
+                "headSha": Value::Null,
+                "baseRef": Value::Null,
                 "createdAt": timestamp(&pull.created_at)?.to_owned(),
                 "updatedAt": timestamp(&pull.updated_at)?.to_owned(),
             }))
@@ -1114,6 +1206,74 @@ mod tests {
             output["pullRequests"].as_array().expect("items").len(),
             crate::MAX_LIST_ITEMS
         );
+    }
+
+    #[test]
+    fn list_via_search_sends_the_rebuilt_query_and_nulls_head_base() {
+        let output = invoke_with(
+            &capability("gh.pull-request.list"),
+            json!({"owner": "octo", "repo": "hello", "search": "review:required label:bug"}),
+            scripted(vec![step(
+                |request| {
+                    assert_eq!(
+                        request.uri,
+                        "https://api.github.com/search/issues?\
+                         q=repo%3Aocto%2Fhello%20is%3Apr%20review%3Arequired%20label%3Abug\
+                         &page=1&per_page=30"
+                    );
+                },
+                json_response(
+                    200,
+                    &json!({
+                        "total_count": 1,
+                        "incomplete_results": false,
+                        "items": [{
+                            "number": 9,
+                            "title": "Fix the thing",
+                            "state": "open",
+                            "draft": false,
+                            "user": {"login": "cpetersen"},
+                            "created_at": "2026-08-01T00:00:00Z",
+                            "updated_at": "2026-08-02T00:00:00Z",
+                        }],
+                    }),
+                ),
+            )]),
+        )
+        .expect("search list succeeds");
+
+        let items = output["pullRequests"].as_array().expect("items");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["number"], 9);
+        assert_eq!(items[0]["author"], "cpetersen");
+        assert_eq!(items[0]["headRef"], Value::Null);
+        assert_eq!(items[0]["headSha"], Value::Null);
+        assert_eq!(items[0]["baseRef"], Value::Null);
+    }
+
+    /// The exact live-risk case named in review: a query trying to repoint the search at a
+    /// different repository is refused before any HTTP request is constructed, not merely
+    /// declined by GitHub after the fact.
+    #[test]
+    fn list_via_search_refuses_a_repo_qualifier_before_any_http_call() {
+        let error = invoke_with(
+            &capability("gh.pull-request.list"),
+            json!({"owner": "octo", "repo": "hello", "search": "repo:other/repo"}),
+            |_| unreachable!("a scope-escape query must never reach HTTP"),
+        )
+        .expect_err("scope escape refused");
+        assert_eq!(error.code(), "invalid-search-query");
+    }
+
+    #[test]
+    fn list_via_search_rejects_being_combined_with_other_filters() {
+        let error = invoke_with(
+            &capability("gh.pull-request.list"),
+            json!({"owner": "octo", "repo": "hello", "search": "label:bug", "author": "cpetersen"}),
+            |_| unreachable!("a conflicting combination must never reach HTTP"),
+        )
+        .expect_err("combination refused");
+        assert_eq!(error.code(), "invalid-search-query");
     }
 
     #[test]

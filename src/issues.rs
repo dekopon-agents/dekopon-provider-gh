@@ -7,11 +7,11 @@ use serde_json::{Value, json};
 
 use crate::{
     ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_LABELS, MAX_LIST_ITEMS, MAX_PR_BODY_OUT_BYTES,
-    MAX_TITLE_OUT_BYTES, RawUser, bounded_optional, decode, endpoint, github_json_request,
-    has_next_link, http_failed, invalid_input, invalid_response, login_out, percent_encode,
-    send_get, status_error, timestamp, truncate_text, validate_body, validate_issue_type,
-    validate_label, validate_login, validate_milestone, validate_number, validate_page,
-    validate_repo,
+    MAX_TITLE_OUT_BYTES, RawSearchResponse, RawUser, bounded_optional, build_search_query, decode,
+    endpoint, github_json_request, has_next_link, http_failed, invalid_input, invalid_response,
+    login_out, percent_encode, search_conflicts_with_other_filters, send_get, status_error,
+    timestamp, truncate_text, validate_body, validate_issue_type, validate_label, validate_login,
+    validate_milestone, validate_number, validate_page, validate_repo,
 };
 
 #[derive(Debug, Deserialize)]
@@ -45,6 +45,8 @@ struct ListInput {
     mention: Option<String>,
     #[serde(rename = "type", default)]
     issue_type: Option<String>,
+    #[serde(default)]
+    search: Option<String>,
     #[serde(default)]
     page: Option<u32>,
     #[serde(default)]
@@ -194,6 +196,26 @@ pub(crate) fn list(
     let input = serde_json::from_value::<ListInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
+
+    if let Some(search) = input.search.as_deref() {
+        // See `pulls::list`'s identical check: `--search`'s own qualifier syntax already covers
+        // state/author/assignee/label/milestone/mention/type, so combining it with the separate
+        // structured filters would just be two ways of saying the same thing that could silently
+        // disagree. Enforced here too, not only by `clap`, since a capability is also directly
+        // invocable with arbitrary JSON input.
+        if input.state.is_some()
+            || input.author.is_some()
+            || input.assignee.is_some()
+            || input.labels.is_some()
+            || input.milestone.is_some()
+            || input.mention.is_some()
+            || input.issue_type.is_some()
+        {
+            return Err(search_conflicts_with_other_filters());
+        }
+        return list_via_search(&input, search, send);
+    }
+
     let state = validate_state(input.state.as_deref())?;
     if let Some(author) = &input.author {
         validate_login(author)?;
@@ -248,6 +270,55 @@ pub(crate) fn list(
     let has_more = has_next_link(&response) || raw_len > MAX_LIST_ITEMS;
 
     let items = issues
+        .into_iter()
+        .take(MAX_LIST_ITEMS)
+        .map(|issue| {
+            let (title, _) = truncate_text(&issue.title, MAX_TITLE_OUT_BYTES);
+            Ok(json!({
+                "number": issue.number,
+                "title": title,
+                "state": issue.state,
+                "author": login_out(issue.user.as_ref()),
+                "comments": issue.comments,
+                "isPullRequest": issue.pull_request.is_some(),
+                "createdAt": timestamp(&issue.created_at)?.to_owned(),
+                "updatedAt": timestamp(&issue.updated_at)?.to_owned(),
+            }))
+        })
+        .collect::<Result<Vec<_>, ProviderError>>()?;
+
+    Ok(json!({
+        "issues": items,
+        "page": page,
+        "hasMore": has_more,
+    }))
+}
+
+/// The `--search` path for `gh.issue.list`: `build_search_query` has already parsed, allowlisted,
+/// and rebuilt `search` with this capability's own `repo:`/`is:issue` scope prepended, so what
+/// reaches GitHub here is never the caller's original bytes. GitHub's search endpoint returns the
+/// same "Issue" resource shape the plain list endpoint does, so `RawIssue` and its projection are
+/// reused unchanged — unlike `gh.pull-request.list`, nothing is lost in search mode here.
+fn list_via_search(
+    input: &ListInput,
+    search: &str,
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+) -> Result<Value, ProviderError> {
+    let query = build_search_query(&input.owner, &input.repo, "issue", search)?;
+    let (page, per_page) = validate_page(input.page, input.per_page)?;
+    let per_page = per_page.unwrap_or(30);
+    let endpoint = endpoint(input.endpoint.as_deref())?;
+
+    let uri = format!(
+        "{endpoint}/search/issues?q={}&page={page}&per_page={per_page}",
+        percent_encode(&query)
+    );
+    let response = send_get(send, uri, ACCEPT_JSON)?;
+    let raw = decode::<RawSearchResponse<RawIssue>>(&response.body)?;
+    let has_more = has_next_link(&response) || raw.items.len() > MAX_LIST_ITEMS;
+
+    let items = raw
+        .items
         .into_iter()
         .take(MAX_LIST_ITEMS)
         .map(|issue| {
@@ -597,6 +668,61 @@ mod tests {
             output["issues"].as_array().expect("items").len(),
             crate::MAX_LIST_ITEMS
         );
+    }
+
+    #[test]
+    fn list_via_search_sends_the_rebuilt_query() {
+        let output = invoke_with(
+            &capability("gh.issue.list"),
+            json!({"owner": "octo", "repo": "hello", "search": "label:bug is:open"}),
+            scripted(vec![step(
+                |request| {
+                    assert_eq!(
+                        request.uri,
+                        "https://api.github.com/search/issues?\
+                         q=repo%3Aocto%2Fhello%20is%3Aissue%20label%3Abug%20is%3Aopen\
+                         &page=1&per_page=30"
+                    );
+                },
+                json_response(
+                    200,
+                    &json!({
+                        "total_count": 1,
+                        "incomplete_results": false,
+                        "items": [issue(9, false)],
+                    }),
+                ),
+            )]),
+        )
+        .expect("search list succeeds");
+
+        let items = output["issues"].as_array().expect("items");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["number"], 9);
+    }
+
+    /// The exact live-risk case named in review: a query trying to repoint the search at a
+    /// different repository is refused before any HTTP request is constructed.
+    #[test]
+    fn list_via_search_refuses_a_repo_qualifier_before_any_http_call() {
+        let error = invoke_with(
+            &capability("gh.issue.list"),
+            json!({"owner": "octo", "repo": "hello", "search": "repo:other/repo"}),
+            |_| unreachable!("a scope-escape query must never reach HTTP"),
+        )
+        .expect_err("scope escape refused");
+        assert_eq!(error.code(), "invalid-search-query");
+    }
+
+    #[test]
+    fn list_via_search_rejects_being_combined_with_other_filters() {
+        let error = invoke_with(
+            &capability("gh.issue.list"),
+            json!({"owner": "octo", "repo": "hello", "search": "label:bug", "milestone": "1"}),
+            |_| unreachable!("a conflicting combination must never reach HTTP"),
+        )
+        .expect_err("combination refused");
+        assert_eq!(error.code(), "invalid-search-query");
     }
 
     #[test]

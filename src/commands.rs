@@ -87,11 +87,6 @@ const REJECTED_FLAGS: &[(&str, &str)] = &[
          README or branch-scoped content to select here",
     ),
     (
-        "--search",
-        "free-text search isn't supported; combine --state, --author, --assignee, --label, \
-         --base, --head, or --draft instead",
-    ),
-    (
         "--admin",
         "administrator bypass has no REST equivalent; this merge capability was never scoped to \
          override required checks or reviews",
@@ -298,6 +293,19 @@ fn pull_requests() -> Command {
                         .long("draft")
                         .action(ArgAction::SetTrue)
                         .help("Filter by draft state; applied to the fetched page, after pagination"),
+                )
+                .arg(
+                    Arg::new("search")
+                        .short('S')
+                        .long("search")
+                        .value_name("QUERY")
+                        .conflicts_with_all([
+                            "state", "author", "assignee", "base", "head", "label", "draft",
+                        ])
+                        .help(
+                            "Search pull requests with a GitHub search query; cannot be combined \
+                             with the filters above, express them as query qualifiers instead",
+                        ),
                 )
                 .arg(noop_value("app", None, "STRING", "Filter by GitHub App author"))
                 .arg(limit_arg())
@@ -517,6 +525,25 @@ fn issues() -> Command {
                         .long("type")
                         .value_name("NAME")
                         .help("Filter by issue type name, or * or none"),
+                )
+                .arg(
+                    Arg::new("search")
+                        .short('S')
+                        .long("search")
+                        .value_name("QUERY")
+                        .conflicts_with_all([
+                            "state",
+                            "author",
+                            "assignee",
+                            "label",
+                            "milestone",
+                            "mention",
+                            "type",
+                        ])
+                        .help(
+                            "Search issues with a GitHub search query; cannot be combined with \
+                             the filters above, express them as query qualifiers instead",
+                        ),
                 )
                 .arg(noop_value(
                     "app",
@@ -747,6 +774,7 @@ fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocatio
             if matches.get_flag("draft") {
                 input.insert("draft".to_owned(), Value::Bool(true));
             }
+            insert_text(&mut input, "search", matches.get_one::<String>("search"));
             insert_paging(&mut input, matches);
             insert_limit(&mut input, matches);
             ids::PR_LIST
@@ -875,6 +903,7 @@ fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocatio
             );
             insert_text(&mut input, "mention", matches.get_one::<String>("mention"));
             insert_text(&mut input, "type", matches.get_one::<String>("type"));
+            insert_text(&mut input, "search", matches.get_one::<String>("search"));
             insert_paging(&mut input, matches);
             insert_limit(&mut input, matches);
             ids::ISSUE_LIST
@@ -1778,11 +1807,48 @@ mod tests {
     }
 
     #[test]
-    fn search_is_rejected_on_both_list_commands() {
-        let failure = refuse(&["pr", "list", "-R", "o/r", "--search", "is:pr"]);
-        assert!(failure.message().contains("--search"), "{failure:?}");
-        let failure = refuse(&["issue", "list", "-R", "o/r", "--search", "is:issue"]);
-        assert!(failure.message().contains("--search"), "{failure:?}");
+    fn search_is_wired_on_both_list_commands() {
+        let (capability, input) =
+            dispatch(&["pr", "list", "-R", "o/r", "-S", "is:open review:required"]);
+        assert_eq!(capability, "gh.pull-request.list");
+        assert_eq!(
+            input,
+            json!({"owner": "o", "repo": "r", "search": "is:open review:required"})
+        );
+
+        let (capability, input) =
+            dispatch(&["issue", "list", "-R", "o/r", "--search", "label:bug"]);
+        assert_eq!(capability, "gh.issue.list");
+        assert_eq!(
+            input,
+            json!({"owner": "o", "repo": "r", "search": "label:bug"})
+        );
+    }
+
+    /// `commands.rs` passes `--search` text through unexamined — the grammar, allowlist, and
+    /// scope-escape refusal all live at the invoke layer (see `lib.rs`'s `build_search_query`
+    /// tests), since a capability is also directly invocable, bypassing this argv rewrite
+    /// entirely. What this layer owns is the *mutual exclusion* with the other list filters.
+    #[test]
+    fn search_conflicts_with_the_other_list_filters_at_the_clap_layer() {
+        let (_, stderr, status) = rendered(&[
+            "pr", "list", "-R", "o/r", "-S", "is:open", "--state", "open",
+        ]);
+        assert_eq!(status, 2);
+        assert!(stderr.contains("cannot be used with"), "{stderr:?}");
+
+        let (_, stderr, status) = rendered(&[
+            "issue",
+            "list",
+            "-R",
+            "o/r",
+            "-S",
+            "is:open",
+            "--milestone",
+            "1",
+        ]);
+        assert_eq!(status, 2);
+        assert!(stderr.contains("cannot be used with"), "{stderr:?}");
     }
 
     #[test]

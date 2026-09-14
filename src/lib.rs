@@ -1,7 +1,12 @@
 //! A "fake `gh`": narrow GitHub operations as separately named Dekopon capabilities.
 //!
-//! Every operation is one fixed REST request shape (or one fixed pre-read plus one write) against
-//! `api.github.com`, projected into a small bounded output. There is deliberately no generic
+//! Almost every operation is one fixed REST request shape (or one fixed pre-read plus one write)
+//! against `api.github.com`, projected into a small bounded output. The two exceptions are
+//! `gh.pull-request.list` and `gh.issue.list`, which take a second, mutually exclusive request
+//! shape when their optional `search` field is present: GitHub's search endpoint
+//! (`GET /search/issues`) instead of the plain list endpoint, with the caller's query text parsed,
+//! allowlisted, and rebuilt — never forwarded — before it is prepended with this capability's own
+//! `repo:`/`is:` scope (see `build_search_query` below). There is deliberately no generic
 //! `gh.api.*` passthrough and no GraphQL: broker HTTP constraints bind host and method but not
 //! path, so path discipline is exactly what this guest exists to provide. A grant of
 //! `gh.pull-request.read` is authority to read pull requests, not authority over everything the
@@ -69,6 +74,11 @@ const MAX_LABEL_BYTES: usize = 50;
 const MAX_MILESTONE_BYTES: usize = 32;
 const MAX_ISSUE_TYPE_BYTES: usize = 50;
 const MAX_COMMIT_TITLE_IN_BYTES: usize = 256;
+// GitHub's own search `q` parameter is capped around 256 characters once every qualifier is
+// counted. This bounds only the caller-supplied fragment; `repo:{owner}/{repo} is:{scope}` (up to
+// roughly 150 bytes for the longest legal owner/repo) is prepended afterward, so this leaves
+// headroom under GitHub's real ceiling rather than risking a query that GitHub itself would 422.
+const MAX_SEARCH_QUERY_BYTES: usize = 200;
 
 // Output projection bounds. The broker host already ceilings total serialized output; these keep
 // each field useful instead of failing the whole invocation on one large response.
@@ -233,6 +243,7 @@ fn capabilities() -> Vec<ProviderCapability> {
                     "assignee": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "Optional login filter; applied to the fetched page, after pagination, same as author."},
                     "labels": {"type": "array", "items": {"type": "string", "maxLength": MAX_LABEL_BYTES}, "maxItems": MAX_LABELS, "description": "Filter requiring every given label; applied to the fetched page, after pagination."},
                     "draft": {"type": "boolean", "description": "Filter by draft state; applied to the fetched page, after pagination."},
+                    "search": {"type": "string", "maxLength": MAX_SEARCH_QUERY_BYTES, "description": "GitHub search query text; parsed, allowlisted, and rebuilt with this capability's own repo/type scope prepended. Cannot be combined with the other filters above; express them as qualifiers inside this query instead."},
                     "page": page_property(),
                     "perPage": per_page_property(30),
                 }),
@@ -373,6 +384,7 @@ fn capabilities() -> Vec<ProviderCapability> {
                     "milestone": {"type": "string", "maxLength": MAX_MILESTONE_BYTES, "description": "Filter by milestone number, or the literal * or none; a milestone title is not supported."},
                     "mention": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "Filter by mentioned login."},
                     "type": {"type": "string", "maxLength": MAX_ISSUE_TYPE_BYTES, "description": "Filter by issue type name, or the literal * or none."},
+                    "search": {"type": "string", "maxLength": MAX_SEARCH_QUERY_BYTES, "description": "GitHub search query text; parsed, allowlisted, and rebuilt with this capability's own repo/type scope prepended. Cannot be combined with the other filters above; express them as qualifiers inside this query instead."},
                     "page": page_property(),
                     "perPage": per_page_property(30),
                 }),
@@ -634,6 +646,272 @@ fn validate_body(value: &str) -> Result<(), ProviderError> {
         return Err(invalid_input());
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// `--search`: a parsed-and-rebuilt GitHub issue/PR search query
+// ---------------------------------------------------------------------------
+//
+// This is deliberately a parse-then-rebuild, not a passthrough. `commands.rs` copies the caller's
+// raw `--search` text into the capability input unexamined, and a capability is also directly
+// invocable with an arbitrary `search` field, bypassing `commands.rs` entirely — so the only place
+// this can be validated safely is here, at the same native layer every other input field is
+// re-validated at, never trusting that some other, bypassable layer already checked it. Every
+// accepted qualifier is re-serialized from its parsed form (never the caller's original bytes)
+// into a query this component itself prepends `repo:{owner}/{repo} is:{scope}` to, so a rejected
+// `repo:`/`org:`/`user:`/`owner:` qualifier is refused before it is ever concatenated into
+// anything sent to GitHub, and a query cannot re-scope itself to a different repository no matter
+// how it is spelled.
+
+/// Qualifiers this provider allows inside `--search` text, because each one only narrows results
+/// within whatever repository and issue/PR type the provider has already scoped the query to.
+const ALLOWED_SEARCH_QUALIFIERS: &[&str] = &[
+    "author",
+    "assignee",
+    "mentions",
+    "commenter",
+    "involves",
+    "label",
+    "state",
+    "is",
+    "milestone",
+    "base",
+    "head",
+    "created",
+    "updated",
+    "closed",
+    "merged",
+    "comments",
+    "reactions",
+    "interactions",
+    "no",
+    "sort",
+    "draft",
+    "review",
+    "reviewed-by",
+    "review-requested",
+    "linked",
+    "project",
+];
+
+/// Qualifiers refused by name with a specific reason, checked before the "unrecognized qualifier"
+/// catch-all so the message explains *why*, not just that it wasn't on the list.
+const REJECTED_SEARCH_QUALIFIERS: &[(&str, &str)] = &[
+    (
+        "repo",
+        "this provider sets the repository scope from -R; a query cannot repoint it",
+    ),
+    (
+        "org",
+        "this provider is scoped to one repository; there is no organization-wide search",
+    ),
+    (
+        "user",
+        "this provider is scoped to one repository; there is no user-wide search",
+    ),
+    (
+        "owner",
+        "this provider is scoped to one repository; there is no owner-wide search",
+    ),
+    ("in", "field-scoped text search is not supported"),
+    (
+        "archived",
+        "this provider is scoped to one repository, which is not itself searchable by archival state",
+    ),
+    (
+        "fork",
+        "this provider is scoped to one repository, which is not itself searchable by fork status",
+    ),
+    (
+        "language",
+        "cross-repository language filtering has no meaning inside one repository",
+    ),
+    ("type", "issue type is set with --type, not inside --search"),
+];
+
+fn invalid_search_query(reason: impl core::fmt::Display) -> ProviderError {
+    ProviderError::new("invalid-search-query", format!("gh: --search: {reason}"))
+}
+
+/// One token of a search query, split before its meaning (qualifier vs. free text) is decided.
+enum SearchToken {
+    Qualifier {
+        key: String,
+        negated: bool,
+        value: String,
+    },
+    Term(String),
+}
+
+/// Splits a search string into tokens on unquoted whitespace, keeping a double-quoted run —
+/// spaces included — as one token, matching GitHub's own search syntax. Quote characters are kept
+/// in the token; [`validate_search_value`] and the canonical rebuild both operate on them as-is.
+fn tokenize_search(raw: &str) -> Result<Vec<String>, ProviderError> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    for ch in raw.chars() {
+        match ch {
+            '"' => {
+                in_quotes = !in_quotes;
+                current.push(ch);
+            }
+            ch if ch.is_whitespace() && !in_quotes => {
+                if !current.is_empty() {
+                    tokens.push(core::mem::take(&mut current));
+                }
+            }
+            ch => current.push(ch),
+        }
+    }
+    if in_quotes {
+        return Err(invalid_search_query("an unterminated quote"));
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    Ok(tokens)
+}
+
+/// A qualifier key is `gh`'s own alphabet for one: starts with a letter, then letters, digits, or
+/// hyphens (`reviewed-by`, `review-requested`).
+fn is_qualifier_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic())
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+}
+
+/// Accepts a bare term, a quoted phrase, or a qualifier's value: any non-empty run with no literal
+/// whitespace (already guaranteed by [`tokenize_search`]) and balanced quoting. This is
+/// deliberately permissive beyond that — comparison values (`>2026-01-01`) and ranges (`10..20`,
+/// `2026-01-01..*`) are just non-whitespace strings under this grammar, so they need no dedicated
+/// case; GitHub's own search endpoint is the authority on whether one is semantically well-formed
+/// for its qualifier, the same way it already is for every other qualifier value this provider
+/// forwards without native semantic checking.
+fn validate_search_value(value: &str) -> Result<(), ProviderError> {
+    if value.is_empty() {
+        return Err(invalid_search_query("an empty value"));
+    }
+    match value.matches('"').count() {
+        0 => Ok(()),
+        2 if value.starts_with('"') && value.ends_with('"') && value.len() > 2 => Ok(()),
+        _ => Err(invalid_search_query(format!(
+            "{value:?} has an unbalanced quote"
+        ))),
+    }
+}
+
+/// Parses one token into a qualifier or a free-text term. A token outside this grammar — a bare
+/// `*` standing in for a wildcard GitHub's search does not support as a term, or a value with
+/// unbalanced quoting — is refused by name rather than forwarded.
+fn parse_search_token(token: &str) -> Result<SearchToken, ProviderError> {
+    if token == "*" {
+        return Err(invalid_search_query(
+            "'*' is not a valid search term (GitHub's search has no bare wildcard)",
+        ));
+    }
+    let (negated, unsigned) = match token.strip_prefix('-') {
+        Some(rest) if !rest.is_empty() => (true, rest),
+        _ => (false, token),
+    };
+    if let Some(colon) = unsigned.find(':') {
+        let key = &unsigned[..colon];
+        let value = &unsigned[colon + 1..];
+        if is_qualifier_key(key) && !value.is_empty() {
+            validate_search_value(value)?;
+            return Ok(SearchToken::Qualifier {
+                key: key.to_ascii_lowercase(),
+                negated,
+                value: value.to_owned(),
+            });
+        }
+    }
+    validate_search_value(token)?;
+    Ok(SearchToken::Term(token.to_owned()))
+}
+
+fn check_qualifier_allowed(key: &str) -> Result<(), ProviderError> {
+    if let Some((_, reason)) = REJECTED_SEARCH_QUALIFIERS
+        .iter()
+        .find(|(name, _)| *name == key)
+    {
+        return Err(invalid_search_query(format!(
+            "qualifier '{key}:' is not allowed: {reason}"
+        )));
+    }
+    if !ALLOWED_SEARCH_QUALIFIERS.contains(&key) {
+        return Err(invalid_search_query(format!(
+            "qualifier '{key}:' is not recognized"
+        )));
+    }
+    Ok(())
+}
+
+/// Parses, validates, and canonically rebuilds a caller's `--search` text, then prepends this
+/// provider's own repository and issue/PR-type scope. The rebuilt query is what reaches GitHub —
+/// never the caller's original bytes — so a rejected qualifier is refused before this function
+/// returns, long before any HTTP request exists to carry it.
+pub(crate) fn build_search_query(
+    owner: &str,
+    repo: &str,
+    scope: &'static str,
+    raw: &str,
+) -> Result<String, ProviderError> {
+    if raw.is_empty() {
+        return Err(invalid_search_query("requires a non-empty query"));
+    }
+    if raw.len() > MAX_SEARCH_QUERY_BYTES {
+        return Err(invalid_search_query(format!(
+            "query must be at most {MAX_SEARCH_QUERY_BYTES} bytes"
+        )));
+    }
+    let tokens = tokenize_search(raw)?;
+    if tokens.is_empty() {
+        return Err(invalid_search_query("requires a non-empty query"));
+    }
+    let mut rebuilt = format!("repo:{owner}/{repo} is:{scope}");
+    for token in &tokens {
+        match parse_search_token(token)? {
+            SearchToken::Qualifier {
+                key,
+                negated,
+                value,
+            } => {
+                check_qualifier_allowed(&key)?;
+                let sign = if negated { "-" } else { "" };
+                rebuilt.push_str(&format!(" {sign}{key}:{value}"));
+            }
+            SearchToken::Term(term) => {
+                rebuilt.push(' ');
+                rebuilt.push_str(&term);
+            }
+        }
+    }
+    Ok(rebuilt)
+}
+
+/// `--search` and this provider's own structured filters (`--state`, `--author`, …) are mutually
+/// exclusive — `clap` already enforces this on the argv path via `conflicts_with_all`, but a
+/// capability is also directly invocable with arbitrary JSON input, bypassing `commands.rs`
+/// entirely, so the invoke-time check here is what actually holds the line. Silently ignoring one
+/// side would be the exact "caller believes both were applied" failure this codebase's own
+/// `REJECTED_FLAGS` philosophy exists to avoid for the argv surface; refusing both together is the
+/// same discipline applied at the native layer.
+pub(crate) fn search_conflicts_with_other_filters() -> ProviderError {
+    invalid_search_query(
+        "cannot be combined with this capability's other filters; express them as qualifiers \
+         inside the search query instead",
+    )
+}
+
+/// The shape every GitHub search response is wrapped in; only `items` is projected further here,
+/// so `total_count`/`incomplete_results` are left undeclared and simply ignored rather than
+/// re-declared unused.
+#[derive(serde::Deserialize)]
+pub(crate) struct RawSearchResponse<T> {
+    pub(crate) items: Vec<T>,
 }
 
 fn validate_page(
@@ -1025,7 +1303,9 @@ mod tests {
     use serde_json::json;
 
     use super::testutil::{capability, scripted, step};
-    use super::{Gh, endpoint, invoke_with, truncate_text};
+    use super::{
+        Gh, MAX_SEARCH_QUERY_BYTES, build_search_query, endpoint, invoke_with, truncate_text,
+    };
 
     #[test]
     fn manifest_covers_the_full_designed_surface() {
@@ -1254,5 +1534,155 @@ mod tests {
         // A four-byte scalar straddling the boundary is dropped whole.
         let (text, truncated) = truncate_text("abcd😀", 6);
         assert_eq!((text.as_str(), truncated), ("abcd", true));
+    }
+
+    // -----------------------------------------------------------------------
+    // `--search` query parsing, allowlisting, and canonical rebuild
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn search_prepends_repo_and_scope() {
+        let query = build_search_query("octo", "hello", "pr", "is:open").expect("valid query");
+        assert_eq!(query, "repo:octo/hello is:pr is:open");
+    }
+
+    #[test]
+    fn search_accepts_bare_terms_phrases_and_qualifiers() {
+        let query = build_search_query(
+            "octo",
+            "hello",
+            "issue",
+            r#"memory leak "out of order" label:bug -label:wontfix author:cpetersen"#,
+        )
+        .expect("valid query");
+        assert_eq!(
+            query,
+            r#"repo:octo/hello is:issue memory leak "out of order" label:bug -label:wontfix author:cpetersen"#
+        );
+    }
+
+    #[test]
+    fn search_accepts_comparison_and_range_values() {
+        let query = build_search_query(
+            "octo",
+            "hello",
+            "pr",
+            "created:>2026-01-01 comments:10..20 updated:2026-01-01..*",
+        )
+        .expect("valid query");
+        assert_eq!(
+            query,
+            "repo:octo/hello is:pr created:>2026-01-01 comments:10..20 updated:2026-01-01..*"
+        );
+    }
+
+    #[test]
+    fn search_rejects_a_bare_wildcard() {
+        let error =
+            build_search_query("octo", "hello", "pr", "*").expect_err("bare wildcard refused");
+        assert_eq!(error.code(), "invalid-search-query");
+        assert!(error.message().contains('*'), "{error:?}");
+    }
+
+    #[test]
+    fn search_rejects_an_unbalanced_quote() {
+        let error = build_search_query("octo", "hello", "pr", r#"label:"in progress"#)
+            .expect_err("unterminated quote refused");
+        assert_eq!(error.code(), "invalid-search-query");
+    }
+
+    #[test]
+    fn search_rejects_repo_org_user_owner_by_name() {
+        for (token, name) in [
+            ("repo:other/repo", "repo"),
+            ("org:other-org", "org"),
+            ("user:someone", "user"),
+            ("owner:someone", "owner"),
+        ] {
+            let error =
+                build_search_query("octo", "hello", "pr", token).expect_err("scope escape refused");
+            assert_eq!(error.code(), "invalid-search-query", "{token}");
+            assert!(error.message().contains(name), "{token}: {error:?}");
+        }
+    }
+
+    #[test]
+    fn search_rejects_repo_qualifier_before_any_scope_change_is_possible() {
+        // The exact live-risk case named in review: a query that tries to repoint the search at a
+        // different repository is refused, and the rejection happens inside the pure parse/rebuild
+        // function itself — nothing here ever touches HTTP, so there is no path for this string to
+        // reach a request even indirectly.
+        let error = build_search_query("octo", "hello", "pr", "repo:other/repo is:open")
+            .expect_err("repo qualifier refused");
+        assert_eq!(error.code(), "invalid-search-query");
+        assert!(error.message().contains("repo"), "{error:?}");
+    }
+
+    #[test]
+    fn search_rejects_in_archived_fork_language_type_and_unknown_qualifiers() {
+        for token in [
+            "in:title",
+            "archived:false",
+            "fork:true",
+            "language:rust",
+            "type:pr",
+            "bogus:value",
+        ] {
+            let error =
+                build_search_query("octo", "hello", "pr", token).expect_err("rejected qualifier");
+            assert_eq!(error.code(), "invalid-search-query", "{token}");
+        }
+    }
+
+    #[test]
+    fn search_allows_every_documented_qualifier() {
+        for qualifier in [
+            "author",
+            "assignee",
+            "mentions",
+            "commenter",
+            "involves",
+            "label",
+            "state",
+            "is",
+            "milestone",
+            "base",
+            "head",
+            "created",
+            "updated",
+            "closed",
+            "merged",
+            "comments",
+            "reactions",
+            "interactions",
+            "no",
+            "sort",
+            "draft",
+            "review",
+            "reviewed-by",
+            "review-requested",
+            "linked",
+            "project",
+        ] {
+            build_search_query("octo", "hello", "pr", &format!("{qualifier}:a"))
+                .unwrap_or_else(|error| panic!("{qualifier} should be allowed: {error:?}"));
+        }
+    }
+
+    #[test]
+    fn search_rejects_empty_and_oversize_queries() {
+        assert_eq!(
+            build_search_query("octo", "hello", "pr", "")
+                .expect_err("empty refused")
+                .code(),
+            "invalid-search-query"
+        );
+        let oversize = "x".repeat(MAX_SEARCH_QUERY_BYTES + 1);
+        assert_eq!(
+            build_search_query("octo", "hello", "pr", &oversize)
+                .expect_err("oversize refused")
+                .code(),
+            "invalid-search-query"
+        );
     }
 }
