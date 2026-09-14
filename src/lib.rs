@@ -57,7 +57,18 @@ const MAX_REF_BYTES: usize = 256;
 const MAX_PATH_BYTES: usize = 1024;
 const MAX_BODY_IN_BYTES: usize = 4 * 1024;
 const MAX_PAGE: u32 = 50;
-const MAX_PER_PAGE: u32 = 50;
+// GitHub's REST API itself caps `per_page` at 100 on every list endpoint this provider calls; this
+// is that ceiling, not an arbitrary tighter one. `gh --per-page 100` is a completely ordinary
+// argument against the real API, and a model reaching for gh's own remembered limits should not be
+// refused something GitHub itself allows. `MAX_LIST_ITEMS` (below) still separately bounds how many
+// projected items an invocation ever returns, and every paginated capability's `hasMore` now also
+// considers that per-invocation truncation, not just GitHub's `Link` header, since a per-request
+// fetch of 51-100 raw rows would otherwise be silently truncated to 50 while `hasMore` said false.
+const MAX_PER_PAGE: u32 = 100;
+const MAX_LABEL_BYTES: usize = 50;
+const MAX_MILESTONE_BYTES: usize = 32;
+const MAX_ISSUE_TYPE_BYTES: usize = 50;
+const MAX_COMMIT_TITLE_IN_BYTES: usize = 256;
 
 // Output projection bounds. The broker host already ceilings total serialized output; these keep
 // each field useful instead of failing the whole invocation on one large response.
@@ -212,13 +223,18 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             ids::PR_LIST,
-            "Lists pull requests with optional state and author filters",
+            "Lists pull requests with optional state, author, base/head, assignee, label, and draft filters",
             repo_schema(
                 json!({
-                    "state": state_property(),
-                    "author": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "Optional login filter applied to the fetched page, after pagination."},
+                    "state": pull_state_property(),
+                    "author": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "Optional login filter; applied to the fetched page, after pagination (GitHub's pull-request list endpoint has no author query parameter)."},
+                    "base": {"type": "string", "maxLength": MAX_REF_BYTES, "description": "Filter by base branch name."},
+                    "head": {"type": "string", "maxLength": MAX_REF_BYTES, "description": "Filter by head branch name (bare branch, not owner:branch)."},
+                    "assignee": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "Optional login filter; applied to the fetched page, after pagination, same as author."},
+                    "labels": {"type": "array", "items": {"type": "string", "maxLength": MAX_LABEL_BYTES}, "maxItems": MAX_LABELS, "description": "Filter requiring every given label; applied to the fetched page, after pagination."},
+                    "draft": {"type": "boolean", "description": "Filter by draft state; applied to the fetched page, after pagination."},
                     "page": page_property(),
-                    "perPage": per_page_property(20),
+                    "perPage": per_page_property(30),
                 }),
                 &[],
             ),
@@ -226,7 +242,13 @@ fn capabilities() -> Vec<ProviderCapability> {
         read(
             ids::PR_READ,
             "Reads one pull request's metadata, state, and head/base",
-            repo_schema(json!({"number": number_property()}), &["number"]),
+            repo_schema(
+                json!({
+                    "number": number_property(),
+                    "comments": {"type": "boolean", "description": "Include a bounded page of the pull request's conversation comments; defaults to false."},
+                }),
+                &["number"],
+            ),
         ),
         read(
             ids::PR_FILES,
@@ -296,7 +318,13 @@ fn capabilities() -> Vec<ProviderCapability> {
         read(
             ids::PR_DIFF,
             "Reads one pull request's unified diff, truncated with a marker",
-            repo_schema(json!({"number": number_property()}), &["number"]),
+            repo_schema(
+                json!({
+                    "number": number_property(),
+                    "nameOnly": {"type": "boolean", "description": "Return only the changed file paths instead of the diff text; defaults to false."},
+                }),
+                &["number"],
+            ),
         ),
         read(
             ids::PR_STATUS,
@@ -325,16 +353,28 @@ fn capabilities() -> Vec<ProviderCapability> {
         read(
             ids::ISSUE_READ,
             "Reads one issue with a bounded body",
-            repo_schema(json!({"number": number_property()}), &["number"]),
+            repo_schema(
+                json!({
+                    "number": number_property(),
+                    "comments": {"type": "boolean", "description": "Include a bounded page of the issue's comments; defaults to false."},
+                }),
+                &["number"],
+            ),
         ),
         read(
             ids::ISSUE_LIST,
-            "Lists issues (GitHub includes pull requests; each item is flagged)",
+            "Lists issues (GitHub includes pull requests; each item is flagged) with optional author, assignee, label, milestone, mention, and type filters",
             repo_schema(
                 json!({
                     "state": state_property(),
+                    "author": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "Filter by author login."},
+                    "assignee": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "Filter by assignee login."},
+                    "labels": {"type": "array", "items": {"type": "string", "maxLength": MAX_LABEL_BYTES}, "maxItems": MAX_LABELS, "description": "Filter requiring every given label."},
+                    "milestone": {"type": "string", "maxLength": MAX_MILESTONE_BYTES, "description": "Filter by milestone number, or the literal * or none; a milestone title is not supported."},
+                    "mention": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "Filter by mentioned login."},
+                    "type": {"type": "string", "maxLength": MAX_ISSUE_TYPE_BYTES, "description": "Filter by issue type name, or the literal * or none."},
                     "page": page_property(),
-                    "perPage": per_page_property(20),
+                    "perPage": per_page_property(30),
                 }),
                 &[],
             ),
@@ -371,6 +411,8 @@ fn capabilities() -> Vec<ProviderCapability> {
                 json!({
                     "number": number_property(),
                     "mergeMethod": {"type": "string", "enum": ["merge", "squash", "rebase"], "description": "Merge strategy; defaults to merge."},
+                    "commitTitle": {"type": "string", "minLength": 1, "maxLength": MAX_COMMIT_TITLE_IN_BYTES, "description": "Optional commit title for the merge commit."},
+                    "commitMessage": body_property("Optional commit message body for the merge commit."),
                     "expectedHeadSha": sha_property(),
                 }),
                 &["number"],
@@ -438,6 +480,12 @@ fn per_page_property(default: u32) -> Value {
 
 fn state_property() -> Value {
     json!({"type": "string", "enum": ["open", "closed", "all"], "description": "State filter; defaults to open."})
+}
+
+/// Pull requests additionally have a `merged` state real `gh pr list --state` accepts; issues never
+/// do, so this stays a separate schema from `state_property` rather than a shared, wider enum.
+fn pull_state_property() -> Value {
+    json!({"type": "string", "enum": ["open", "closed", "merged", "all"], "description": "State filter; defaults to open. `merged` is requested from GitHub as closed, then filtered client-side on mergedAt."})
 }
 
 fn ref_property() -> Value {
@@ -535,6 +583,48 @@ fn validate_path(value: &str) -> Result<(), ProviderError> {
         {
             return Err(invalid_input());
         }
+    }
+    Ok(())
+}
+
+/// Validates a GitHub label name: bounded, no control characters. GitHub itself allows nearly any
+/// printable character in a label name (including spaces), so this stays deliberately permissive.
+fn validate_label(value: &str) -> Result<(), ProviderError> {
+    if value.is_empty()
+        || value.len() > MAX_LABEL_BYTES
+        || value.bytes().any(|byte| byte.is_ascii_control())
+    {
+        return Err(invalid_input());
+    }
+    Ok(())
+}
+
+/// Validates a milestone filter: a positive integer, or the literal `*`/`none`. Real `gh` also
+/// accepts a milestone *title* and resolves it to a number with an extra lookup this provider does
+/// not perform; titles are out of scope here and rejected the same as any other malformed value.
+fn validate_milestone(value: &str) -> Result<(), ProviderError> {
+    if value == "*" || value == "none" {
+        return Ok(());
+    }
+    if !value.is_empty()
+        && value.len() <= MAX_MILESTONE_BYTES
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Ok(());
+    }
+    Err(invalid_input())
+}
+
+/// Validates an issue-type filter: bounded, no control characters, or the literal `*`/`none`.
+fn validate_issue_type(value: &str) -> Result<(), ProviderError> {
+    if value == "*" || value == "none" {
+        return Ok(());
+    }
+    if value.is_empty()
+        || value.len() > MAX_ISSUE_TYPE_BYTES
+        || value.bytes().any(|byte| byte.is_ascii_control())
+    {
+        return Err(invalid_input());
     }
     Ok(())
 }
@@ -1139,7 +1229,7 @@ mod tests {
             ),
             (
                 "gh.pull-request.list",
-                json!({"owner": "octo", "repo": "x", "state": "merged"}),
+                json!({"owner": "octo", "repo": "x", "state": "bogus"}),
             ),
             ("gh.user.read", json!({"login": "bad login"})),
             (

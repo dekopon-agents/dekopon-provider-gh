@@ -9,8 +9,8 @@ use crate::{
     ACCEPT_DIFF, ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_DESCRIPTION_OUT_BYTES, MAX_DIFF_OUT_BYTES,
     MAX_LIST_ITEMS, MAX_PATCH_OUT_BYTES, MAX_PR_BODY_OUT_BYTES, MAX_TITLE_OUT_BYTES, RawUser,
     bounded_optional, decode, endpoint, has_next_link, invalid_input, invalid_response, is_sha,
-    login_out, percent_encode, send_get, timestamp, truncate_text, validate_login, validate_number,
-    validate_page, validate_repo,
+    login_out, percent_encode, send_get, timestamp, truncate_text, validate_label, validate_login,
+    validate_number, validate_page, validate_ref, validate_repo,
 };
 
 // ---------------------------------------------------------------------------
@@ -24,6 +24,14 @@ pub(crate) struct RawRef {
     pub(crate) sha: String,
 }
 
+/// The label shape GitHub embeds on issues and pull requests alike. Kept local to this file rather
+/// than shared with `issues.rs`'s identically-shaped `RawLabel`, to avoid coupling two concurrently
+/// edited files over a one-field struct.
+#[derive(Debug, Deserialize)]
+struct RawLabel {
+    name: String,
+}
+
 /// One pull request as GitHub returns it; list items omit the single-read counters.
 #[derive(Debug, Deserialize)]
 pub(crate) struct RawPull {
@@ -35,9 +43,15 @@ pub(crate) struct RawPull {
     #[serde(default)]
     pub(crate) merged: Option<bool>,
     #[serde(default)]
+    pub(crate) merged_at: Option<String>,
+    #[serde(default)]
     pub(crate) body: Option<String>,
     #[serde(default)]
     pub(crate) user: Option<RawUser>,
+    #[serde(default)]
+    pub(crate) assignees: Vec<RawUser>,
+    #[serde(default)]
+    labels: Vec<RawLabel>,
     pub(crate) head: RawRef,
     pub(crate) base: RawRef,
     #[serde(default)]
@@ -85,12 +99,28 @@ pub(crate) fn fetch_pull(
 // gh.pull-request.read
 // ---------------------------------------------------------------------------
 
+/// One conversation comment, shared by issues and pull requests alike (GitHub uses the same
+/// `/issues/{number}/comments` endpoint for both). Kept local rather than shared with
+/// `issues.rs`'s identically-shaped `RawComment`, to avoid coupling two concurrently edited files
+/// over a four-field struct.
+#[derive(Debug, Deserialize)]
+struct RawComment {
+    id: u64,
+    #[serde(default)]
+    user: Option<RawUser>,
+    #[serde(default)]
+    body: Option<String>,
+    created_at: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ReadInput {
     owner: String,
     repo: String,
     number: u32,
+    #[serde(default)]
+    comments: Option<bool>,
     #[serde(default)]
     endpoint: Option<String>,
 }
@@ -108,7 +138,7 @@ pub(crate) fn read(
 
     let (title, _) = truncate_text(&pull.title, MAX_TITLE_OUT_BYTES);
     let (body, body_truncated) = bounded_optional(pull.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
-    Ok(json!({
+    let mut output = json!({
         "number": pull.number,
         "title": title,
         "state": pull.state,
@@ -127,18 +157,64 @@ pub(crate) fn read(
         "mergeableState": pull.mergeable_state,
         "createdAt": timestamp(&pull.created_at)?,
         "updatedAt": timestamp(&pull.updated_at)?,
-    }))
+    });
+
+    if input.comments == Some(true) {
+        let uri = format!(
+            "{endpoint}/repos/{}/{}/issues/{}/comments?page=1&per_page={MAX_LIST_ITEMS}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            input.number,
+        );
+        let response = send_get(send, uri, ACCEPT_JSON)?;
+        let raw_comments = decode::<Vec<RawComment>>(&response.body)?;
+        let comments_truncated = has_next_link(&response) || raw_comments.len() > MAX_LIST_ITEMS;
+        let comments = raw_comments
+            .into_iter()
+            .take(MAX_LIST_ITEMS)
+            .map(|comment| {
+                let (body, body_truncated) =
+                    bounded_optional(comment.body.as_deref(), MAX_COMMENT_OUT_BYTES);
+                Ok(json!({
+                    "commentId": comment.id,
+                    "author": login_out(comment.user.as_ref()),
+                    "body": body,
+                    "bodyTruncated": body_truncated,
+                    "createdAt": timestamp(&comment.created_at)?.to_owned(),
+                }))
+            })
+            .collect::<Result<Vec<_>, ProviderError>>()?;
+        let map = output
+            .as_object_mut()
+            .expect("read output is a JSON object");
+        // Named `recentComments`/`recentCommentsTruncated` rather than `comments`/
+        // `commentsTruncated`: a numeric `comments` count field is a natural future addition to
+        // this output (as it already exists on `gh.issue.read`), and this name sidesteps that
+        // collision rather than relying on it never happening.
+        map.insert("recentComments".to_owned(), Value::Array(comments));
+        map.insert(
+            "recentCommentsTruncated".to_owned(),
+            Value::Bool(comments_truncated),
+        );
+    }
+
+    Ok(output)
 }
 
 // ---------------------------------------------------------------------------
 // gh.pull-request.list
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum StateFilter {
     Open,
     Closed,
+    /// GitHub's REST API has no `state=merged` value; real `gh` requests `state=closed` and
+    /// filters client-side on whether the pull request actually merged. `as_str()` reflects that
+    /// wire reality (it returns `"closed"`, same as `Closed`); `list()` separately checks for this
+    /// variant to add the client-side `mergedAt` requirement `Closed` alone does not carry.
+    Merged,
     All,
 }
 
@@ -146,7 +222,7 @@ impl StateFilter {
     pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Self::Open => "open",
-            Self::Closed => "closed",
+            Self::Closed | Self::Merged => "closed",
             Self::All => "all",
         }
     }
@@ -162,11 +238,60 @@ struct ListInput {
     #[serde(default)]
     author: Option<String>,
     #[serde(default)]
+    base: Option<String>,
+    #[serde(default)]
+    head: Option<String>,
+    #[serde(default)]
+    assignee: Option<String>,
+    #[serde(default)]
+    labels: Option<Vec<String>>,
+    #[serde(default)]
+    draft: Option<bool>,
+    #[serde(default)]
     page: Option<u32>,
     #[serde(default)]
     per_page: Option<u32>,
     #[serde(default)]
     endpoint: Option<String>,
+}
+
+/// Applies every `gh.pull-request.list` filter GitHub's list endpoint cannot express itself:
+/// author, assignee, labels, draft, and (for a requested `merged` state) actually having merged.
+fn matches_filters(pull: &RawPull, input: &ListInput, state: &StateFilter) -> bool {
+    if let Some(author) = input.author.as_deref()
+        && !pull
+            .user
+            .as_ref()
+            .is_some_and(|user| user.login.eq_ignore_ascii_case(author))
+    {
+        return false;
+    }
+    if let Some(assignee) = input.assignee.as_deref()
+        && !pull
+            .assignees
+            .iter()
+            .any(|user| user.login.eq_ignore_ascii_case(assignee))
+    {
+        return false;
+    }
+    if let Some(labels) = input.labels.as_deref()
+        && !labels.iter().all(|wanted| {
+            pull.labels
+                .iter()
+                .any(|label| label.name.eq_ignore_ascii_case(wanted))
+        })
+    {
+        return false;
+    }
+    if let Some(wanted_draft) = input.draft
+        && pull.draft != wanted_draft
+    {
+        return false;
+    }
+    if matches!(state, StateFilter::Merged) && pull.merged_at.is_none() {
+        return false;
+    }
+    true
 }
 
 pub(crate) fn list(
@@ -179,32 +304,58 @@ pub(crate) fn list(
     if let Some(author) = input.author.as_deref() {
         validate_login(author)?;
     }
+    if let Some(assignee) = input.assignee.as_deref() {
+        validate_login(assignee)?;
+    }
+    if let Some(base) = input.base.as_deref() {
+        validate_ref(base)?;
+    }
+    if let Some(head) = input.head.as_deref() {
+        validate_ref(head)?;
+    }
+    if let Some(labels) = input.labels.as_deref() {
+        for label in labels {
+            validate_label(label)?;
+        }
+    }
     let (page, per_page) = validate_page(input.page, input.per_page)?;
-    let per_page = per_page.unwrap_or(20);
+    let per_page = per_page.unwrap_or(30);
     let state = input.state.unwrap_or(StateFilter::Open);
     let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
+    let mut uri = format!(
         "{endpoint}/repos/{}/{}/pulls?state={}&page={page}&per_page={per_page}",
         percent_encode(&input.owner),
         percent_encode(&input.repo),
         state.as_str(),
     );
+    if let Some(base) = input.base.as_deref() {
+        uri.push_str(&format!("&base={}", percent_encode(base)));
+    }
+    if let Some(head) = input.head.as_deref() {
+        // GitHub's REST `head` filter requires the qualified `owner:branch` form. Encode the
+        // *raw* validated owner joined with the raw head, not the already-percent-encoded owner,
+        // to avoid double-encoding.
+        uri.push_str(&format!(
+            "&head={}",
+            percent_encode(&format!("{}:{}", input.owner, head))
+        ));
+    }
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let has_more = has_next_link(&response);
     let pulls = decode::<Vec<RawPull>>(&response.body)?;
+    // `hasMore` must also consider per-invocation truncation, not just GitHub's `Link` header:
+    // `MAX_PER_PAGE` (100) exceeds `MAX_LIST_ITEMS` (50), so a single request can legitimately
+    // return more raw rows than this capability ever projects. Compute this right after decode,
+    // before the filter/take chain below reduces `pulls.len()`.
+    let has_more = has_next_link(&response) || pulls.len() > MAX_LIST_ITEMS;
 
-    // `author` filters the fetched page after pagination — the REST list endpoint has no author
-    // parameter. The schema description says so, so a model is not surprised by a short page.
+    // `base` and `head` are real REST list-endpoint query parameters, sent above. `author`,
+    // `assignee`, `labels`, `draft`, and (for a `merged` state request) actually having merged all
+    // filter the fetched page after pagination instead — GitHub's pull-request list endpoint has
+    // no author/assignee/label/draft parameter, and no `state=merged` value at all.
     let items = pulls
         .into_iter()
-        .filter(|pull| match input.author.as_deref() {
-            Some(author) => pull
-                .user
-                .as_ref()
-                .is_some_and(|user| user.login.eq_ignore_ascii_case(author)),
-            None => true,
-        })
+        .filter(|pull| matches_filters(pull, &input, &state))
         .take(MAX_LIST_ITEMS)
         .map(|pull| {
             if !is_sha(&pull.head.sha) {
@@ -283,8 +434,10 @@ pub(crate) fn files(
         input.number,
     );
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let has_more = has_next_link(&response);
     let files = decode::<Vec<RawFile>>(&response.body)?;
+    // See the identical comment in `list()`: `MAX_PER_PAGE` (100) exceeds `MAX_LIST_ITEMS` (50),
+    // so a single request can return more raw rows than this capability ever projects.
+    let has_more = has_next_link(&response) || files.len() > MAX_LIST_ITEMS;
 
     let items = files
         .into_iter()
@@ -320,11 +473,23 @@ pub(crate) fn files(
 // gh.pull-request.diff
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct DiffInput {
+    owner: String,
+    repo: String,
+    number: u32,
+    #[serde(default)]
+    name_only: Option<bool>,
+    #[serde(default)]
+    endpoint: Option<String>,
+}
+
 pub(crate) fn diff(
     input: Value,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
-    let input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
+    let input = serde_json::from_value::<DiffInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
@@ -338,8 +503,31 @@ pub(crate) fn diff(
     );
     let response = send_get(send, uri, ACCEPT_DIFF)?;
     let text = core::str::from_utf8(&response.body).map_err(|_| invalid_response())?;
-    let (diff, truncated) = truncate_text(text, MAX_DIFF_OUT_BYTES);
 
+    if input.name_only == Some(true) {
+        // Parsed from the *untruncated* diff text: a file-path list is far smaller than the diff
+        // body it is derived from, so name-only mode should not be limited by the diff-text
+        // truncation boundary below. `diff --git a/<path> b/<path>` headers are emitted for every
+        // changed file, including pure deletions (as `b/dev/null`, a documented limitation) and
+        // renames (where taking the `b/` half yields the current, post-rename path).
+        let mut paths = Vec::new();
+        for line in text.lines() {
+            if let Some(rest) = line.strip_prefix("diff --git a/")
+                && let Some(b_idx) = rest.find(" b/")
+            {
+                paths.push(rest[b_idx + 3..].to_owned());
+            }
+        }
+        let files_truncated = paths.len() > MAX_LIST_ITEMS;
+        paths.truncate(MAX_LIST_ITEMS);
+        return Ok(json!({
+            "number": input.number,
+            "files": paths,
+            "filesTruncated": files_truncated,
+        }));
+    }
+
+    let (diff, truncated) = truncate_text(text, MAX_DIFF_OUT_BYTES);
     Ok(json!({
         "number": input.number,
         "diff": diff,
@@ -398,8 +586,10 @@ pub(crate) fn reviews(
         input.number,
     );
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let has_more = has_next_link(&response);
     let reviews = decode::<Vec<RawReviewItem>>(&response.body)?;
+    // See the identical comment in `list()`: `MAX_PER_PAGE` (100) exceeds `MAX_LIST_ITEMS` (50),
+    // so a single request can return more raw rows than this capability ever projects.
+    let has_more = has_next_link(&response) || reviews.len() > MAX_LIST_ITEMS;
 
     let items = reviews
         .into_iter()
@@ -693,6 +883,71 @@ mod tests {
     }
 
     #[test]
+    fn read_includes_comments_when_requested() {
+        let output = invoke_with(
+            &capability("gh.pull-request.read"),
+            json!({"owner": "octo", "repo": "hello", "number": 7, "comments": true}),
+            scripted(vec![
+                step(
+                    |request| {
+                        assert_eq!(
+                            request.uri,
+                            "https://api.github.com/repos/octo/hello/pulls/7"
+                        );
+                    },
+                    json_response(200, &pull_body(7, "open", false, false)),
+                ),
+                step(
+                    |request| {
+                        assert_eq!(
+                            request.uri,
+                            format!(
+                                "https://api.github.com/repos/octo/hello/issues/7/comments?page=1&per_page={}",
+                                crate::MAX_LIST_ITEMS
+                            )
+                        );
+                    },
+                    json_response(
+                        200,
+                        &json!([
+                            {"id": 11, "user": {"login": "reviewer"}, "body": "looks good", "created_at": "2026-08-03T00:00:00Z"},
+                        ]),
+                    ),
+                ),
+            ]),
+        )
+        .expect("read succeeds");
+
+        assert_eq!(output["recentComments"][0]["commentId"], 11);
+        assert_eq!(output["recentComments"][0]["author"], "reviewer");
+        assert_eq!(output["recentComments"][0]["body"], "looks good");
+        assert_eq!(output["recentCommentsTruncated"], false);
+    }
+
+    #[test]
+    fn read_does_not_fetch_comments_unless_requested() {
+        for input in [
+            json!({"owner": "octo", "repo": "hello", "number": 7}),
+            json!({"owner": "octo", "repo": "hello", "number": 7, "comments": false}),
+        ] {
+            // Exactly one scripted step: a second HTTP call here would panic on "unexpected extra
+            // HTTP request", which is exactly the assertion that comments were not fetched.
+            let output = invoke_with(
+                &capability("gh.pull-request.read"),
+                input,
+                scripted(vec![step(
+                    |_| {},
+                    json_response(200, &pull_body(7, "open", false, false)),
+                )]),
+            )
+            .expect("read succeeds");
+
+            assert!(output.get("recentComments").is_none());
+            assert!(output.get("recentCommentsTruncated").is_none());
+        }
+    }
+
+    #[test]
     fn list_paginates_and_reports_has_more_from_the_link_header() {
         let output = invoke_with(
             &capability("gh.pull-request.list"),
@@ -734,7 +989,7 @@ mod tests {
                 |request| {
                     assert_eq!(
                         request.uri,
-                        "https://api.github.com/repos/octo/hello/pulls?state=open&page=1&per_page=20"
+                        "https://api.github.com/repos/octo/hello/pulls?state=open&page=1&per_page=30"
                     );
                 },
                 json_response(200, &json!([pull_body(1, "open", false, false), other])),
@@ -746,6 +1001,119 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0]["number"], 1);
         assert_eq!(output["hasMore"], false);
+    }
+
+    #[test]
+    fn list_sends_base_and_head_as_rest_query_params() {
+        let output = invoke_with(
+            &capability("gh.pull-request.list"),
+            json!({
+                "owner": "octo",
+                "repo": "hello",
+                "base": "main",
+                "head": "feature/x",
+            }),
+            scripted(vec![step(
+                |request| {
+                    assert_eq!(
+                        request.uri,
+                        "https://api.github.com/repos/octo/hello/pulls?state=open&page=1&per_page=30&base=main&head=octo%3Afeature%2Fx"
+                    );
+                },
+                json_response(200, &json!([pull_body(1, "open", false, false)])),
+            )]),
+        )
+        .expect("list succeeds");
+
+        assert_eq!(output["pullRequests"].as_array().expect("items").len(), 1);
+    }
+
+    #[test]
+    fn list_filters_by_assignee_labels_and_draft_after_pagination() {
+        let mut matching = pull_body(1, "open", true, false);
+        matching["assignees"] = json!([{"login": "reviewer"}]);
+        matching["labels"] = json!([{"name": "bug"}, {"name": "p1"}]);
+
+        let mut wrong_assignee = pull_body(2, "open", true, false);
+        wrong_assignee["assignees"] = json!([{"login": "someone-else"}]);
+        wrong_assignee["labels"] = json!([{"name": "bug"}, {"name": "p1"}]);
+
+        let mut missing_label = pull_body(3, "open", true, false);
+        missing_label["assignees"] = json!([{"login": "reviewer"}]);
+        missing_label["labels"] = json!([{"name": "bug"}]);
+
+        let mut not_draft = pull_body(4, "open", false, false);
+        not_draft["assignees"] = json!([{"login": "reviewer"}]);
+        not_draft["labels"] = json!([{"name": "bug"}, {"name": "p1"}]);
+
+        let output = invoke_with(
+            &capability("gh.pull-request.list"),
+            json!({
+                "owner": "octo",
+                "repo": "hello",
+                "assignee": "REVIEWER",
+                "labels": ["bug", "P1"],
+                "draft": true,
+            }),
+            scripted(vec![step(
+                |_| {},
+                json_response(
+                    200,
+                    &json!([matching, wrong_assignee, missing_label, not_draft]),
+                ),
+            )]),
+        )
+        .expect("list succeeds");
+
+        let items = output["pullRequests"].as_array().expect("items");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["number"], 1);
+    }
+
+    #[test]
+    fn list_requests_closed_for_merged_state_and_filters_on_merged_at() {
+        let mut merged = pull_body(1, "closed", false, true);
+        merged["merged_at"] = json!("2026-08-05T00:00:00Z");
+        let mut closed_not_merged = pull_body(2, "closed", false, false);
+        closed_not_merged["merged_at"] = Value::Null;
+
+        let output = invoke_with(
+            &capability("gh.pull-request.list"),
+            json!({"owner": "octo", "repo": "hello", "state": "merged"}),
+            scripted(vec![step(
+                |request| {
+                    assert_eq!(
+                        request.uri,
+                        "https://api.github.com/repos/octo/hello/pulls?state=closed&page=1&per_page=30"
+                    );
+                },
+                json_response(200, &json!([merged, closed_not_merged])),
+            )]),
+        )
+        .expect("list succeeds");
+
+        let items = output["pullRequests"].as_array().expect("items");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["number"], 1);
+    }
+
+    #[test]
+    fn list_reports_has_more_when_the_raw_page_exceeds_max_list_items() {
+        let pulls: Vec<Value> = (1..=(crate::MAX_LIST_ITEMS as u32 + 1))
+            .map(|number| pull_body(number, "open", false, false))
+            .collect();
+        let output = invoke_with(
+            &capability("gh.pull-request.list"),
+            json!({"owner": "octo", "repo": "hello", "perPage": 100}),
+            scripted(vec![step(|_| {}, json_response(200, &json!(pulls)))]),
+        )
+        .expect("list succeeds");
+
+        assert_eq!(output["hasMore"], true);
+        assert_eq!(
+            output["pullRequests"].as_array().expect("items").len(),
+            crate::MAX_LIST_ITEMS
+        );
     }
 
     #[test]
@@ -826,6 +1194,45 @@ mod tests {
 
         assert_eq!(output["diff"], "diff --git a/x b/x\n");
         assert_eq!(output["diffTruncated"], false);
+    }
+
+    #[test]
+    fn diff_name_only_extracts_changed_file_paths() {
+        let diff_text = concat!(
+            "diff --git a/src/lib.rs b/src/lib.rs\n",
+            "index 000..111 100644\n",
+            "--- a/src/lib.rs\n",
+            "+++ b/src/lib.rs\n",
+            "@@ -1 +1 @@\n",
+            "-old\n",
+            "+new\n",
+            "diff --git a/README.md b/README.md\n",
+            "index 000..111 100644\n",
+            "--- a/README.md\n",
+            "+++ b/README.md\n",
+            "@@ -1 +1 @@\n",
+            "-old\n",
+            "+new\n",
+        );
+        let output = invoke_with(
+            &capability("gh.pull-request.diff"),
+            json!({"owner": "octo", "repo": "hello", "number": 7, "nameOnly": true}),
+            scripted(vec![step(
+                |request| {
+                    assert_eq!(accept_of(request), b"application/vnd.github.diff");
+                },
+                Ok(dekopon_provider_http::Response {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: diff_text.as_bytes().to_vec(),
+                }),
+            )]),
+        )
+        .expect("name-only diff succeeds");
+
+        assert_eq!(output["files"], json!(["src/lib.rs", "README.md"]));
+        assert_eq!(output["filesTruncated"], false);
+        assert!(output.get("diff").is_none());
     }
 
     #[test]

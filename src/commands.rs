@@ -24,7 +24,7 @@ use dekopon_provider_sdk::clap::{self, Arg, ArgAction, ArgGroup, ArgMatches, Com
 use dekopon_provider_sdk::{CommandInvocation, CommandRun, ProviderError, cli};
 use serde_json::{Map, Value};
 
-use crate::ids;
+use crate::{MAX_NUMBER, MAX_PAGE, MAX_PER_PAGE, ids};
 
 /// Why `gh api` does not exist here, said once and reachable from `gh --help`.
 const API_REFUSAL: &str = "gh: `gh api` is not available: raw API passthrough would bypass \
@@ -62,17 +62,60 @@ fn usage(message: impl Into<String>) -> ProviderError {
 }
 
 /// Flags real `gh` accepts that this command refuses by name, with the reason.
+///
+/// This table is checked against the *whole* argv before subcommand parsing, so an entry here must
+/// mean the same thing on every subcommand that could carry it — never add a flag whose short form
+/// collides with a different, legitimately-wired flag elsewhere in the tree (e.g. `-t` is `gh pr
+/// merge --subject` as well as `gh pr view --template`; only the long spelling of `--template` is
+/// safe to reject globally, the short form falls through to clap's own per-subcommand error).
 const REJECTED_FLAGS: &[(&str, &str)] = &[
     ("--web", "there is no browser to open"),
+    ("-w", "there is no browser to open"),
     (
         "--json",
         "output is always a structured JSON value already; filter it with the jq builtin",
     ),
     ("--jq", "pipe the output to the jq builtin instead"),
+    ("-q", "pipe the output to the jq builtin instead"),
     ("--template", "format the JSON output with jq instead"),
     ("--checkout", "there is no working tree to check out into"),
     ("--editor", "there is no editor; pass text with --body"),
     ("--fill", "there is no commit context to fill from"),
+    (
+        "--branch",
+        "gh.repo.read returns metadata only (default branch, visibility, flags); there is no \
+         README or branch-scoped content to select here",
+    ),
+    (
+        "--search",
+        "free-text search isn't supported; combine --state, --author, --assignee, --label, \
+         --base, --head, or --draft instead",
+    ),
+    (
+        "--admin",
+        "administrator bypass has no REST equivalent; this merge capability was never scoped to \
+         override required checks or reviews",
+    ),
+    (
+        "--auto",
+        "GitHub's auto-merge-when-ready is set only through a GraphQL mutation this provider \
+         does not call",
+    ),
+    (
+        "--disable-auto",
+        "GitHub's auto-merge-when-ready is set only through a GraphQL mutation this provider \
+         does not call",
+    ),
+    (
+        "--delete-last",
+        "there is no way to identify \"your last comment\" from this guest, and no delete \
+         capability; use gh.issue-comments.read to find and review it instead",
+    ),
+    (
+        "--edit-last",
+        "there is no edit capability; accepting this silently would risk posting a new comment \
+         where an edit was requested",
+    ),
 ];
 
 /// Refuses a flag whose whole purpose is to change what the output is, naming the alternative.
@@ -207,23 +250,71 @@ fn pull_requests() -> Command {
                 .arg(repo_arg(true))
                 .arg(
                     Arg::new("state")
+                        .short('s')
                         .long("state")
                         .value_name("STATE")
-                        .help("open, closed, or all"),
+                        .value_parser(["open", "closed", "merged", "all"])
+                        .help("Filter by state; defaults to open. merged is requested as closed, then filtered locally"),
                 )
                 .arg(
                     Arg::new("author")
+                        .short('A')
                         .long("author")
                         .value_name("LOGIN")
-                        .help("Login filter applied to the fetched page, after pagination"),
+                        .help("Filter by author; applied to the fetched page, after pagination"),
                 )
+                .arg(
+                    Arg::new("assignee")
+                        .short('a')
+                        .long("assignee")
+                        .value_name("LOGIN")
+                        .help("Filter by assignee; applied to the fetched page, after pagination"),
+                )
+                .arg(
+                    Arg::new("base")
+                        .short('B')
+                        .long("base")
+                        .value_name("BRANCH")
+                        .help("Filter by base branch"),
+                )
+                .arg(
+                    Arg::new("head")
+                        .short('H')
+                        .long("head")
+                        .value_name("BRANCH")
+                        .help("Filter by head branch (bare branch, not owner:branch)"),
+                )
+                .arg(
+                    Arg::new("label")
+                        .short('l')
+                        .long("label")
+                        .value_name("NAME")
+                        .action(ArgAction::Append)
+                        .help("Filter requiring this label; repeat for more (all must match), applied after pagination"),
+                )
+                .arg(
+                    Arg::new("draft")
+                        .short('d')
+                        .long("draft")
+                        .action(ArgAction::SetTrue)
+                        .help("Filter by draft state; applied to the fetched page, after pagination"),
+                )
+                .arg(noop_value("app", None, "STRING", "Filter by GitHub App author"))
+                .arg(limit_arg())
                 .args(paging()),
         )
         .subcommand(
             Command::new("view")
                 .about("Read one pull request's metadata, state, and head/base")
                 .arg(number_arg("Pull-request number"))
-                .arg(repo_arg(true)),
+                .arg(repo_arg(true))
+                .arg(
+                    Arg::new("comments")
+                        .short('c')
+                        .long("comments")
+                        .action(ArgAction::SetTrue)
+                        .help("Include a bounded page of the pull request's conversation comments"),
+                ),
         )
         .subcommand(
             Command::new("files")
@@ -242,7 +333,31 @@ fn pull_requests() -> Command {
             Command::new("diff")
                 .about("Read one pull request's unified diff, truncated with a marker")
                 .arg(number_arg("Pull-request number"))
-                .arg(repo_arg(true)),
+                .arg(repo_arg(true))
+                .arg(
+                    Arg::new("name-only")
+                        .long("name-only")
+                        .action(ArgAction::SetTrue)
+                        .help("Display only the changed file paths instead of the diff text"),
+                )
+                .arg(noop_flag("patch", None, "Display diff in patch format"))
+                .arg(noop_value(
+                    "color",
+                    None,
+                    "WHEN",
+                    "Use color in diff output: {always|never|auto}",
+                ))
+                .arg(noop_value(
+                    "exclude",
+                    Some('e'),
+                    "PATTERN",
+                    "Exclude files matching glob patterns from the diff",
+                ))
+                .arg(noop_flag(
+                    "allow-escape-sequences",
+                    None,
+                    "Allow printing terminal escape sequences",
+                )),
         )
         // `status` is the primary spelling; `checks` is visible because real `gh` uses it for the
         // same CI-status question. Both dispatch to the identical bounded capability.
@@ -251,7 +366,28 @@ fn pull_requests() -> Command {
                 .visible_alias("checks")
                 .about("Read the head's Actions workflow runs and legacy commit statuses")
                 .arg(number_arg("Pull-request number"))
-                .arg(repo_arg(true)),
+                .arg(repo_arg(true))
+                .arg(noop_flag(
+                    "required",
+                    None,
+                    "Only show checks that are required",
+                ))
+                .arg(noop_flag(
+                    "watch",
+                    None,
+                    "Watch checks until they finish",
+                ))
+                .arg(noop_flag(
+                    "fail-fast",
+                    None,
+                    "Exit watch mode on first check failure",
+                ))
+                .arg(noop_value(
+                    "interval",
+                    Some('i'),
+                    "SECONDS",
+                    "Refresh interval in seconds in watch mode",
+                )),
         )
         .subcommand(
             Command::new("reviews")
@@ -265,10 +401,11 @@ fn pull_requests() -> Command {
                 .about("Submit a review pinned to the verified head SHA")
                 .arg(number_arg("Pull-request number"))
                 .arg(repo_arg(true))
-                .arg(event_flag("approve", "Submit an APPROVE review"))
-                .arg(event_flag("comment", "Submit a COMMENT review"))
+                .arg(event_flag("approve", 'a', "Submit an APPROVE review"))
+                .arg(event_flag("comment", 'c', "Submit a COMMENT review"))
                 .arg(event_flag(
                     "request-changes",
+                    'r',
                     "Submit a REQUEST_CHANGES review",
                 ))
                 .group(
@@ -284,10 +421,29 @@ fn pull_requests() -> Command {
                 .about("Merge one pull request, pinned to the verified head SHA")
                 .arg(number_arg("Pull-request number"))
                 .arg(repo_arg(true))
-                .arg(event_flag("merge", "Merge with a merge commit"))
-                .arg(event_flag("squash", "Squash and merge"))
-                .arg(event_flag("rebase", "Rebase and merge"))
+                .arg(event_flag("merge", 'm', "Merge with a merge commit"))
+                .arg(event_flag("squash", 's', "Squash and merge"))
+                .arg(event_flag("rebase", 'r', "Rebase and merge"))
                 .group(ArgGroup::new("method").args(["merge", "squash", "rebase"]))
+                .args(merge_body_args())
+                .arg(
+                    Arg::new("subject")
+                        .short('t')
+                        .long("subject")
+                        .value_name("TEXT")
+                        .help("Subject text for the merge commit"),
+                )
+                .arg(noop_value(
+                    "author-email",
+                    Some('A'),
+                    "TEXT",
+                    "Email text for merge commit author",
+                ))
+                .arg(noop_flag(
+                    "delete-branch",
+                    Some('d'),
+                    "Delete the local and remote branch after merge",
+                ))
                 .arg(expected_head_sha()),
         )
 }
@@ -300,7 +456,14 @@ fn issues() -> Command {
             Command::new("view")
                 .about("Read one issue with a bounded body")
                 .arg(number_arg("Issue number"))
-                .arg(repo_arg(true)),
+                .arg(repo_arg(true))
+                .arg(
+                    Arg::new("comments")
+                        .short('c')
+                        .long("comments")
+                        .action(ArgAction::SetTrue)
+                        .help("Include a bounded page of the issue's comments"),
+                ),
         )
         .subcommand(
             Command::new("list")
@@ -308,10 +471,60 @@ fn issues() -> Command {
                 .arg(repo_arg(true))
                 .arg(
                     Arg::new("state")
+                        .short('s')
                         .long("state")
                         .value_name("STATE")
-                        .help("open, closed, or all"),
+                        .value_parser(["open", "closed", "all"])
+                        .help("Filter by state; defaults to open"),
                 )
+                .arg(
+                    Arg::new("author")
+                        .short('A')
+                        .long("author")
+                        .value_name("LOGIN")
+                        .help("Filter by author"),
+                )
+                .arg(
+                    Arg::new("assignee")
+                        .short('a')
+                        .long("assignee")
+                        .value_name("LOGIN")
+                        .help("Filter by assignee"),
+                )
+                .arg(
+                    Arg::new("label")
+                        .short('l')
+                        .long("label")
+                        .value_name("NAME")
+                        .action(ArgAction::Append)
+                        .help("Filter requiring this label; repeat for more (all must match)"),
+                )
+                .arg(
+                    Arg::new("milestone")
+                        .short('m')
+                        .long("milestone")
+                        .value_name("NUMBER")
+                        .help("Filter by milestone number, or * or none; a title is not supported"),
+                )
+                .arg(
+                    Arg::new("mention")
+                        .long("mention")
+                        .value_name("LOGIN")
+                        .help("Filter by mentioned login"),
+                )
+                .arg(
+                    Arg::new("type")
+                        .long("type")
+                        .value_name("NAME")
+                        .help("Filter by issue type name, or * or none"),
+                )
+                .arg(noop_value(
+                    "app",
+                    None,
+                    "STRING",
+                    "Filter by GitHub App author",
+                ))
+                .arg(limit_arg())
                 .args(paging()),
         )
         .subcommand(
@@ -326,7 +539,23 @@ fn issues() -> Command {
                 .about("Post one comment on an issue or pull request")
                 .arg(number_arg("Issue or pull-request number"))
                 .arg(repo_arg(true))
-                .args(body()),
+                .args(body())
+                .arg(noop_value(
+                    "attach",
+                    None,
+                    "FILE",
+                    "Attach an image or video file, in '<file>#<alt text>' format",
+                ))
+                .arg(noop_flag(
+                    "create-if-none",
+                    None,
+                    "Create a new comment if no comments are found (used only with --edit-last)",
+                ))
+                .arg(noop_flag(
+                    "yes",
+                    None,
+                    "Skip the delete confirmation prompt when --delete-last is provided",
+                )),
         )
 }
 
@@ -343,31 +572,60 @@ fn repo_arg(required: bool) -> Arg {
         .help("Repository to act on; there is no working tree to infer one from")
 }
 
-/// The single positional number, refused below 1 by the parser rather than by the capability.
+/// The single positional number, bounded on both ends by the parser rather than by the capability,
+/// so an out-of-range value is a usage error naming the bound instead of a native `invalid-input`.
 fn number_arg(help: &'static str) -> Arg {
     Arg::new("number")
         .value_name("NUMBER")
         .required(true)
-        .value_parser(clap::value_parser!(u64).range(1..))
+        .value_parser(clap::value_parser!(u64).range(1..=u64::from(MAX_NUMBER)))
         .help(help)
 }
 
+/// `--page`/`--per-page`, this provider's own low-level pagination knob (real `gh` has neither; it
+/// uses `-L/--limit`, added separately per list-shaped subcommand). Both bounds are enforced here,
+/// at the clap layer, so a value outside them is a usage error naming the flag and the bound —
+/// e.g. `error: invalid value '150' for '--per-page <N>': 150 is not in 1..=100` — rather than a
+/// native `invalid-input` a model has no way to predict from `--help` text alone.
 fn paging() -> [Arg; 2] {
     [
         Arg::new("page")
             .long("page")
             .value_name("N")
-            .value_parser(clap::value_parser!(u64))
-            .help("Page number"),
+            .value_parser(clap::value_parser!(u32).range(1..=i64::from(MAX_PAGE)))
+            .help(format!("Page number (1-{MAX_PAGE})")),
         Arg::new("per-page")
             .long("per-page")
             .value_name("N")
-            .value_parser(clap::value_parser!(u64))
-            .help("Items per page"),
+            .value_parser(clap::value_parser!(u32).range(1..=i64::from(MAX_PER_PAGE)))
+            .help(format!("Items per page (1-{MAX_PER_PAGE})")),
     ]
 }
 
-/// `--body TEXT` or `--body-file -`, the one argument whose value may be piped in.
+/// `-L/--limit`, gh's own spelling for "how many items to fetch," mapped onto the identical
+/// `perPage` capability field `--per-page` fills. `conflicts_with("per-page")` means at most one of
+/// the two ever sets it, so there is no silent-precedence question about which wins.
+///
+/// Unlike real `gh`, which loops multiple REST pages internally to gather up to `--limit` items,
+/// this provider issues exactly one HTTP request per invocation, so the effective ceiling is the
+/// same `MAX_PER_PAGE` bound `--per-page` is held to — named here too, so a caller who reaches for
+/// gh's own default expectation is not surprised by a silently smaller result.
+fn limit_arg() -> Arg {
+    Arg::new("limit")
+        .short('L')
+        .long("limit")
+        .value_name("N")
+        .value_parser(clap::value_parser!(u32).range(1..=i64::from(MAX_PER_PAGE)))
+        .conflicts_with("per-page")
+        .help(format!(
+            "Maximum number of items to fetch (1-{MAX_PER_PAGE}); this provider issues one \
+             request per call, unlike gh's own multi-page --limit. Defaults to 30, matching gh."
+        ))
+}
+
+/// `--body TEXT` or `--body-file -`, the one argument whose value may be piped in. Shared by `pr
+/// review` and `issue comment`, matching gh's identical `-b/--body`/`-F/--body-file` spelling on
+/// both.
 fn body() -> [Arg; 2] {
     [
         Arg::new("body")
@@ -376,6 +634,7 @@ fn body() -> [Arg; 2] {
             .value_name("TEXT")
             .help("Body text"),
         Arg::new("body-file")
+            .short('F')
             .long("body-file")
             .value_name("-")
             .value_parser(["-"])
@@ -384,19 +643,73 @@ fn body() -> [Arg; 2] {
     ]
 }
 
+/// `-b/--body` and `-F/--body-file` again, spelled identically by gh on `pr merge` but naming the
+/// merge commit's message rather than a review/comment body — kept as separate arg ids from
+/// [`body`] so `pr merge`'s dispatch never confuses the two.
+fn merge_body_args() -> [Arg; 2] {
+    [
+        Arg::new("merge-body")
+            .short('b')
+            .long("body")
+            .value_name("TEXT")
+            .help("Body text for the merge commit"),
+        Arg::new("merge-body-file")
+            .short('F')
+            .long("body-file")
+            .value_name("-")
+            .value_parser(["-"])
+            .conflicts_with("merge-body")
+            .help("Read the merge commit body from the value piped into the word"),
+    ]
+}
+
+/// The SHA-pin safety flag, under both this provider's own spelling and gh's `pr merge` spelling
+/// for the identical concept (`--match-head-commit`), as a visible alias so either name sets the
+/// same field.
 fn expected_head_sha() -> Arg {
     Arg::new("expected-head-sha")
         .long("expected-head-sha")
+        .visible_alias("match-head-commit")
         .value_name("SHA")
         .help("Refuse unless the pull request's head still matches this SHA")
 }
 
-/// One member of a mutually exclusive group, which is how `gh` spells a choice.
-fn event_flag(name: &'static str, help: &'static str) -> Arg {
+/// One member of a mutually exclusive group, which is how `gh` spells a choice, under gh's own
+/// short flag for it.
+fn event_flag(name: &'static str, short: char, help: &'static str) -> Arg {
     Arg::new(name)
+        .short(short)
         .long(name)
         .action(ArgAction::SetTrue)
         .help(help)
+}
+
+/// A flag this provider accepts for gh compatibility but cannot act on, parsed and discarded.
+fn noop_flag(name: &'static str, short: Option<char>, help: &'static str) -> Arg {
+    let arg = Arg::new(name).long(name).action(ArgAction::SetTrue);
+    let arg = match short {
+        Some(short) => arg.short(short),
+        None => arg,
+    };
+    arg.help(format!("{help} (accepted, ignored)"))
+}
+
+/// A value-taking flag this provider accepts for gh compatibility but cannot act on.
+fn noop_value(
+    name: &'static str,
+    short: Option<char>,
+    value_name: &'static str,
+    help: &'static str,
+) -> Arg {
+    let arg = Arg::new(name)
+        .long(name)
+        .value_name(value_name)
+        .action(ArgAction::Append);
+    let arg = match short {
+        Some(short) => arg.short(short),
+        None => arg,
+    };
+    arg.help(format!("{help} (accepted, ignored)"))
 }
 
 // ---------------------------------------------------------------------------
@@ -423,11 +736,26 @@ fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocatio
             insert_repo(&mut input, matches)?;
             insert_text(&mut input, "state", matches.get_one::<String>("state"));
             insert_text(&mut input, "author", matches.get_one::<String>("author"));
+            insert_text(
+                &mut input,
+                "assignee",
+                matches.get_one::<String>("assignee"),
+            );
+            insert_text(&mut input, "base", matches.get_one::<String>("base"));
+            insert_text(&mut input, "head", matches.get_one::<String>("head"));
+            insert_string_list(&mut input, "labels", matches, "label");
+            if matches.get_flag("draft") {
+                input.insert("draft".to_owned(), Value::Bool(true));
+            }
             insert_paging(&mut input, matches);
+            insert_limit(&mut input, matches);
             ids::PR_LIST
         }
         ("pr", "view") => {
             insert_repo_and_number(&mut input, matches)?;
+            if matches.get_flag("comments") {
+                input.insert("comments".to_owned(), Value::Bool(true));
+            }
             ids::PR_READ
         }
         ("pr", "files") => {
@@ -440,6 +768,9 @@ fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocatio
         }
         ("pr", "diff") => {
             insert_repo_and_number(&mut input, matches)?;
+            if matches.get_flag("name-only") {
+                input.insert("nameOnly".to_owned(), Value::Bool(true));
+            }
             ids::PR_DIFF
         }
         ("pr", "status") => {
@@ -490,6 +821,16 @@ fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocatio
                     input.insert("mergeMethod".to_owned(), Value::String(method.to_owned()));
                 }
             }
+            insert_text(
+                &mut input,
+                "commitTitle",
+                matches.get_one::<String>("subject"),
+            );
+            insert_text(
+                &mut input,
+                "commitMessage",
+                merge_body_text(matches, stdin)?.as_ref(),
+            );
             ids::PR_MERGE
         }
         ("repo", "view") => {
@@ -512,12 +853,30 @@ fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocatio
         }
         ("issue", "view") => {
             insert_repo_and_number(&mut input, matches)?;
+            if matches.get_flag("comments") {
+                input.insert("comments".to_owned(), Value::Bool(true));
+            }
             ids::ISSUE_READ
         }
         ("issue", "list") => {
             insert_repo(&mut input, matches)?;
             insert_text(&mut input, "state", matches.get_one::<String>("state"));
+            insert_text(&mut input, "author", matches.get_one::<String>("author"));
+            insert_text(
+                &mut input,
+                "assignee",
+                matches.get_one::<String>("assignee"),
+            );
+            insert_string_list(&mut input, "labels", matches, "label");
+            insert_text(
+                &mut input,
+                "milestone",
+                matches.get_one::<String>("milestone"),
+            );
+            insert_text(&mut input, "mention", matches.get_one::<String>("mention"));
+            insert_text(&mut input, "type", matches.get_one::<String>("type"));
             insert_paging(&mut input, matches);
+            insert_limit(&mut input, matches);
             ids::ISSUE_LIST
         }
         ("issue", "comments") => {
@@ -621,11 +980,38 @@ fn insert_required_text(input: &mut Map<String, Value>, key: &str, matches: &Arg
 }
 
 fn insert_paging(input: &mut Map<String, Value>, matches: &ArgMatches) {
-    if let Some(page) = matches.get_one::<u64>("page") {
+    if let Some(page) = matches.get_one::<u32>("page") {
         input.insert("page".to_owned(), Value::from(*page));
     }
-    if let Some(per_page) = matches.get_one::<u64>("per-page") {
+    if let Some(per_page) = matches.get_one::<u32>("per-page") {
         input.insert("perPage".to_owned(), Value::from(*per_page));
+    }
+}
+
+/// `-L/--limit`, gh's own spelling, mapped onto the identical `perPage` field `--per-page` fills.
+/// `conflicts_with("per-page")` on the arg means at most one of the two is ever present.
+fn insert_limit(input: &mut Map<String, Value>, matches: &ArgMatches) {
+    if let Some(limit) = matches.get_one::<u32>("limit") {
+        input.insert("perPage".to_owned(), Value::from(*limit));
+    }
+}
+
+/// Collects a repeatable string flag (e.g. `-l/--label`, given more than once) into a JSON array,
+/// omitted entirely when the flag was never given.
+fn insert_string_list(
+    input: &mut Map<String, Value>,
+    key: &str,
+    matches: &ArgMatches,
+    arg_id: &str,
+) {
+    let values = matches
+        .get_many::<String>(arg_id)
+        .into_iter()
+        .flatten()
+        .map(|value| Value::String(value.clone()))
+        .collect::<Vec<_>>();
+    if !values.is_empty() {
+        input.insert(key.to_owned(), Value::Array(values));
     }
 }
 
@@ -645,12 +1031,41 @@ fn body_text(matches: &ArgMatches, stdin: Option<&str>) -> Result<Option<String>
     Ok(None)
 }
 
+/// [`body_text`] again, under `pr merge`'s own `--body`/`--body-file` arg ids ([`merge_body_args`]),
+/// since those name the merge commit message rather than a review or issue comment body.
+fn merge_body_text(
+    matches: &ArgMatches,
+    stdin: Option<&str>,
+) -> Result<Option<String>, ProviderError> {
+    if let Some(text) = matches.get_one::<String>("merge-body") {
+        return Ok(Some(text.clone()));
+    }
+    if matches.get_one::<String>("merge-body-file").is_some() {
+        let piped =
+            stdin.ok_or_else(|| usage("gh: --body-file -: nothing was piped into the word"))?;
+        return Ok(Some(piped.to_owned()));
+    }
+    Ok(None)
+}
+
 /// Splits `owner/repo`, structurally only; deeper grammar checks belong to the provider.
+///
+/// Real `gh` accepts `[HOST/]OWNER/REPO` for GitHub Enterprise hosts; this provider only ever
+/// talks to `api.github.com` (see `endpoint()`), so a three-segment value has nowhere to route to.
+/// It is refused here rather than silently dropping the host segment and routing to a same-named
+/// `owner/repo` on public GitHub under the wrong identity — the message says which limit was hit,
+/// not just that the syntax looked wrong, so a model does not retry with a reformatted host.
 fn parse_repo(value: &str) -> Result<(String, String), ProviderError> {
     let mut parts = value.splitn(2, '/');
     let owner = parts.next().unwrap_or_default();
     let repo = parts.next().unwrap_or_default();
-    if owner.is_empty() || repo.is_empty() || repo.contains('/') {
+    if repo.contains('/') {
+        return Err(usage(format!(
+            "gh: repository {value:?} names a host, but this provider only talks to \
+             api.github.com; use owner/repo"
+        )));
+    }
+    if owner.is_empty() || repo.is_empty() {
         return Err(usage(format!(
             "gh: repository {value:?} must be formatted as owner/repo"
         )));
@@ -931,7 +1346,7 @@ mod tests {
         );
         let (stdout, _, _) = rendered(&["pr", "view", "-h"]);
         assert!(
-            stdout.contains("\nUsage: gh pr view --repo <OWNER/REPO> <NUMBER>\n"),
+            stdout.contains("\nUsage: gh pr view [OPTIONS] --repo <OWNER/REPO> <NUMBER>\n"),
             "{stdout:?}"
         );
     }
@@ -1111,5 +1526,300 @@ mod tests {
     fn rewriting_names_a_capability_without_asserting_any_authority() {
         let (capability, _) = dispatch(&["pr", "review", "7", "-R", "o/r", "--approve"]);
         assert_eq!(capability, "gh.pull-request.approve");
+    }
+
+    // -----------------------------------------------------------------------
+    // gh flag parity additions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn pr_list_wires_base_head_assignee_label_and_draft() {
+        let (capability, input) = dispatch(&[
+            "pr",
+            "list",
+            "-R",
+            "o/r",
+            "-B",
+            "main",
+            "-H",
+            "feature",
+            "-a",
+            "cpetersen",
+            "-l",
+            "bug",
+            "-l",
+            "p1",
+            "-d",
+        ]);
+        assert_eq!(capability, "gh.pull-request.list");
+        assert_eq!(
+            input,
+            json!({
+                "owner": "o", "repo": "r",
+                "base": "main", "head": "feature",
+                "assignee": "cpetersen",
+                "labels": ["bug", "p1"],
+                "draft": true,
+            })
+        );
+    }
+
+    #[test]
+    fn pr_list_state_is_bounded_to_known_values_at_the_clap_layer() {
+        let (_, stderr, status) = rendered(&["pr", "list", "-R", "o/r", "--state", "bogus"]);
+        assert_eq!(status, 2);
+        assert!(stderr.contains("--state"), "{stderr:?}");
+    }
+
+    #[test]
+    fn pr_list_accepts_the_merged_state() {
+        let (capability, input) = dispatch(&["pr", "list", "-R", "o/r", "--state", "merged"]);
+        assert_eq!(capability, "gh.pull-request.list");
+        assert_eq!(input, json!({"owner": "o", "repo": "r", "state": "merged"}));
+    }
+
+    #[test]
+    fn pr_list_limit_maps_onto_per_page_and_conflicts_with_it() {
+        let (_, input) = dispatch(&["pr", "list", "-R", "o/r", "-L", "40"]);
+        assert_eq!(input, json!({"owner": "o", "repo": "r", "perPage": 40}));
+
+        let (_, stderr, status) = rendered(&[
+            "pr",
+            "list",
+            "-R",
+            "o/r",
+            "--limit",
+            "10",
+            "--per-page",
+            "10",
+        ]);
+        assert_eq!(status, 2);
+        assert!(stderr.contains("cannot be used with"), "{stderr:?}");
+    }
+
+    #[test]
+    fn pr_view_wires_comments() {
+        let (_, input) = dispatch(&["pr", "view", "7", "-R", "o/r", "-c"]);
+        assert_eq!(
+            input,
+            json!({"owner": "o", "repo": "r", "number": 7, "comments": true})
+        );
+        // Absent, it is not present at all, not `false` — the capability's own default applies.
+        let (_, input) = dispatch(&["pr", "view", "7", "-R", "o/r"]);
+        assert!(input.get("comments").is_none());
+    }
+
+    #[test]
+    fn pr_diff_wires_name_only() {
+        let (_, input) = dispatch(&["pr", "diff", "7", "-R", "o/r", "--name-only"]);
+        assert_eq!(
+            input,
+            json!({"owner": "o", "repo": "r", "number": 7, "nameOnly": true})
+        );
+    }
+
+    #[test]
+    fn pr_diff_accepts_noop_flags_without_error() {
+        for words in [
+            &["pr", "diff", "7", "-R", "o/r", "--patch"][..],
+            &["pr", "diff", "7", "-R", "o/r", "--color", "never"][..],
+            &["pr", "diff", "7", "-R", "o/r", "-e", "*.lock"][..],
+            &["pr", "diff", "7", "-R", "o/r", "--allow-escape-sequences"][..],
+        ] {
+            let (capability, _) = dispatch(words);
+            assert_eq!(capability, "gh.pull-request.diff", "{words:?}");
+        }
+    }
+
+    #[test]
+    fn pr_checks_accepts_noop_flags_without_error() {
+        for words in [
+            &["pr", "checks", "7", "-R", "o/r", "--required"][..],
+            &["pr", "checks", "7", "-R", "o/r", "--watch"][..],
+            &["pr", "checks", "7", "-R", "o/r", "--fail-fast"][..],
+            &["pr", "checks", "7", "-R", "o/r", "-i", "5"][..],
+        ] {
+            let (capability, _) = dispatch(words);
+            assert_eq!(capability, "gh.pull-request.status", "{words:?}");
+        }
+    }
+
+    #[test]
+    fn pr_merge_wires_subject_body_and_match_head_commit() {
+        let (_, input) = dispatch(&[
+            "pr",
+            "merge",
+            "7",
+            "-R",
+            "o/r",
+            "-t",
+            "Merge #7",
+            "-b",
+            "details",
+            "--match-head-commit",
+            &"a".repeat(40),
+        ]);
+        assert_eq!(
+            input,
+            json!({
+                "owner": "o", "repo": "r", "number": 7,
+                "commitTitle": "Merge #7",
+                "commitMessage": "details",
+                "expectedHeadSha": "a".repeat(40),
+            })
+        );
+    }
+
+    #[test]
+    fn pr_merge_accepts_noop_flags_without_error() {
+        let (capability, input) = dispatch(&[
+            "pr",
+            "merge",
+            "7",
+            "-R",
+            "o/r",
+            "--author-email",
+            "a@example.com",
+            "--delete-branch",
+        ]);
+        assert_eq!(capability, "gh.pull-request.merge");
+        assert!(input.get("authorEmail").is_none());
+        assert!(input.get("deleteBranch").is_none());
+    }
+
+    #[test]
+    fn pr_merge_rejects_admin_auto_and_disable_auto() {
+        for flag in ["--admin", "--auto", "--disable-auto"] {
+            let failure = refuse(&["pr", "merge", "7", "-R", "o/r", flag]);
+            assert_eq!(failure.code(), "usage");
+            assert!(failure.message().contains(flag), "{failure:?}");
+        }
+    }
+
+    #[test]
+    fn issue_view_wires_comments() {
+        let (_, input) = dispatch(&["issue", "view", "9", "-R", "o/r", "-c"]);
+        assert_eq!(
+            input,
+            json!({"owner": "o", "repo": "r", "number": 9, "comments": true})
+        );
+    }
+
+    #[test]
+    fn issue_list_wires_every_new_filter() {
+        let (capability, input) = dispatch(&[
+            "issue",
+            "list",
+            "-R",
+            "o/r",
+            "-A",
+            "cpetersen",
+            "-a",
+            "xavier",
+            "-l",
+            "bug",
+            "-m",
+            "3",
+            "--mention",
+            "someone",
+            "--type",
+            "Bug",
+            "-L",
+            "50",
+        ]);
+        assert_eq!(capability, "gh.issue.list");
+        assert_eq!(
+            input,
+            json!({
+                "owner": "o", "repo": "r",
+                "author": "cpetersen",
+                "assignee": "xavier",
+                "labels": ["bug"],
+                "milestone": "3",
+                "mention": "someone",
+                "type": "Bug",
+                "perPage": 50,
+            })
+        );
+    }
+
+    #[test]
+    fn issue_comment_accepts_noop_flags_without_error() {
+        let (capability, _) = dispatch(&[
+            "issue",
+            "comment",
+            "9",
+            "-R",
+            "o/r",
+            "-b",
+            "done",
+            "--attach",
+            "shot.png#alt text",
+            "--create-if-none",
+            "--yes",
+        ]);
+        assert_eq!(capability, "gh.issue.comment");
+    }
+
+    #[test]
+    fn issue_comment_rejects_delete_last_and_edit_last() {
+        for flag in ["--delete-last", "--edit-last"] {
+            let failure = refuse(&["issue", "comment", "9", "-R", "o/r", flag]);
+            assert_eq!(failure.code(), "usage");
+            assert!(failure.message().contains(flag), "{failure:?}");
+        }
+    }
+
+    #[test]
+    fn repo_view_rejects_branch_by_name() {
+        let failure = refuse(&["repo", "view", "o/r", "--branch", "main"]);
+        assert_eq!(failure.code(), "usage");
+        assert!(failure.message().contains("--branch"), "{failure:?}");
+    }
+
+    #[test]
+    fn search_is_rejected_on_both_list_commands() {
+        let failure = refuse(&["pr", "list", "-R", "o/r", "--search", "is:pr"]);
+        assert!(failure.message().contains("--search"), "{failure:?}");
+        let failure = refuse(&["issue", "list", "-R", "o/r", "--search", "is:issue"]);
+        assert!(failure.message().contains("--search"), "{failure:?}");
+    }
+
+    #[test]
+    fn short_forms_of_web_and_jq_are_rejected_too() {
+        for flag in ["-w", "-q"] {
+            let failure = refuse(&["pr", "view", "7", "-R", "o/r", flag]);
+            assert_eq!(failure.code(), "usage");
+        }
+    }
+
+    #[test]
+    fn a_host_qualified_repository_names_the_real_limit() {
+        let failure = refuse(&["pr", "view", "7", "-R", "ghe.example.com/acme/widgets"]);
+        assert_eq!(failure.code(), "usage");
+        assert!(failure.message().contains("api.github.com"), "{failure:?}");
+    }
+
+    #[test]
+    fn per_page_and_page_bounds_are_named_usage_errors_at_the_clap_layer() {
+        let (_, stderr, status) = rendered(&["pr", "list", "-R", "o/r", "--per-page", "101"]);
+        assert_eq!(status, 2);
+        assert!(stderr.contains("--per-page"), "{stderr:?}");
+        assert!(stderr.contains("101"), "{stderr:?}");
+
+        let (_, stderr, status) = rendered(&["pr", "list", "-R", "o/r", "--page", "51"]);
+        assert_eq!(status, 2);
+        assert!(stderr.contains("--page"), "{stderr:?}");
+
+        let (_, stderr, status) = rendered(&["pr", "list", "-R", "o/r", "-L", "101"]);
+        assert_eq!(status, 2);
+        assert!(stderr.contains("--limit"), "{stderr:?}");
+    }
+
+    #[test]
+    fn a_pull_request_number_above_the_bound_is_a_named_usage_error() {
+        let (_, stderr, status) = rendered(&["pr", "view", "1000001", "-R", "o/r"]);
+        assert_eq!(status, 2);
+        assert!(stderr.contains("NUMBER"), "{stderr:?}");
     }
 }
