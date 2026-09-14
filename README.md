@@ -97,15 +97,16 @@ versions and the build asserts its own reproducibility:
 ```console
 rustup toolchain install 1.98.1 --profile minimal
 cargo install wasm-tools --version 1.259.0 --locked
-./build.sh
+../provider-workflows/build.sh
 ```
 
-`build.sh` is a self-contained port of dekopon's `examples/providers/build-component.sh`, and it
-keeps every mechanism that made the in-tree component reproducible: a `rustc` proxy that
+`build.sh` now lives in [`dekopon-agents/provider-workflows`](https://github.com/dekopon-agents/provider-workflows),
+cloned next to this repository, and is shared across every Dekopon provider: a `rustc` proxy that
 normalizes `-Cmetadata` to a fixed salt (`dekopon-provider-repro-v1`), `--remap-path-prefix` for
 the source root, the Cargo home and the toolchain sysroot, `-Ccodegen-units=1`, and a final scan
 that fails the build if any local path survives into the component. Given the same source and the
-same two pins, it lands on the same bytes on any machine.
+same two pins, it lands on the same bytes on any machine. CI runs the same script as the
+`ci / validate` check.
 
 `cargo test` runs the subcommand table and capability mapping natively; nothing contacts GitHub.
 
