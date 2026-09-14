@@ -35,6 +35,8 @@ ignore = false
 [bans]
 multiple-versions = "allow"
 wildcards = "deny"
+# Workspace-internal path dependencies carry no version (openobserve); that is not a wildcard.
+allow-wildcard-paths = true
 highlight = "simplest-path"
 workspace-default-features = "allow"
 external-default-features = "allow"
