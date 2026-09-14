@@ -38,7 +38,10 @@ reach", and typing it says so.
 
 Flags that would change what a command means — `--json`, `--jq`, `--web`, `--checkout` — are
 rejected by name rather than accepted as no-ops. Output is always a structured JSON value; filter it
-with the shell's `jq` builtin.
+with the shell's `jq` builtin. Every other flag real `gh` accepts on a command word this provider
+exposes is either wired to the underlying capability, defaulted to match gh's own behavior, or
+accepted and documented as a no-op; see [`docs/gh-parity.md`](docs/gh-parity.md) for the full
+per-flag matrix and the reasoning behind each rejection.
 
 ## Capabilities
 
@@ -50,6 +53,17 @@ with the shell's `jq` builtin.
 | `gh.repo.read` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` | read-only |
 | `gh.issue.read` / `.list` / `gh.issue-comments.read` | read-only |
 | `gh.issue.comment` | external-write |
+
+`gh.pull-request.list` and `gh.issue.list` accept an optional `search` field (`gh <area> list
+--search "…"`). It is never forwarded as typed: the query is parsed into bare terms, quoted
+phrases, and `key:value` qualifiers, checked against an allowlist (state, author, assignee, label,
+milestone, and similar narrowing qualifiers — never `repo`/`org`/`user`/`owner`, which could
+repoint the search at a different repository), and rebuilt canonically with this capability's own
+`repo:{owner}/{repo}` and `is:pr`/`is:issue` scope prepended, before it reaches GitHub's search
+endpoint in place of the plain list endpoint. It cannot be combined with this capability's other
+filters — express those as query qualifiers instead. See [`docs/gh-parity.md`](docs/gh-parity.md)
+for the full design and why the validation has to live at the capability layer, not the `gh` argv
+rewrite.
 
 `gh.pull-request.status` reads the pull request's head, then lists GitHub Actions workflow runs and
 legacy commit statuses at that SHA. This deliberately avoids the Checks REST API: GitHub documents

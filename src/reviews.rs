@@ -12,9 +12,10 @@ use serde_json::{Value, json};
 
 use crate::pulls::{RawPull, fetch_pull};
 use crate::{
-    MAX_MESSAGE_OUT_BYTES, RawUser, decode, endpoint, github_json_request, http_failed,
-    invalid_input, invalid_response, login_out, percent_encode, status_error, truncate_text,
-    validate_body, validate_expected_sha, validate_login, validate_number, validate_repo,
+    MAX_COMMIT_TITLE_IN_BYTES, MAX_MESSAGE_OUT_BYTES, RawUser, decode, endpoint,
+    github_json_request, http_failed, invalid_input, invalid_response, login_out, percent_encode,
+    status_error, truncate_text, validate_body, validate_expected_sha, validate_login,
+    validate_number, validate_repo,
 };
 
 #[derive(Debug, Deserialize)]
@@ -39,6 +40,10 @@ struct MergeInput {
     number: u32,
     #[serde(default)]
     merge_method: Option<MergeMethod>,
+    #[serde(default)]
+    commit_title: Option<String>,
+    #[serde(default)]
+    commit_message: Option<String>,
     #[serde(default)]
     expected_head_sha: Option<String>,
     #[serde(default)]
@@ -210,6 +215,14 @@ pub(crate) fn merge(
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
     validate_expected_sha(input.expected_head_sha.as_deref())?;
+    if let Some(title) = input.commit_title.as_deref()
+        && (title.is_empty() || title.len() > MAX_COMMIT_TITLE_IN_BYTES)
+    {
+        return Err(invalid_input());
+    }
+    if let Some(message) = input.commit_message.as_deref() {
+        validate_body(message)?;
+    }
     let merge_method = input.merge_method.unwrap_or(MergeMethod::Merge);
     let endpoint = endpoint(input.endpoint.as_deref())?;
 
@@ -223,10 +236,16 @@ pub(crate) fn merge(
         percent_encode(&input.repo),
         input.number,
     );
-    let body = json!({
+    let mut body = json!({
         "sha": pull.head.sha,
         "merge_method": merge_method.as_str(),
     });
+    if let Some(title) = input.commit_title.as_deref() {
+        body["commit_title"] = Value::String(title.to_owned());
+    }
+    if let Some(message) = input.commit_message.as_deref() {
+        body["commit_message"] = Value::String(message.to_owned());
+    }
     let response =
         send(github_json_request(method::PUT, uri, &body)?).map_err(|_| http_failed())?;
     // GitHub refuses a blocked or conflicting merge with 405, and a stale head with 409. The
@@ -554,5 +573,50 @@ mod tests {
         )
         .expect_err("moved head refuses");
         assert_eq!(error.code(), "head-changed");
+    }
+
+    #[test]
+    fn merge_sends_an_optional_commit_title_and_message() {
+        let output = invoke_with(
+            &capability("gh.pull-request.merge"),
+            json!({
+                "owner": "octo",
+                "repo": "hello",
+                "number": 7,
+                "commitTitle": "Merge #7",
+                "commitMessage": "Squashes three commits.",
+            }),
+            scripted(vec![
+                step(|_| {}, json_response(200, &pull("open", false, false))),
+                step(
+                    |request| {
+                        let body: Value =
+                            serde_json::from_slice(&request.body).expect("body is JSON");
+                        assert_eq!(body["commit_title"], "Merge #7");
+                        assert_eq!(body["commit_message"], "Squashes three commits.");
+                        assert_eq!(body["merge_method"], "merge");
+                    },
+                    json_response(
+                        200,
+                        &json!({"sha": "e".repeat(40), "merged": true, "message": "merged"}),
+                    ),
+                ),
+            ]),
+        )
+        .expect("merge with title/message succeeds");
+        assert_eq!(output["merged"], true);
+    }
+
+    #[test]
+    fn merge_rejects_an_empty_or_oversize_commit_title() {
+        for title in ["", &"x".repeat(crate::MAX_COMMIT_TITLE_IN_BYTES + 1)] {
+            let error = invoke_with(
+                &capability("gh.pull-request.merge"),
+                json!({"owner": "octo", "repo": "hello", "number": 7, "commitTitle": title}),
+                |_| unreachable!("invalid commit title must not call HTTP"),
+            )
+            .expect_err("invalid commit title fails");
+            assert_eq!(error.code(), "invalid-input");
+        }
     }
 }
