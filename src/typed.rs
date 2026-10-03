@@ -10,7 +10,7 @@ use crate::{Gh, error::ProviderError};
 // The established per-capability schemas remain the model-facing contract. Each typed input
 // has its own schema and keeps the existing native validation at the HTTP boundary.
 macro_rules! capability {
-    ($name:ident, $input:ident, $id:expr, $short:expr, $handler:path, $effect:expr, $risk:expr) => {
+    ($name:ident, $input:ident, $id:expr, $short:expr, $description:expr, $handler:path, $effect:expr, $risk:expr) => {
         #[derive(Deserialize, Serialize)]
         #[serde(transparent)]
         pub struct $input(Value);
@@ -19,11 +19,17 @@ macro_rules! capability {
                 stringify!($input).into()
             }
             fn json_schema(_: &mut SchemaGenerator) -> Schema {
-                let schema = crate::capabilities()
+                let mut schema = crate::capabilities()
                     .into_iter()
                     .find(|c| c.id.as_str() == $id)
                     .expect("declared gh capability")
                     .input_schema;
+                if has_piped_body($id) {
+                    schema["properties"][STDIN_BODY_FIELD] = serde_json::json!({
+                        "type": "boolean", "const": true,
+                        "description": "Internal marker for --body-file -; set by command rewrite, not literal body text."
+                    });
+                }
                 serde_json::from_value(schema).expect("valid gh schema")
             }
         }
@@ -31,7 +37,7 @@ macro_rules! capability {
         impl Capability for $name {
             type Provider = Gh;
             const NAME: &'static str = $short;
-            const DESCRIPTION: &'static str = $id;
+            const DESCRIPTION: &'static str = $description;
             const EFFECT: EffectKind = $effect;
             const RISK: RiskLevel = $risk;
             type Input = $input;
@@ -39,7 +45,14 @@ macro_rules! capability {
             type Error = ProviderError;
             fn run(input: Self::Input, http: Http, out: &mut Stdout) -> Result<(), Self::Error> {
                 let mut input = input.0;
-                if input.get("body").and_then(Value::as_str) == Some(STDIN_BODY) {
+                if input.get(STDIN_BODY_FIELD).is_some() {
+                    if !has_piped_body($id)
+                        || input.get(STDIN_BODY_FIELD) != Some(&Value::Bool(true))
+                        || input.get("body").and_then(Value::as_str) != Some(STDIN_BODY)
+                    {
+                        return Err(crate::invalid_input());
+                    }
+                    input.as_object_mut().expect("input is an object").remove(STDIN_BODY_FIELD);
                     let mut reader = provider::stdin().ok_or_else(|| {
                         ProviderError::new(
                             "usage",
@@ -73,15 +86,27 @@ macro_rules! capability {
     };
 }
 
-// Marker is only emitted by the pure argv proposal. A direct caller still needs the same
-// write-capability grant; an explicit body of this value is treated as stdin for that call.
+// Only the internal flag together with this body value requests stdin. A literal body of these
+// bytes, from either argv or a direct invocation, remains literal even when stdin is piped.
 pub(crate) const STDIN_BODY: &str = "\u{0}gh:body-file:-\u{0}";
+pub(crate) const STDIN_BODY_FIELD: &str = "_stdinBody";
+
+fn has_piped_body(id: &str) -> bool {
+    matches!(
+        id,
+        "gh.issue.comment"
+            | "gh.pull-request.approve"
+            | "gh.pull-request.comment"
+            | "gh.pull-request.request-changes"
+    )
+}
 
 capability!(
     ContentRead,
     ContentReadInput,
     "gh.content.read",
     "content.read",
+    "Reads one file or directory listing at a path and optional ref",
     crate::content::read,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -91,6 +116,7 @@ capability!(
     PrListInput,
     "gh.pull-request.list",
     "pull-request.list",
+    "Lists pull requests with optional state and author filters",
     crate::pulls::list,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -100,6 +126,7 @@ capability!(
     PrReadInput,
     "gh.pull-request.read",
     "pull-request.read",
+    "Reads one pull request's metadata, state, and head/base",
     crate::pulls::read,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -109,6 +136,7 @@ capability!(
     PrFilesInput,
     "gh.pull-request.files",
     "pull-request.files",
+    "Lists one pull request's changed files with bounded patches",
     crate::pulls::files,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -118,6 +146,7 @@ capability!(
     PrDiffInput,
     "gh.pull-request.diff",
     "pull-request.diff",
+    "Reads one pull request's unified diff, truncated with a marker",
     crate::pulls::diff,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -127,6 +156,7 @@ capability!(
     PrReviewsInput,
     "gh.pull-request.reviews",
     "pull-request.reviews",
+    "Lists existing reviews on one pull request",
     crate::pulls::reviews,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -136,6 +166,7 @@ capability!(
     PrStatusInput,
     "gh.pull-request.status",
     "pull-request.status",
+    "Reads one pull request's head Actions workflow runs and legacy commit statuses",
     crate::pulls::status,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -145,6 +176,7 @@ capability!(
     PrApproveInput,
     "gh.pull-request.approve",
     "pull-request.approve",
+    "Submits an APPROVE review pinned to the verified head SHA",
     crate::reviews::approve,
     EffectKind::ExternalWrite,
     RiskLevel::High
@@ -154,6 +186,7 @@ capability!(
     PrCommentInput,
     "gh.pull-request.comment",
     "pull-request.comment",
+    "Submits a COMMENT review pinned to the verified head SHA",
     crate::reviews::comment,
     EffectKind::ExternalWrite,
     RiskLevel::Medium
@@ -163,6 +196,7 @@ capability!(
     PrRequestChangesInput,
     "gh.pull-request.request-changes",
     "pull-request.request-changes",
+    "Submits a REQUEST_CHANGES review pinned to the verified head SHA",
     crate::reviews::request_changes,
     EffectKind::ExternalWrite,
     RiskLevel::Medium
@@ -172,6 +206,7 @@ capability!(
     PrMergeInput,
     "gh.pull-request.merge",
     "pull-request.merge",
+    "Merges one pull request, pinned to the verified head SHA",
     crate::reviews::merge,
     EffectKind::ExternalWrite,
     RiskLevel::High
@@ -181,6 +216,7 @@ capability!(
     RepoReadInput,
     "gh.repo.read",
     "repo.read",
+    "Reads repository metadata: default branch, visibility, and flags",
     crate::repos::repo,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -190,6 +226,7 @@ capability!(
     BranchReadInput,
     "gh.branch.read",
     "branch.read",
+    "Reads one branch's head SHA and protection flag",
     crate::repos::branch,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -199,6 +236,7 @@ capability!(
     CommitReadInput,
     "gh.commit.read",
     "commit.read",
+    "Reads one commit's message, author, stats, and bounded file list",
     crate::repos::commit,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -208,6 +246,7 @@ capability!(
     UserReadInput,
     "gh.user.read",
     "user.read",
+    "Reads one user's public profile",
     crate::repos::user,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -217,6 +256,7 @@ capability!(
     IssueReadInput,
     "gh.issue.read",
     "issue.read",
+    "Reads one issue with a bounded body",
     crate::issues::read,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -226,6 +266,7 @@ capability!(
     IssueListInput,
     "gh.issue.list",
     "issue.list",
+    "Lists issues (GitHub includes pull requests; each item is flagged)",
     crate::issues::list,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -235,6 +276,7 @@ capability!(
     IssueCommentsReadInput,
     "gh.issue-comments.read",
     "issue-comments.read",
+    "Lists comments on one issue or pull request",
     crate::issues::comments,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -244,6 +286,7 @@ capability!(
     IssueCommentInput,
     "gh.issue.comment",
     "issue.comment",
+    "Posts one comment on an issue or pull request",
     crate::issues::comment,
     EffectKind::ExternalWrite,
     RiskLevel::Medium

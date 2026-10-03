@@ -1002,6 +1002,20 @@ mod tests {
     }
 
     #[test]
+    fn typed_manifest_preserves_all_operation_descriptions() {
+        let typed = provider::manifest::<Gh>().expect("typed manifest");
+        for previous in super::capabilities() {
+            let current = typed
+                .capabilities
+                .iter()
+                .find(|capability| capability.id == previous.id)
+                .expect("every prior capability remains declared");
+            assert_eq!(current.description, previous.description, "{}", previous.id);
+            assert_ne!(current.description, previous.id.as_str());
+        }
+    }
+
+    #[test]
     fn endpoints_fail_closed() {
         assert_eq!(
             endpoint(None).expect("default endpoint is valid"),

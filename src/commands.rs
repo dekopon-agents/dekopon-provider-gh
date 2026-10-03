@@ -502,6 +502,7 @@ fn dispatch(
                     "body",
                     body_text(matches, stdin_piped)?.as_ref(),
                 );
+                mark_piped_body(&mut input, matches);
                 ids::PR_APPROVE
             } else {
                 let event = if matches.get_flag("comment") {
@@ -512,6 +513,7 @@ fn dispatch(
                 let text = body_text(matches, stdin_piped)?
                     .ok_or_else(|| usage(format!("gh: {event} requires --body text")))?;
                 input.insert("body".to_owned(), Value::String(text));
+                mark_piped_body(&mut input, matches);
                 if matches.get_flag("comment") {
                     ids::PR_COMMENT
                 } else {
@@ -571,6 +573,7 @@ fn dispatch(
             let text = body_text(matches, stdin_piped)?
                 .ok_or_else(|| usage(format!("gh: {command} requires --body text")))?;
             input.insert("body".to_owned(), Value::String(text));
+            mark_piped_body(&mut input, matches);
             ids::ISSUE_COMMENT
         }
         ("branch", "view") => {
@@ -661,6 +664,12 @@ fn insert_paging(input: &mut Map<String, Value>, matches: &ArgMatches) {
     }
     if let Some(per_page) = matches.get_one::<u64>("per-page") {
         input.insert("perPage".to_owned(), Value::from(*per_page));
+    }
+}
+
+fn mark_piped_body(input: &mut Map<String, Value>, matches: &ArgMatches) {
+    if matches.get_one::<String>("body-file").is_some() {
+        input.insert(crate::typed::STDIN_BODY_FIELD.to_owned(), Value::Bool(true));
     }
 }
 
@@ -1099,7 +1108,7 @@ mod tests {
             comment,
             CommandRun::proposal(
                 "gh.issue.comment".parse().expect("static capability"),
-                json!({"owner": "o", "repo": "r", "number": 9, "body": crate::typed::STDIN_BODY})
+                json!({"owner": "o", "repo": "r", "number": 9, "body": crate::typed::STDIN_BODY, "_stdinBody": true})
             )
         );
 
@@ -1123,7 +1132,7 @@ mod tests {
                 "gh.pull-request.request-changes"
                     .parse()
                     .expect("static capability"),
-                json!({"owner": "o", "repo": "r", "number": 7, "body": crate::typed::STDIN_BODY})
+                json!({"owner": "o", "repo": "r", "number": 7, "body": crate::typed::STDIN_BODY, "_stdinBody": true})
             )
         );
 

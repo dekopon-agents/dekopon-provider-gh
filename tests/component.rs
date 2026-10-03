@@ -36,6 +36,21 @@ fn manifest_keeps_read_and_write_grants_independent() {
     );
     assert!((<Http as Needs>::IMPORTS).contains(ImportSet::HTTP));
     assert_eq!(<Gh as Provider>::COMMAND_WORDS, &["gh"]);
+    for capability in &manifest.capabilities {
+        let marker = capability.input_schema["properties"].get("_stdinBody");
+        if [
+            "gh.issue.comment",
+            "gh.pull-request.approve",
+            "gh.pull-request.comment",
+            "gh.pull-request.request-changes",
+        ]
+        .contains(&capability.id.as_str())
+        {
+            assert_eq!(marker.expect("piped body marker")["const"], true);
+        } else {
+            assert!(marker.is_none(), "{} cannot read piped body", capability.id);
+        }
+    }
 }
 
 #[test]
@@ -58,6 +73,7 @@ fn body_file_is_only_read_during_authorized_invocation() {
     };
     assert_eq!(capability.as_str(), "gh.issue.comment");
     assert_ne!(input["body"], "posted at invoke");
+    assert_eq!(input["_stdinBody"], true);
     let no_pipe = provider::command::<Gh>(&words, false);
     assert!(matches!(no_pipe, CommandRunOutcome::Failed { .. }));
     let native = Native::<Gh>::new().stdin(b"posted at invoke".to_vec()).http(HttpScript::new(
@@ -76,10 +92,63 @@ fn body_file_is_only_read_during_authorized_invocation() {
             .iter()
             .any(|h| h.name.eq_ignore_ascii_case("authorization"))
     );
+    let mismatched = Native::<Gh>::new();
+    let bad_marker =
+        json!({"owner":"octo","repo":"hello","number":9,"body":"literal","_stdinBody":true});
+    let refused = mismatched.call("gh.issue.comment", &bad_marker.to_string());
+    assert_ne!(refused.status, 0);
+    assert!(mismatched.requests().is_empty());
     let too_large = Native::<Gh>::new().stdin(vec![b'a'; 4097]);
     let refused = too_large.call(capability.as_str(), &input.to_string());
     assert_ne!(refused.status, 0);
     assert!(too_large.requests().is_empty());
+}
+
+#[test]
+fn marker_bytes_in_literal_and_direct_bodies_never_read_stdin() {
+    let marker = "\u{0}gh:body-file:-\u{0}";
+    let args = [
+        "issue",
+        "comment",
+        "9",
+        "-R",
+        "octo/hello",
+        "--body",
+        marker,
+    ];
+    let CommandRunOutcome::Proposed { input: literal, .. } =
+        provider::command::<Gh>(&args.map(str::to_owned), true)
+    else {
+        panic!("literal body proposes")
+    };
+    assert_eq!(literal["body"], marker);
+    assert!(literal.get("_stdinBody").is_none());
+    let direct = json!({"owner":"octo","repo":"hello","number":9,"body":marker});
+    let reply = Response {
+        status: 201,
+        headers: vec![],
+        body: br#"{"id":1,"body":"literal","user":{"login":"octo"},"created_at":"2026-01-01T00:00:00Z"}"#.to_vec(),
+    };
+    for (name, input, stdin) in [
+        (
+            "literal --body",
+            literal,
+            Some(b"different piped bytes".to_vec()),
+        ),
+        ("direct invocation", direct, None),
+    ] {
+        let mut native =
+            Native::<Gh>::new().http(HttpScript::new("api.github.com", "POST", reply.clone()));
+        if let Some(stdin) = stdin {
+            native = native.stdin(stdin);
+        }
+        let output = native.call("gh.issue.comment", &input.to_string());
+        assert_eq!(output.status, 0, "{name}: {}", output.stderr);
+        let requests = native.requests();
+        assert_eq!(requests.len(), 1, "{name}");
+        let posted: Value = serde_json::from_slice(&requests[0].body).expect("JSON request");
+        assert_eq!(posted["body"], marker, "{name}");
+    }
 }
 
 #[test]
