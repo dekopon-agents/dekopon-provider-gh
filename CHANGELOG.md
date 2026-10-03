@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-03
+
+### Changed
+
+- Move to provider SDK and testkit 0.31.0 with typed stdio streams and brokered HTTP 1.2.0; retain the nineteen GitHub capabilities and their authorization boundaries.
+
 ## [0.5.0] - 2026-09-20
 
 ### Changed
