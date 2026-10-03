@@ -23,20 +23,23 @@
 //! Unlike the workspace crates, this guest cannot `#![forbid(unsafe_code)]`: the generated
 //! component bindings contain `unsafe` by construction. No hand-written code here is unsafe.
 
-use dekopon_provider_http::{Header, HttpError, Request, Response, method};
-use dekopon_provider_sdk::{
-    CapabilityId, CommandRun, EffectKind, Provider, ProviderApiVersion, ProviderCapability,
-    ProviderError, ProviderManifest, RiskLevel,
-};
+use crate::error::ProviderError;
+#[cfg(test)]
+use dekopon_provider_sdk::CapabilityId;
+use dekopon_provider_sdk::provider::{Header, HttpError, Request, Response, method};
+use dekopon_provider_sdk::provider::{Proposal, Provider, Usage};
+use dekopon_provider_sdk::{EffectKind, ProviderCapability, RiskLevel};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-mod commands;
+pub mod commands;
 mod content;
+pub mod error;
 mod issues;
 mod pulls;
 mod repos;
 mod reviews;
+pub mod typed;
 
 const DEFAULT_ENDPOINT: &str = "https://api.github.com";
 const PRODUCTION_HOST: &str = "api.github.com";
@@ -102,37 +105,43 @@ pub(crate) mod ids {
     pub(crate) const ISSUE_COMMENT: &str = "gh.issue.comment";
 }
 
-mod bindings {
-    wit_bindgen::generate!({
-        path: "wit",
-        world: "provider",
-        generate_all,
-        pub_export_macro: true,
-    });
-}
-
-struct Gh;
+pub struct Gh;
 
 impl Provider for Gh {
-    fn manifest() -> ProviderManifest {
-        ProviderManifest {
-            api_version: ProviderApiVersion::V1Alpha1,
-            id: "gh".parse().expect("static provider ID is valid"),
-            description:
-                "Narrow GitHub repository, pull-request, and issue operations over broker HTTP"
-                    .to_owned(),
-            command_words: vec!["gh".to_owned()],
-            capabilities: capabilities(),
-        }
+    const ID: &'static str = "gh";
+    const DESCRIPTION: &'static str =
+        "Narrow GitHub repository, pull-request, and issue operations over broker HTTP";
+    const COMMAND_WORDS: &'static [&'static str] = &["gh"];
+    type Args = commands::GhArgs;
+    type Capabilities = (
+        typed::ContentRead,
+        typed::PrList,
+        typed::PrRead,
+        typed::PrFiles,
+        typed::PrApprove,
+        typed::PrReviews,
+        typed::PrComment,
+        typed::PrRequestChanges,
+        typed::PrDiff,
+        typed::PrStatus,
+        typed::RepoRead,
+        typed::BranchRead,
+        typed::CommitRead,
+        typed::IssueRead,
+        typed::IssueList,
+        typed::IssueCommentsRead,
+        typed::IssueComment,
+        typed::PrMerge,
+        typed::UserRead,
+    );
+    fn propose(args: Self::Args, stdin_piped: bool) -> Result<Proposal<Self>, Usage> {
+        commands::propose(args, stdin_piped)
     }
+}
 
-    fn run_command(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, ProviderError> {
-        commands::run(argv, stdin)
-    }
-
-    fn invoke(capability: &CapabilityId, input: Value) -> Result<Value, ProviderError> {
-        invoke_with(capability, input, dekopon_provider_http::send)
-    }
+#[allow(unsafe_code)]
+mod export {
+    dekopon_provider_sdk::export!(super::Gh);
 }
 
 /// Routes one invocation to its capability implementation.
@@ -141,6 +150,7 @@ impl Provider for Gh {
 /// any network. It is `FnMut` rather than `FnOnce` because the write capabilities perform a
 /// pre-read before their write, and `gh.pull-request.status` reads the pull, Actions workflow runs,
 /// and legacy commit statuses.
+#[cfg(test)]
 fn invoke_with<F>(
     capability: &CapabilityId,
     input: Value,
@@ -823,8 +833,6 @@ fn invalid_response() -> ProviderError {
     ProviderError::new("invalid-response", "endpoint returned an invalid resource")
 }
 
-dekopon_provider_sdk::export_provider_with_cli!(Gh, bindings);
-
 // ---------------------------------------------------------------------------
 // Test support and shared tests
 // ---------------------------------------------------------------------------
@@ -833,7 +841,7 @@ dekopon_provider_sdk::export_provider_with_cli!(Gh, bindings);
 pub(crate) mod testutil {
     use std::collections::VecDeque;
 
-    use dekopon_provider_http::{Header, HttpError, Request, Response};
+    use dekopon_provider_sdk::provider::{Header, HttpError, Request, Response};
     use serde_json::Value;
 
     /// One scripted exchange: assertions to run on the request, then the canned reply.
@@ -930,16 +938,17 @@ pub(crate) mod testutil {
 
 #[cfg(test)]
 mod tests {
-    use dekopon_provider_http::HttpErrorCode;
-    use dekopon_provider_sdk::{EffectKind, Provider, RiskLevel};
+    use dekopon_provider_sdk::provider;
+    use dekopon_provider_sdk::provider::HttpErrorCode;
+    use dekopon_provider_sdk::{EffectKind, RiskLevel};
     use serde_json::json;
 
     use super::testutil::{capability, scripted, step};
-    use super::{Gh, endpoint, invoke_with, truncate_text};
+    use super::{Gh, HttpError, Response, endpoint, invoke_with, truncate_text};
 
     #[test]
     fn manifest_covers_the_full_designed_surface() {
-        let manifest = Gh::manifest();
+        let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
         assert_eq!(manifest.capabilities.len(), 19);
 
@@ -1038,7 +1047,7 @@ mod tests {
             json!({"owner": "octo", "repo": "hello"}),
             scripted(vec![step(
                 |_| {},
-                Err(dekopon_provider_http::HttpError {
+                Err(HttpError {
                     code: HttpErrorCode::Denied,
                     message: "secret internal path and header detail".to_owned(),
                 }),
@@ -1084,7 +1093,7 @@ mod tests {
             &capability("gh.repo.read"),
             json!({"owner": "octo", "repo": "hello"}),
             scripted(vec![step(|_| {}, {
-                Ok(dekopon_provider_http::Response {
+                Ok(Response {
                     status: 200,
                     headers: Vec::new(),
                     body: b"not json".to_vec(),

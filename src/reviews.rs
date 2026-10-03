@@ -5,8 +5,8 @@
 //! an unchanged head converges on the same review or merge state, and a moved head is refused
 //! with `head-changed` instead of silently blessing commits the caller never saw.
 
-use dekopon_provider_http::{HttpError, Request, Response, method};
-use dekopon_provider_sdk::ProviderError;
+use crate::error::ProviderError;
+use dekopon_provider_sdk::provider::{HttpError, Request, Response, method};
 use serde::Deserialize;
 use serde_json::{Value, json};
 

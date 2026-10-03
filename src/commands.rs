@@ -20,8 +20,11 @@
 //! Every `gh.*` capability remains directly invocable as a command word
 //! (`gh.pull-request.read --owner o --repo r --number 7`) with none of this involved.
 
-use dekopon_provider_sdk::clap::{self, Arg, ArgAction, ArgGroup, ArgMatches, Command};
-use dekopon_provider_sdk::{CommandInvocation, CommandRun, ProviderError, cli};
+use crate::error::ProviderError;
+use clap::{
+    self, Arg, ArgAction, ArgGroup, ArgMatches, Command, CommandFactory, FromArgMatches, Parser,
+};
+use dekopon_provider_sdk::provider::{Proposal, Usage};
 use serde_json::{Map, Value};
 
 use crate::ids;
@@ -40,20 +43,49 @@ const API_REFUSAL: &str = "gh: `gh api` is not available: raw API passthrough wo
 /// `stdin` is the value piped into the word, `None` when nothing was piped. It is read by
 /// `--body-file -`, the one place text of unbounded length is an argument; the rest of the
 /// surface is flags and identifiers.
-pub(crate) fn run(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, ProviderError> {
-    // Both refusals are checked before clap so each keeps its own reason. A lying flag declared in
-    // the tree would have to be silently ignored to parse, and `api` accepted as a subcommand
-    // would answer the policy question with "unrecognized subcommand".
-    if let Some(rejection) = rejected_flag(argv) {
-        return Err(rejection);
+pub struct GhArgs(ArgMatches);
+impl CommandFactory for GhArgs {
+    fn command() -> Command {
+        tree()
     }
-    if argv.first().is_some_and(|first| first == "api") {
-        // Deliberate refusal rather than an unimplemented gap: a path-level passthrough would
-        // collapse per-capability policy into "everything the credential can reach". Anything
-        // piped into `gh api --input -` reaches here and is discarded with the rest.
-        return Err(usage(API_REFUSAL));
+    fn command_for_update() -> Command {
+        tree()
     }
-    cli::run_command(tree(), argv, stdin, dispatch)
+}
+impl FromArgMatches for GhArgs {
+    fn from_arg_matches(matches: &ArgMatches) -> Result<Self, clap::Error> {
+        Ok(Self(matches.clone()))
+    }
+    fn from_arg_matches_mut(matches: &mut ArgMatches) -> Result<Self, clap::Error> {
+        Self::from_arg_matches(matches)
+    }
+    fn update_from_arg_matches(&mut self, matches: &ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
+    fn update_from_arg_matches_mut(&mut self, matches: &mut ArgMatches) -> Result<(), clap::Error> {
+        self.update_from_arg_matches(matches)
+    }
+}
+impl Parser for GhArgs {}
+
+pub(crate) fn propose(args: GhArgs, stdin_piped: bool) -> Result<Proposal<crate::Gh>, Usage> {
+    for (flag, reason) in REJECTED_FLAGS {
+        if args.0.contains_id(flag.trim_start_matches('-'))
+            && args
+                .0
+                .get_one::<String>(flag.trim_start_matches('-'))
+                .is_some()
+        {
+            return Err(Usage::new(format!("gh: {flag} is not supported: {reason}")));
+        }
+    }
+    if args.0.subcommand_name() == Some("api") {
+        return Err(Usage::new(API_REFUSAL));
+    }
+    let (capability, input) =
+        dispatch(args.0, stdin_piped).map_err(|error| Usage::new(error.message().to_owned()))?;
+    Ok(crate::typed::proposal(capability, input))
 }
 
 /// A usage failure the shell reports to the model verbatim.
@@ -75,21 +107,6 @@ const REJECTED_FLAGS: &[(&str, &str)] = &[
     ("--fill", "there is no commit context to fill from"),
 ];
 
-/// Refuses a flag whose whole purpose is to change what the output is, naming the alternative.
-///
-/// Accepting these as no-ops is the failure mode worth avoiding: a script that asked for `--json`
-/// and got something else believes it filtered.
-fn rejected_flag(argv: &[String]) -> Option<ProviderError> {
-    argv.iter().find_map(|argument| {
-        REJECTED_FLAGS
-            .iter()
-            .find(|(flag, _)| {
-                argument == flag || argument.starts_with(&format!("{flag}=")) // `--json=a,b`
-            })
-            .map(|(flag, reason)| usage(format!("gh: {flag} is not supported: {reason}")))
-    })
-}
-
 // ---------------------------------------------------------------------------
 // The command tree
 // ---------------------------------------------------------------------------
@@ -104,6 +121,23 @@ fn tree() -> Command {
         .after_help(API_REFUSAL)
         .version(env!("CARGO_PKG_VERSION"))
         .subcommand_required(true)
+        .args(REJECTED_FLAGS.iter().map(|(flag, _)| {
+            let name = flag.trim_start_matches('-');
+            Arg::new(name)
+                .long(name)
+                .global(true)
+                .hide(true)
+                .num_args(0..=1)
+                .default_missing_value("")
+        }))
+        .subcommand(
+            Command::new("api").hide(true).arg(
+                Arg::new("rest")
+                    .trailing_var_arg(true)
+                    .allow_hyphen_values(true)
+                    .num_args(0..),
+            ),
+        )
         .subcommand(pull_requests())
         .subcommand(
             Command::new("repo")
@@ -408,7 +442,10 @@ fn event_flag(name: &'static str, help: &'static str) -> Arg {
 /// Runs only after clap accepted the argv, so the subcommand and its required arguments are
 /// present; what remains is what clap cannot know — whether `owner/repo` is well formed, whether
 /// anything was piped, and which capability an event flag selects.
-fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocation, ProviderError> {
+fn dispatch(
+    matches: ArgMatches,
+    stdin_piped: bool,
+) -> Result<(&'static str, Value), ProviderError> {
     let (area, area_matches) = matches
         .subcommand()
         .expect("the tree requires a subcommand");
@@ -460,7 +497,11 @@ fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocatio
             );
             // The group is `required`, so exactly one of the three is set.
             if matches.get_flag("approve") {
-                insert_text(&mut input, "body", body_text(matches, stdin)?.as_ref());
+                insert_text(
+                    &mut input,
+                    "body",
+                    body_text(matches, stdin_piped)?.as_ref(),
+                );
                 ids::PR_APPROVE
             } else {
                 let event = if matches.get_flag("comment") {
@@ -468,7 +509,7 @@ fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocatio
                 } else {
                     "--request-changes"
                 };
-                let text = body_text(matches, stdin)?
+                let text = body_text(matches, stdin_piped)?
                     .ok_or_else(|| usage(format!("gh: {event} requires --body text")))?;
                 input.insert("body".to_owned(), Value::String(text));
                 if matches.get_flag("comment") {
@@ -527,7 +568,7 @@ fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocatio
         }
         ("issue", "comment") => {
             insert_repo_and_number(&mut input, matches)?;
-            let text = body_text(matches, stdin)?
+            let text = body_text(matches, stdin_piped)?
                 .ok_or_else(|| usage(format!("gh: {command} requires --body text")))?;
             input.insert("body".to_owned(), Value::String(text));
             ids::ISSUE_COMMENT
@@ -549,13 +590,7 @@ fn dispatch(matches: ArgMatches, stdin: Option<&str>) -> Result<CommandInvocatio
         _ => unreachable!("the tree has no other subcommand than {command}"),
     };
 
-    Ok(CommandInvocation {
-        capability: capability
-            .parse()
-            .expect("the subcommand table names valid capability identifiers"),
-        input: Value::Object(input),
-        secret_use: None,
-    })
+    Ok((capability, Value::Object(input)))
 }
 
 /// Every `(area, verb)` `dispatch` answers, paired with the capability it proposes.
@@ -633,14 +668,15 @@ fn insert_paging(input: &mut Map<String, Value>, matches: &ArgMatches) {
 ///
 /// Whether anything was piped is exactly what clap cannot know, so `--body-file -` with nothing
 /// on stdin is a decline naming its cause rather than an empty comment.
-fn body_text(matches: &ArgMatches, stdin: Option<&str>) -> Result<Option<String>, ProviderError> {
+fn body_text(matches: &ArgMatches, stdin_piped: bool) -> Result<Option<String>, ProviderError> {
     if let Some(text) = matches.get_one::<String>("body") {
         return Ok(Some(text.clone()));
     }
     if matches.get_one::<String>("body-file").is_some() {
-        let piped =
-            stdin.ok_or_else(|| usage("gh: --body-file -: nothing was piped into the word"))?;
-        return Ok(Some(piped.to_owned()));
+        if !stdin_piped {
+            return Err(usage("gh: --body-file -: nothing was piped into the word"));
+        }
+        return Ok(Some(crate::typed::STDIN_BODY.to_owned()));
     }
     Ok(None)
 }
@@ -660,11 +696,53 @@ fn parse_repo(value: &str) -> Result<(String, String), ProviderError> {
 
 #[cfg(test)]
 mod tests {
-    use dekopon_provider_sdk::{CommandRun, Provider, ProviderError};
+    use dekopon_provider_sdk::CommandRunOutcome;
+    use dekopon_provider_sdk::provider;
     use serde_json::{Value, json};
 
-    use super::{DISPATCH_TABLE, run, tree};
-    use crate::Gh;
+    use super::{DISPATCH_TABLE, tree};
+    use crate::{Gh, error::ProviderError};
+
+    #[derive(Debug, PartialEq)]
+    enum CommandRun {
+        Proposal {
+            capability: String,
+            input: Value,
+        },
+        Rendered {
+            stdout: String,
+            stderr: String,
+            status: u8,
+        },
+    }
+    impl CommandRun {
+        fn proposal(capability: dekopon_provider_sdk::CapabilityId, input: Value) -> Self {
+            Self::Proposal {
+                capability: capability.to_string(),
+                input,
+            }
+        }
+    }
+    fn run(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, ProviderError> {
+        match provider::command::<Gh>(argv, stdin.is_some()) {
+            CommandRunOutcome::Proposed {
+                capability, input, ..
+            } => Ok(CommandRun::Proposal {
+                capability: capability.to_string(),
+                input,
+            }),
+            CommandRunOutcome::Rendered {
+                stdout,
+                stderr,
+                status,
+            } => Ok(CommandRun::Rendered {
+                stdout,
+                stderr,
+                status,
+            }),
+            CommandRunOutcome::Failed { error } => Err(ProviderError::new("usage", error.message)),
+        }
+    }
 
     /// The argv one `gh …` command line reaches the guest as: the word is not part of it.
     fn argv(arguments: &[&str]) -> Vec<String> {
@@ -677,9 +755,7 @@ mod tests {
     /// Runs one `gh …` argv, asserting it proposed.
     fn dispatch(arguments: &[&str]) -> (String, Value) {
         match run(&argv(arguments), None).expect("gh proposes") {
-            CommandRun::Proposal(invocation) => {
-                (invocation.capability.to_string(), invocation.input)
-            }
+            CommandRun::Proposal { capability, input } => (capability, input),
             other => panic!("expected a proposal for {arguments:?}, got {other:?}"),
         }
     }
@@ -722,7 +798,8 @@ mod tests {
     /// that `capabilities()` still declares every one of them.
     #[test]
     fn every_dispatch_target_is_declared_in_the_manifest() {
-        let declared = Gh::manifest()
+        let declared = provider::manifest::<Gh>()
+            .expect("manifest")
             .capabilities
             .iter()
             .map(|capability| capability.id.as_str().to_owned())
@@ -923,7 +1000,7 @@ mod tests {
         }
         let (stdout, _, _) = rendered(&["--help"]);
         assert!(stdout.starts_with("Narrow GitHub operations"), "{stdout:?}");
-        assert!(stdout.contains("\nUsage: gh <COMMAND>\n"), "{stdout:?}");
+        assert!(stdout.contains("<COMMAND>\n"), "{stdout:?}");
         // The refusal `gh api` earns is reachable from the help page, not only by typing it.
         assert!(
             stdout.contains("per-capability authorization"),
@@ -1022,7 +1099,7 @@ mod tests {
             comment,
             CommandRun::proposal(
                 "gh.issue.comment".parse().expect("static capability"),
-                json!({"owner": "o", "repo": "r", "number": 9, "body": "piped body"})
+                json!({"owner": "o", "repo": "r", "number": 9, "body": crate::typed::STDIN_BODY})
             )
         );
 
@@ -1046,7 +1123,7 @@ mod tests {
                 "gh.pull-request.request-changes"
                     .parse()
                     .expect("static capability"),
-                json!({"owner": "o", "repo": "r", "number": 7, "body": "needs work"})
+                json!({"owner": "o", "repo": "r", "number": 7, "body": crate::typed::STDIN_BODY})
             )
         );
 

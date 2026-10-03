@@ -1,7 +1,7 @@
 //! Issue capabilities: read, list, comment listing, and the one issue write.
 
-use dekopon_provider_http::{HttpError, Request, Response, method};
-use dekopon_provider_sdk::ProviderError;
+use crate::error::ProviderError;
+use dekopon_provider_sdk::provider::{HttpError, Request, Response, method};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
