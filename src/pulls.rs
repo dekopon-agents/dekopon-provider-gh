@@ -1,7 +1,7 @@
 //! Read-side pull-request capabilities: list, read, files, diff, reviews, and status.
 
-use dekopon_provider_http::{HttpError, Request, Response};
-use dekopon_provider_sdk::ProviderError;
+use crate::error::ProviderError;
+use dekopon_provider_sdk::provider::{HttpError, Request, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -815,7 +815,7 @@ mod tests {
                         "https://api.github.com/repos/octo/hello/pulls/7"
                     );
                 },
-                Ok(dekopon_provider_http::Response {
+                Ok(dekopon_provider_sdk::provider::Response {
                     status: 200,
                     headers: Vec::new(),
                     body: b"diff --git a/x b/x\n".to_vec(),

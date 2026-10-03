@@ -1,8 +1,8 @@
 //! `gh.content.read`: one file or directory listing at a path and optional ref.
 
+use crate::error::ProviderError;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use dekopon_provider_http::{HttpError, Request, Response};
-use dekopon_provider_sdk::ProviderError;
+use dekopon_provider_sdk::provider::{HttpError, Request, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
 

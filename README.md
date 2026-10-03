@@ -31,14 +31,16 @@ Every other argv maps to exactly one `gh.*` capability. The rewrite is a pure fu
 `gh.pull-request.read --number 7` takes. Naming a capability the caller was not granted produces a
 denial, not an escalation.
 
-`--body-file -` is the one argument whose value is piped into the word; nothing piped is a usage
-error rather than an empty comment. There is no `gh api`, so nothing pipes into a passthrough —
+`--body-file -` is the one argument whose value is piped into the word. Proposal records only a
+marker; the authorized invocation reads at most 4 KiB of UTF-8 from stdin before any HTTP call.
+Nothing piped is a usage error rather than an empty comment. There is no `gh api`, so nothing pipes into a passthrough —
 a path-level escape hatch would collapse per-capability policy into "everything the credential can
 reach", and typing it says so.
 
 Flags that would change what a command means — `--json`, `--jq`, `--web`, `--checkout` — are
-rejected by name rather than accepted as no-ops. Output is always a structured JSON value; filter it
-with the shell's `jq` builtin.
+rejected by name rather than accepted as no-ops. Successful invocations write bounded projected
+JSON to stdout; failures write to stderr with a nonzero status. Filter stdout with the shell's
+`jq` builtin.
 
 ## Capabilities
 
@@ -108,7 +110,8 @@ that fails the build if any local path survives into the component. Given the sa
 same two pins, it lands on the same bytes on any machine. CI runs the same script as the
 `ci / validate` check.
 
-`cargo test` runs the subcommand table and capability mapping natively; nothing contacts GitHub.
+`DEKOPON_PROVIDER_COMPONENT="$PWD/gh-provider.wasm" cargo test --locked --workspace` runs native
+contract tests and real-component conformance against the built artifact; nothing contacts GitHub.
 
 ## License
 
