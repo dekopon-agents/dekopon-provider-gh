@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-04
+
+### Changed
+
+- Move to provider SDK and testkit 0.33.0 and HTTP 1.1.0 imports; preserve all nineteen GitHub capabilities and their authorization boundaries.
+
 ## [0.6.0] - 2026-10-03
 
 ### Changed
