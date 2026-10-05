@@ -133,9 +133,9 @@ dekopon-gatewayd --config gatewayd.yaml
 ```
 
 ```json
-{"level":"INFO","event":"gateway_broker_ready","capability.count":0,"target":"dekopon-gatewayd"}
-{"level":"INFO","event":"gateway_transport_connected","transport":"workspace-slack","kind":"slackSocketMode","target":"dekopon-gatewayd"}
-{"level":"INFO","event":"gateway_started","transport.count":1,"route.count":1,"target":"dekopon-gatewayd"}
+{"level":"INFO","event":"gateway_broker_ready","capability.count":0,"target":"dekopon_gatewayd"}
+{"level":"INFO","event":"gateway_transport_connected","transport":"workspace-slack","kind":"slackSocketMode","target":"dekopon_gatewayd::transport::recovery"}
+{"level":"INFO","event":"gateway_started","transport.count":1,"route.count":1,"target":"dekopon_gatewayd"}
 ```
 
 `capability.count: 0` is intentional. The startup probe asks what the gateway’s own direct identity
