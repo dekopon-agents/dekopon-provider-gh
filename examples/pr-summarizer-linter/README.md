@@ -16,11 +16,11 @@ omission against the checked-in provider manifest.
 
 | File | What it is | Who reads it |
 |---|---|---|
-| [`dekopon.yaml`](dekopon.yaml) | Catalog: the agent, its standing orders, and the capability words it may spell | `dekopond` |
+| [`dekopon.yaml`](dekopon.yaml) | Catalog: the agent, its standing orders, and the capability words it may spell | `dekopon-gatewayd` |
 | [`broker.yaml`](broker.yaml) | Identities, mappings, providers, and execution constraints | `dekopon-brokerd` |
 | [`policies.cedar`](policies.cedar) | Who may drive the agent and which actions it may reach | `dekopon-brokerd` |
 | [`broker-credentials.yaml.example`](broker-credentials.yaml.example) | GitHub token template | `dekopon-brokerd` |
-| [`dekopond.yaml`](dekopond.yaml) | Transport, model, route, and session bounds | `dekopond` |
+| [`gatewayd.yaml`](gatewayd.yaml) | Transport, model, route, and session bounds | `dekopon-gatewayd` |
 
 Nothing here is a mock: these are the files a deployment runs, and the constraint sets in
 `broker.yaml` mirror this provider's manifest field for field, which the broker checks at startup
@@ -85,14 +85,14 @@ hard links, and wrong ownership. `broker-credentials.yaml` is ignored by Git.
 | Placeholder | File | Replace with |
 |---|---|---|
 | `/home/xavier/.local/{run,state}/dekopon/…` | `broker.yaml` | Your socket, audit, and checkpoint paths |
-| `/home/xavier/.local/run/dekopon/broker.sock` | `dekopond.yaml` | The same socket path |
+| `/home/xavier/.local/run/dekopon/broker.sock` | `gatewayd.yaml` | The same socket path |
 | `uid: 501` | `broker.yaml` | Your UID (`id -u`) |
-| `serverUid: 501` | `dekopond.yaml` | The same UID |
+| `serverUid: 501` | `gatewayd.yaml` | The same UID |
 | `slack.t0123abcd` | `broker.yaml` | `slack.` plus the lowercased team ID |
 | `slack.t0123abcd.u0123abcd` | `broker.yaml` | Lowercased `slack.<team>.<user>` |
 | `github_pat_XXXX…` | `broker-credentials.yaml` | The fine-grained token |
 
-The principal `maintainer`, gateway principal `dekopond-gateway`, and agent
+The principal `maintainer`, gateway principal `dekopon-gatewayd`, and agent
 `pr-summarizer-linter` are internal names repeated across configuration and policy. Rename each
 only if every occurrence changes together.
 
@@ -102,10 +102,10 @@ policy, credentials file, and catalog work from a checkout without edits.
 ```console
 mkdir -p ~/.local/run/dekopon ~/.local/state/dekopon
 chmod 700 ~/.local/run/dekopon ~/.local/state/dekopon
-chmod 600 broker.yaml policies.cedar dekopond.yaml
+chmod 600 broker.yaml policies.cedar gatewayd.yaml
 ```
 
-The catalog is validated where it is read: `dekopond` loads `catalogPath` at startup and refuses
+The catalog is validated where it is read: `dekopon-gatewayd` loads `catalogPath` at startup and refuses
 to start naming every problem at once. It proves the agent's own metadata and its skill files, and
 nothing about permission — capabilities and providers come from the broker, which builds them from
 the provider manifest and its own constraint sets.
@@ -127,15 +127,15 @@ provider manifest. A mismatch is a startup failure, not a surprise during a revi
 ## 5. Run the gateway
 
 ```console
-export DEKOPOND_SLACK_APP_TOKEN=xapp-...
-export DEKOPOND_SLACK_BOT_TOKEN=xoxb-...
-dekopond --config dekopond.yaml
+export DEKOPON_GATEWAYD_SLACK_APP_TOKEN=xapp-...
+export DEKOPON_GATEWAYD_SLACK_BOT_TOKEN=xoxb-...
+dekopon-gatewayd --config gatewayd.yaml
 ```
 
 ```json
-{"level":"INFO","event":"gateway_broker_ready","capability.count":0,"target":"dekopond"}
-{"level":"INFO","event":"gateway_transport_connected","transport":"workspace-slack","kind":"slackSocketMode","target":"dekopond"}
-{"level":"INFO","event":"gateway_started","transport.count":1,"route.count":1,"target":"dekopond"}
+{"level":"INFO","event":"gateway_broker_ready","capability.count":0,"target":"dekopon_gatewayd"}
+{"level":"INFO","event":"gateway_transport_connected","transport":"workspace-slack","kind":"slackSocketMode","target":"dekopon_gatewayd::transport::recovery"}
+{"level":"INFO","event":"gateway_started","transport.count":1,"route.count":1,"target":"dekopon_gatewayd"}
 ```
 
 `capability.count: 0` is intentional. The startup probe asks what the gateway’s own direct identity
@@ -211,7 +211,7 @@ The terminal comment record has this shape (hashes abbreviated):
     "trace": "dekopond-session-9f1c4a7b0e35d268",
     "principal": "maintainer",
     "actor": { "type": "agent", "agent": "pr-summarizer-linter" },
-    "via": "dekopond-gateway",
+    "via": "dekopon-gatewayd",
     "attested_subject": "slack.t0123abcd.u0123abcd",
     "capability": "gh.pull-request.comment",
     "provider": "gh",
@@ -255,7 +255,7 @@ from the session. A model-written command using one reports the exact missing ca
 
 ## Current limitation
 
-`dekopond` and `dekopon-brokerd` run under one UID in this example because the broker socket is
+`dekopon-gatewayd` and `dekopon-brokerd` run under one UID in this example because the broker socket is
 owner-only. The attestor grant therefore provides attribution and deny-by-default shape, not
 isolation from another process under that UID. A dedicated gateway UID remains committed direction.
 
@@ -268,7 +268,7 @@ execution, and audit — not from trusting the summary.
 
 - [dekopon's Slack example](https://github.com/dekopon-agents/dekopon/blob/main/examples/slack/README.md) — app manifest, tokens, and Slack identifiers.
 - [the provider](../../README.md) — all nineteen capabilities and no raw passthrough.
-- [`dekopond.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/dekopond.md) — routing, sessions, and conversation bounds.
+- [`gatewayd.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/gatewayd.md) — routing, sessions, and conversation bounds.
 - [`dekopon-brokerd`](https://github.com/dekopon-agents/dekopon/blob/main/crates/dekopon-brokerd/README.md) — broker configuration and recovery.
 - [`security-model.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/security-model.md) — trust boundaries and limitations.
 - [`examples/local/dekopon.yaml`](https://github.com/dekopon-agents/dekopon/blob/main/examples/local/dekopon.yaml) — a smaller catalog-only reviewer declaration.
