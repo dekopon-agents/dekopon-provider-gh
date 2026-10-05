@@ -17,7 +17,7 @@
 permit(principal == Dekopon::Principal::"maintainer",
        action == Dekopon::Action::"agent.prompt",
        resource == Dekopon::Agent::"pr-summarizer-linter")
-when { context has via && context.via == "dekopond-gateway" };
+when { context has via && context.via == "dekopon-gatewayd" };
 
 // Capability surface: driving the agent implies none of these actions, and holding these actions
 // implies no session. `context.via` keeps attested and direct authority disjoint; `context.agent`
@@ -32,4 +32,4 @@ permit(principal == Dekopon::Principal::"maintainer",
                   Dekopon::Action::"gh.pull-request.comment"],
        resource == Dekopon::Provider::"gh")
 when { context has agent && context.agent == "pr-summarizer-linter"
-    && context has via && context.via == "dekopond-gateway" };
+    && context has via && context.via == "dekopon-gatewayd" };

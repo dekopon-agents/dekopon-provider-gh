@@ -39,10 +39,10 @@ identities:
   # to your own (`id -u`). In this single-UID deployment the attestor grant buys attribution and
   # deny-by-default scoping, not process isolation.
   - uid: 501
-    principal: dekopond-gateway
+    principal: dekopon-gatewayd
     actor:
       type: service
-      principal: dekopond-gateway
+      principal: dekopon-gatewayd
     attestor:
       # Segment-boundary prefixes, service name first. This lets the gateway name Slack subjects
       # in this workspace; it resolves none of them to a principal.
