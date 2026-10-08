@@ -6,15 +6,16 @@
 //! with `head-changed` instead of silently blessing commits the caller never saw.
 
 use crate::error::ProviderError;
+use dekopon_provider_sdk::provider::endpoint::Base;
 use dekopon_provider_sdk::provider::{HttpError, Request, Response, method};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::pulls::{RawPull, fetch_pull};
 use crate::{
-    MAX_MESSAGE_OUT_BYTES, RawUser, decode, endpoint, github_json_request, http_failed,
-    invalid_input, invalid_response, login_out, percent_encode, status_error, truncate_text,
-    validate_body, validate_expected_sha, validate_login, validate_number, validate_repo,
+    MAX_MESSAGE_OUT_BYTES, RawUser, decode, github_json_request, http_failed, invalid_input,
+    invalid_response, login_out, percent_encode, status_error, truncate_text, url, validate_body,
+    validate_expected_sha, validate_login, validate_number, validate_repo,
 };
 
 #[derive(Debug, Deserialize)]
@@ -27,8 +28,6 @@ struct ReviewInput {
     body: Option<String>,
     #[serde(default)]
     expected_head_sha: Option<String>,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,8 +40,6 @@ struct MergeInput {
     merge_method: Option<MergeMethod>,
     #[serde(default)]
     expected_head_sha: Option<String>,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,27 +112,31 @@ struct RawMerge {
 
 pub(crate) fn approve(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
-    submit_review(input, send, ReviewEvent::Approve)
+    submit_review(input, base, send, ReviewEvent::Approve)
 }
 
 pub(crate) fn comment(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
-    submit_review(input, send, ReviewEvent::Comment)
+    submit_review(input, base, send, ReviewEvent::Comment)
 }
 
 pub(crate) fn request_changes(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
-    submit_review(input, send, ReviewEvent::RequestChanges)
+    submit_review(input, base, send, ReviewEvent::RequestChanges)
 }
 
 fn submit_review(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
     event: ReviewEvent,
 ) -> Result<Value, ProviderError> {
@@ -149,11 +150,10 @@ fn submit_review(
         None if event.body_required() => return Err(invalid_input()),
         None => {}
     }
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
     // Pre-read: the refusals below happen before any write leaves this guest, so a mock that
     // panics on a second request proves the state machine wrote nothing.
-    let pull = fetch_pull(send, &endpoint, &input.owner, &input.repo, input.number)?;
+    let pull = fetch_pull(send, base, &input.owner, &input.repo, input.number)?;
     require_open(&pull)?;
     if matches!(event, ReviewEvent::Approve) && pull.draft {
         return Err(ProviderError::new(
@@ -170,12 +170,15 @@ fn submit_review(
     if let Some(text) = input.body.as_deref() {
         body["body"] = Value::String(text.to_owned());
     }
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/pulls/{}/reviews",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        input.number,
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/pulls/{}/reviews",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            input.number,
+        ),
+    )?;
     let response =
         send(github_json_request(method::POST, uri, &body)?).map_err(|_| http_failed())?;
     if response.status != 200 {
@@ -203,6 +206,7 @@ fn submit_review(
 
 pub(crate) fn merge(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<MergeInput>(input).map_err(|_| invalid_input())?;
@@ -211,18 +215,20 @@ pub(crate) fn merge(
     validate_number(input.number)?;
     validate_expected_sha(input.expected_head_sha.as_deref())?;
     let merge_method = input.merge_method.unwrap_or(MergeMethod::Merge);
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let pull = fetch_pull(send, &endpoint, &input.owner, &input.repo, input.number)?;
+    let pull = fetch_pull(send, base, &input.owner, &input.repo, input.number)?;
     require_open(&pull)?;
     require_expected_head(&pull, input.expected_head_sha.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/pulls/{}/merge",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        input.number,
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/pulls/{}/merge",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            input.number,
+        ),
+    )?;
     let body = json!({
         "sha": pull.head.sha,
         "merge_method": merge_method.as_str(),

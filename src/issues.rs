@@ -1,16 +1,17 @@
 //! Issue capabilities: read, list, comment listing, and the one issue write.
 
 use crate::error::ProviderError;
+use dekopon_provider_sdk::provider::endpoint::Base;
 use dekopon_provider_sdk::provider::{HttpError, Request, Response, method};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
     ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_LABELS, MAX_LIST_ITEMS, MAX_PR_BODY_OUT_BYTES,
-    MAX_TITLE_OUT_BYTES, RawUser, bounded_optional, decode, endpoint, github_json_request,
-    has_next_link, http_failed, invalid_input, invalid_response, login_out, percent_encode,
-    send_get, status_error, timestamp, truncate_text, validate_body, validate_login,
-    validate_number, validate_page, validate_repo,
+    MAX_TITLE_OUT_BYTES, RawUser, bounded_optional, decode, github_json_request, has_next_link,
+    http_failed, invalid_input, invalid_response, login_out, percent_encode, send_get,
+    status_error, timestamp, truncate_text, url, validate_body, validate_login, validate_number,
+    validate_page, validate_repo,
 };
 
 #[derive(Debug, Deserialize)]
@@ -19,8 +20,6 @@ struct ReadInput {
     owner: String,
     repo: String,
     number: u32,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,8 +33,6 @@ struct ListInput {
     page: Option<u32>,
     #[serde(default)]
     per_page: Option<u32>,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,8 +45,6 @@ struct PagedInput {
     page: Option<u32>,
     #[serde(default)]
     per_page: Option<u32>,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,8 +54,6 @@ struct CommentInput {
     repo: String,
     number: u32,
     body: String,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,20 +101,23 @@ fn validate_state(state: Option<&str>) -> Result<&'static str, ProviderError> {
 
 pub(crate) fn read(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/issues/{}",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        input.number,
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/issues/{}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            input.number,
+        ),
+    )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let issue = decode::<RawIssue>(&response.body)?;
     if issue.number != input.number {
@@ -153,6 +149,7 @@ pub(crate) fn read(
 
 pub(crate) fn list(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<ListInput>(input).map_err(|_| invalid_input())?;
@@ -161,13 +158,15 @@ pub(crate) fn list(
     let state = validate_state(input.state.as_deref())?;
     let (page, per_page) = validate_page(input.page, input.per_page)?;
     let per_page = per_page.unwrap_or(20);
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/issues?state={state}&page={page}&per_page={per_page}",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/issues?state={state}&page={page}&per_page={per_page}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+        ),
+    )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let has_more = has_next_link(&response);
     let issues = decode::<Vec<RawIssue>>(&response.body)?;
@@ -199,6 +198,7 @@ pub(crate) fn list(
 
 pub(crate) fn comments(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<PagedInput>(input).map_err(|_| invalid_input())?;
@@ -207,14 +207,16 @@ pub(crate) fn comments(
     validate_number(input.number)?;
     let (page, per_page) = validate_page(input.page, input.per_page)?;
     let per_page = per_page.unwrap_or(20);
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/issues/{}/comments?page={page}&per_page={per_page}",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        input.number,
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/issues/{}/comments?page={page}&per_page={per_page}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            input.number,
+        ),
+    )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let has_more = has_next_link(&response);
     let comments = decode::<Vec<RawComment>>(&response.body)?;
@@ -244,6 +246,7 @@ pub(crate) fn comments(
 
 pub(crate) fn comment(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<CommentInput>(input).map_err(|_| invalid_input())?;
@@ -251,14 +254,16 @@ pub(crate) fn comment(
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
     validate_body(&input.body)?;
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/issues/{}/comments",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        input.number,
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/issues/{}/comments",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            input.number,
+        ),
+    )?;
     let body = json!({"body": &input.body});
     let response =
         send(github_json_request(method::POST, uri, &body)?).map_err(|_| http_failed())?;

@@ -246,7 +246,8 @@ or query, headers, token, or provider output. Earlier decision/execution pairs s
 | `head-changed` | New commits arrived after inspection; start a new review instead of retrying |
 | `pr-closed` | Pull request is closed or merged; no comment was posted |
 | Broker says a capability has no constraint set | Policy and `broker.yaml` disagree; startup failed closed |
-| Broker says credential is unknown or host is uncovered | Credentials file is absent/misnamed or lacks `api.github.com` |
+| Broker says credential is unknown or host is uncovered | Credentials file is absent/misnamed or lacks `api.github.com` (or the `providerSettings.gh.baseUrl` authority) |
+| `invalid-settings` on every `gh` call | `providerSettings.gh` has a key other than `baseUrl`, or `baseUrl` carries a query, fragment or userinfo |
 | Gateway exits naming an environment variable | Slack or model credential variable is unset; only its name is logged |
 
 Approval, request-changes, and merge do not produce runtime provider errors here: they are absent

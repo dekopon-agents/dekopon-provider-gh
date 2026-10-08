@@ -1,6 +1,7 @@
 //! Read-side pull-request capabilities: list, read, files, diff, reviews, and status.
 
 use crate::error::ProviderError;
+use dekopon_provider_sdk::provider::endpoint::Base;
 use dekopon_provider_sdk::provider::{HttpError, Request, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -8,8 +9,8 @@ use serde_json::{Value, json};
 use crate::{
     ACCEPT_DIFF, ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_DESCRIPTION_OUT_BYTES, MAX_DIFF_OUT_BYTES,
     MAX_LIST_ITEMS, MAX_PATCH_OUT_BYTES, MAX_PR_BODY_OUT_BYTES, MAX_TITLE_OUT_BYTES, RawUser,
-    bounded_optional, decode, endpoint, has_next_link, invalid_input, invalid_response, is_sha,
-    login_out, percent_encode, send_get, timestamp, truncate_text, validate_login, validate_number,
+    bounded_optional, decode, has_next_link, invalid_input, invalid_response, is_sha, login_out,
+    percent_encode, send_get, timestamp, truncate_text, url, validate_login, validate_number,
     validate_page, validate_repo,
 };
 
@@ -65,16 +66,19 @@ impl RawPull {
 /// Fetches one pull request and validates the number echo and SHA shapes.
 pub(crate) fn fetch_pull(
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
-    endpoint: &str,
+    base: &Base,
     owner: &str,
     repo: &str,
     number: u32,
 ) -> Result<RawPull, ProviderError> {
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/pulls/{number}",
-        percent_encode(owner),
-        percent_encode(repo),
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/pulls/{number}",
+            percent_encode(owner),
+            percent_encode(repo),
+        ),
+    )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let pull = decode::<RawPull>(&response.body)?;
     pull.validate(number)?;
@@ -91,20 +95,18 @@ struct ReadInput {
     owner: String,
     repo: String,
     number: u32,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 pub(crate) fn read(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
-    let endpoint = endpoint(input.endpoint.as_deref())?;
-    let pull = fetch_pull(send, &endpoint, &input.owner, &input.repo, input.number)?;
+    let pull = fetch_pull(send, base, &input.owner, &input.repo, input.number)?;
 
     let (title, _) = truncate_text(&pull.title, MAX_TITLE_OUT_BYTES);
     let (body, body_truncated) = bounded_optional(pull.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
@@ -165,12 +167,11 @@ struct ListInput {
     page: Option<u32>,
     #[serde(default)]
     per_page: Option<u32>,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 pub(crate) fn list(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<ListInput>(input).map_err(|_| invalid_input())?;
@@ -182,14 +183,16 @@ pub(crate) fn list(
     let (page, per_page) = validate_page(input.page, input.per_page)?;
     let per_page = per_page.unwrap_or(20);
     let state = input.state.unwrap_or(StateFilter::Open);
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/pulls?state={}&page={page}&per_page={per_page}",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        state.as_str(),
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/pulls?state={}&page={page}&per_page={per_page}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            state.as_str(),
+        ),
+    )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let has_more = has_next_link(&response);
     let pulls = decode::<Vec<RawPull>>(&response.body)?;
@@ -249,8 +252,6 @@ struct FilesInput {
     per_page: Option<u32>,
     #[serde(default)]
     include_patch: Option<bool>,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -265,6 +266,7 @@ struct RawFile {
 
 pub(crate) fn files(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<FilesInput>(input).map_err(|_| invalid_input())?;
@@ -274,14 +276,16 @@ pub(crate) fn files(
     let (page, per_page) = validate_page(input.page, input.per_page)?;
     let per_page = per_page.unwrap_or(30);
     let include_patch = input.include_patch.unwrap_or(true);
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/pulls/{}/files?page={page}&per_page={per_page}",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        input.number,
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/pulls/{}/files?page={page}&per_page={per_page}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            input.number,
+        ),
+    )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let has_more = has_next_link(&response);
     let files = decode::<Vec<RawFile>>(&response.body)?;
@@ -322,20 +326,23 @@ pub(crate) fn files(
 
 pub(crate) fn diff(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/pulls/{}",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        input.number,
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/pulls/{}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            input.number,
+        ),
+    )?;
     let response = send_get(send, uri, ACCEPT_DIFF)?;
     let text = core::str::from_utf8(&response.body).map_err(|_| invalid_response())?;
     let (diff, truncated) = truncate_text(text, MAX_DIFF_OUT_BYTES);
@@ -361,8 +368,6 @@ struct ReviewsInput {
     page: Option<u32>,
     #[serde(default)]
     per_page: Option<u32>,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -381,6 +386,7 @@ struct RawReviewItem {
 
 pub(crate) fn reviews(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<ReviewsInput>(input).map_err(|_| invalid_input())?;
@@ -389,14 +395,16 @@ pub(crate) fn reviews(
     validate_number(input.number)?;
     let (page, per_page) = validate_page(input.page, input.per_page)?;
     let per_page = per_page.unwrap_or(20);
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/pulls/{}/reviews?page={page}&per_page={per_page}",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        input.number,
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/pulls/{}/reviews?page={page}&per_page={per_page}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            input.number,
+        ),
+    )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let has_more = has_next_link(&response);
     let reviews = decode::<Vec<RawReviewItem>>(&response.body)?;
@@ -485,15 +493,15 @@ fn status_token(value: &str) -> Result<&str, ProviderError> {
 
 pub(crate) fn status(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let pull = fetch_pull(send, &endpoint, &input.owner, &input.repo, input.number)?;
+    let pull = fetch_pull(send, base, &input.owner, &input.repo, input.number)?;
     let owner = percent_encode(&input.owner);
     let repo = percent_encode(&input.repo);
     let head = percent_encode(&pull.head.sha);
@@ -501,9 +509,12 @@ pub(crate) fn status(
     // Fine-grained personal access tokens expose Actions and Commit statuses permissions, but not
     // the Checks permission required by `/check-runs`. Workflow runs give the useful GitHub
     // Actions result at the same head without widening this read capability to a POST surface.
-    let workflows_uri = format!(
-        "{endpoint}/repos/{owner}/{repo}/actions/runs?head_sha={head}&page=1&per_page={MAX_LIST_ITEMS}"
-    );
+    let workflows_uri = url(
+        base,
+        &format!(
+            "/repos/{owner}/{repo}/actions/runs?head_sha={head}&page=1&per_page={MAX_LIST_ITEMS}"
+        ),
+    )?;
     let workflows_response = send_get(send, workflows_uri, ACCEPT_JSON)?;
     let workflows = decode::<RawWorkflowRuns>(&workflows_response.body)?;
     if workflows.total_count < workflows.workflow_runs.len() as u64 {
@@ -557,9 +568,10 @@ pub(crate) fn status(
 
     // Legacy commit statuses are a separate GitHub surface and still back some external CI. Keep
     // them alongside Actions rather than flattening two APIs into a misleading check-run shape.
-    let statuses_uri = format!(
-        "{endpoint}/repos/{owner}/{repo}/commits/{head}/status?page=1&per_page={MAX_LIST_ITEMS}"
-    );
+    let statuses_uri = url(
+        base,
+        &format!("/repos/{owner}/{repo}/commits/{head}/status?page=1&per_page={MAX_LIST_ITEMS}"),
+    )?;
     let statuses_response = send_get(send, statuses_uri, ACCEPT_JSON)?;
     let statuses = decode::<RawCombinedStatus>(&statuses_response.body)?;
     if statuses.sha != pull.head.sha || statuses.total_count < statuses.statuses.len() as u64 {
