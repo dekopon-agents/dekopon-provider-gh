@@ -133,8 +133,9 @@ same two pins, it lands on the same bytes on any machine. CI runs the same scrip
 contract tests and real-component conformance against the built artifact; nothing contacts GitHub.
 
 `tests/cassettes/gh/` holds GitHub exchanges recorded with `cassette record --upstream
-gh=https://api.github.com` and `baseUrl: http://127.0.0.1:8787/gh`; `tests/cassette.rs` replays
-them through the `baseUrl` setting. The recorder saves `authorization` as `[redacted]`.
+gh=https://api.github.com` and `baseUrl: http://127.0.0.1:<port>/gh`, the port you pass to
+`--listen`; `tests/cassette.rs` replays them through the `baseUrl` setting. The recorder saves
+`authorization` as `[redacted]`.
 
 ## License
 

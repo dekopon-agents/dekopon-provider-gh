@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-08
+
+### Added
+
+- Owner setting `providerSettings.gh.baseUrl` for GitHub Enterprise Server or a recording proxy, defaulting to `https://api.github.com`.
+
+### Changed
+
+- Move to provider SDK and testkit 0.38.0.
+
+### Removed
+
+- The model-facing `endpoint` input on every capability; a call can no longer choose its origin.
+
 ## [0.7.0] - 2026-10-04
 
 ### Changed
