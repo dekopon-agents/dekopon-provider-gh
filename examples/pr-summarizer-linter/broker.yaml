@@ -34,6 +34,13 @@ providers:
   # It must be a regular single-link file owned by this UID under owner-controlled directories.
   - ../../gh-provider.wasm
 
+# Optional. The gh component sends to https://api.github.com unless the owner names another base,
+# for GitHub Enterprise Server or a local `cassette` recorder. Every allowedHosts entry below and
+# the credential's destinations must then name that base's authority instead of api.github.com.
+# providerSettings:
+#   gh:
+#     baseUrl: https://ghe.example.com/api/v3
+
 identities:
   # 501 is the server's own UID, which is what the owner-only socket currently permits. Change it
   # to your own (`id -u`). In this single-UID deployment the attestor grant buys attribution and

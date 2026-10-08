@@ -152,24 +152,41 @@ fn marker_bytes_in_literal_and_direct_bodies_never_read_stdin() {
 }
 
 #[test]
-fn real_component_conforms_and_keeps_http_authorized() -> Result<(), Box<dyn std::error::Error>> {
+fn real_component_conforms_and_reaches_only_the_owner_base_url()
+-> Result<(), Box<dyn std::error::Error>> {
     conformance::<Gh>(component())?;
     let denied = Harness::<Gh>::get(component())
         .call("gh.repo.read", json!({"owner":"octo","repo":"hello"}));
     assert!(denied.is_err(), "no HTTP grant must not reach GitHub");
     let response = Response { status: 200, headers: vec![Header::text("x-ratelimit-remaining", "10")?], body: json!({"name":"hello","full_name":"octo/hello","private":false,"default_branch":"main","archived":false,"fork":false,"updated_at":"2026-01-01T00:00:00Z"}).to_string().into_bytes() };
-    // Testkit fixtures speak HTTPS on a dynamic port. gh refuses every HTTPS origin except
-    // api.github.com (without a port); assert this real-component refusal before HTTP.
-    let harness =
+    let model_origin =
         Harness::<Gh>::get(component()).http(HttpScript::new("localhost", "GET", response.clone()));
-    let origin = harness.origin().expect("script origin").to_owned();
-    let refused = harness.call(
+    let origin = model_origin.origin().expect("script origin").to_owned();
+    let refused = model_origin.call(
         "gh.repo.read",
         json!({"owner":"octo","repo":"hello","endpoint":origin}),
     )?;
     assert_ne!(refused.status, 0);
     assert!(refused.stdout.is_empty());
     assert!(refused.http_calls.is_empty());
+    let invalid = Harness::<Gh>::get(component())
+        .settings(json!({"baseUrl": "https://user@localhost"}))
+        .call("gh.repo.read", json!({"owner":"octo","repo":"hello"}))?;
+    assert_ne!(invalid.status, 0);
+    assert!(invalid.stderr.contains("settings"), "{}", invalid.stderr);
+    assert!(invalid.http_calls.is_empty());
+    let owner_base =
+        Harness::<Gh>::get(component()).http(HttpScript::new("localhost", "GET", response.clone()));
+    let origin = owner_base.origin().expect("script origin").to_owned();
+    let reached = owner_base
+        .settings(json!({"baseUrl": format!("{origin}/")}))
+        .call("gh.repo.read", json!({"owner":"octo","repo":"hello"}))?;
+    assert_eq!(reached.status, 0, "{}", reached.stderr);
+    assert_eq!(reached.http_calls.len(), 1);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&reached.stdout)?["name"],
+        "hello"
+    );
     let native = Native::<Gh>::new().http(HttpScript::new("api.github.com", "GET", response));
     let output = native.call(
         "gh.repo.read",

@@ -1,14 +1,15 @@
 //! Repository, branch, commit, and user read capabilities.
 
 use crate::error::ProviderError;
+use dekopon_provider_sdk::provider::endpoint::Base;
 use dekopon_provider_sdk::provider::{HttpError, Request, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
     ACCEPT_JSON, MAX_DESCRIPTION_OUT_BYTES, MAX_LIST_ITEMS, MAX_MESSAGE_OUT_BYTES, RawUser,
-    bounded_optional, decode, encode_path, endpoint, invalid_input, invalid_response, is_sha,
-    login_out, percent_encode, send_get, timestamp, truncate_text, validate_login, validate_ref,
+    bounded_optional, decode, encode_path, invalid_input, invalid_response, is_sha, login_out,
+    percent_encode, send_get, timestamp, truncate_text, url, validate_login, validate_ref,
     validate_repo,
 };
 
@@ -17,8 +18,6 @@ use crate::{
 struct RepoInput {
     owner: String,
     repo: String,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,8 +26,6 @@ struct BranchInput {
     owner: String,
     repo: String,
     branch: String,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,16 +35,12 @@ struct CommitInput {
     repo: String,
     #[serde(rename = "ref")]
     reference: String,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct UserInput {
     login: String,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -140,18 +133,21 @@ struct RawProfile {
 
 pub(crate) fn repo(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<RepoInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+        ),
+    )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let repo = decode::<RawRepo>(&response.body)?;
     // The name echo binds the response to the request without being case-brittle: GitHub
@@ -179,20 +175,23 @@ pub(crate) fn repo(
 
 pub(crate) fn branch(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<BranchInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_ref(&input.branch)?;
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/branches/{}",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        encode_path(&input.branch),
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/branches/{}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            encode_path(&input.branch),
+        ),
+    )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let branch = decode::<RawBranch>(&response.body)?;
     if branch.name != input.branch || !is_sha(&branch.commit.sha) {
@@ -208,20 +207,23 @@ pub(crate) fn branch(
 
 pub(crate) fn commit(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<CommitInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_ref(&input.reference)?;
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!(
-        "{endpoint}/repos/{}/{}/commits/{}",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        encode_path(&input.reference),
-    );
+    let uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/commits/{}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            encode_path(&input.reference),
+        ),
+    )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let commit = decode::<RawCommit>(&response.body)?;
     if !is_sha(&commit.sha) {
@@ -263,13 +265,13 @@ pub(crate) fn commit(
 
 pub(crate) fn user(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<UserInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.login)?;
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let uri = format!("{endpoint}/users/{}", percent_encode(&input.login));
+    let uri = url(base, &format!("/users/{}", percent_encode(&input.login)))?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let profile = decode::<RawProfile>(&response.body)?;
     if !profile.login.eq_ignore_ascii_case(&input.login) {

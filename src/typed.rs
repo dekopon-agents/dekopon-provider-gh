@@ -1,11 +1,11 @@
-use dekopon_provider_sdk::provider::{self, Capability, Http, Proposal, Stdout};
+use dekopon_provider_sdk::provider::{self, Capability, Http, Proposal, Settings, Stdout};
 use dekopon_provider_sdk::{EffectKind, RiskLevel};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{Read, Write};
 
-use crate::{Gh, error::ProviderError};
+use crate::{Gh, GhSettings, error::ProviderError};
 
 // The established per-capability schemas remain the model-facing contract. Each typed input
 // has its own schema and keeps the existing native validation at the HTTP boundary.
@@ -41,9 +41,14 @@ macro_rules! capability {
             const EFFECT: EffectKind = $effect;
             const RISK: RiskLevel = $risk;
             type Input = $input;
-            type Needs = Http;
+            type Needs = (Settings<GhSettings>, Http);
             type Error = ProviderError;
-            fn run(input: Self::Input, http: Http, out: &mut Stdout) -> Result<(), Self::Error> {
+            fn run(
+                input: Self::Input,
+                (settings, http): Self::Needs,
+                out: &mut Stdout,
+            ) -> Result<(), Self::Error> {
+                let base = settings.into_inner().base();
                 let mut input = input.0;
                 if input.get(STDIN_BODY_FIELD).is_some() {
                     if !has_piped_body($id)
@@ -73,7 +78,7 @@ macro_rules! capability {
                     let body = String::from_utf8(body).map_err(|_| crate::invalid_input())?;
                     input["body"] = Value::String(body);
                 }
-                let result = $handler(input, &mut |request| http.send(request))?;
+                let result = $handler(input, &base, &mut |request| http.send(request))?;
                 serde_json::to_writer(&mut *out, &result).map_err(|_| {
                     ProviderError::new("invalid-response", "could not write output")
                 })?;

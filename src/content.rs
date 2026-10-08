@@ -2,14 +2,15 @@
 
 use crate::error::ProviderError;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use dekopon_provider_sdk::provider::endpoint::Base;
 use dekopon_provider_sdk::provider::{HttpError, Request, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    ACCEPT_JSON, MAX_CONTENT_OUT_BYTES, MAX_DIR_ENTRIES, decode, encode_path, endpoint,
-    invalid_input, invalid_response, percent_encode, send_get, truncate_text, validate_login,
-    validate_path, validate_ref, validate_repo,
+    ACCEPT_JSON, MAX_CONTENT_OUT_BYTES, MAX_DIR_ENTRIES, decode, encode_path, invalid_input,
+    invalid_response, percent_encode, send_get, truncate_text, url, validate_login, validate_path,
+    validate_ref, validate_repo,
 };
 
 #[derive(Debug, Deserialize)]
@@ -20,8 +21,6 @@ struct Input {
     path: String,
     #[serde(default, rename = "ref")]
     reference: Option<String>,
-    #[serde(default)]
-    endpoint: Option<String>,
 }
 
 /// One entry of a directory listing response.
@@ -56,6 +55,7 @@ struct RawContent {
 
 pub(crate) fn read(
     input: Value,
+    base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     let input = serde_json::from_value::<Input>(input).map_err(|_| invalid_input())?;
@@ -65,14 +65,16 @@ pub(crate) fn read(
     if let Some(reference) = input.reference.as_deref() {
         validate_ref(reference)?;
     }
-    let endpoint = endpoint(input.endpoint.as_deref())?;
 
-    let mut uri = format!(
-        "{endpoint}/repos/{}/{}/contents/{}",
-        percent_encode(&input.owner),
-        percent_encode(&input.repo),
-        encode_path(&input.path),
-    );
+    let mut uri = url(
+        base,
+        &format!(
+            "/repos/{}/{}/contents/{}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            encode_path(&input.path),
+        ),
+    )?;
     if let Some(reference) = input.reference.as_deref() {
         uri.push_str("?ref=");
         uri.push_str(&percent_encode(reference));
@@ -193,15 +195,14 @@ mod tests {
                 "owner": "octo",
                 "repo": "hello",
                 "path": "src/main.rs",
-                "ref": "feature/x",
-                "endpoint": "http://127.0.0.1:43123"
+                "ref": "feature/x"
             }),
             scripted(vec![step(
                 |request| {
                     assert_eq!(request.method, "GET");
                     assert_eq!(
                         request.uri,
-                        "http://127.0.0.1:43123/repos/octo/hello/contents/src/main.rs?ref=feature%2Fx"
+                        "https://api.github.com/repos/octo/hello/contents/src/main.rs?ref=feature%2Fx"
                     );
                     assert_eq!(accept_of(request), b"application/vnd.github+json");
                     assert!(request.body.is_empty());

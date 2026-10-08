@@ -40,7 +40,6 @@ impl Failure for ProviderError {
             "unexpected-status" => Code::new("unexpected-status"),
             "invalid-response" => Code::new("invalid-response"),
             "http-failed" => Code::new("http-failed"),
-            "invalid-endpoint" => Code::new("invalid-endpoint"),
             "invalid-request" => Code::new("invalid-request"),
             "unknown-capability" => Code::UNKNOWN_CAPABILITY,
             "merge-conflict" => Code::new("merge-conflict"),

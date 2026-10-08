@@ -79,6 +79,25 @@ providers:
   - /opt/dekopon/providers
 ```
 
+### `baseUrl`
+
+Requests go to `https://api.github.com`. To reach GitHub Enterprise Server, or a
+[`cassette`](https://github.com/dekopon-agents/cassette) recorder, the owner sets one key in
+`broker.yaml`:
+
+```yaml
+providerSettings:
+  gh:
+    baseUrl: https://ghe.example.com/api/v3
+```
+
+`baseUrl` is an `http://` or `https://` URL with an optional path prefix and no userinfo, query or
+fragment; one trailing `/` is dropped. An invalid value fails `invalid-settings` before any request.
+No capability input names the origin, so a model cannot choose where a call goes. The setting
+only moves where the component sends: the capability's `allowedHosts` (plus
+`allowPlaintextLoopback` for an `http://` loopback recorder) and the credential's `destinations`
+still decide what a call may reach, so a new `baseUrl` needs both updated to its authority.
+
 ## Releases
 
 Each tag publishes `gh-provider.wasm` two ways:
@@ -112,6 +131,10 @@ same two pins, it lands on the same bytes on any machine. CI runs the same scrip
 
 `DEKOPON_PROVIDER_COMPONENT="$PWD/gh-provider.wasm" cargo test --locked --workspace` runs native
 contract tests and real-component conformance against the built artifact; nothing contacts GitHub.
+
+`tests/cassettes/gh/` holds GitHub exchanges recorded with `cassette record --upstream
+gh=https://api.github.com` and `baseUrl: http://127.0.0.1:8787/gh`; `tests/cassette.rs` replays
+them through the `baseUrl` setting. The recorder saves `authorization` as `[redacted]`.
 
 ## License
 

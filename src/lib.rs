@@ -1,7 +1,8 @@
 //! A "fake `gh`": narrow GitHub operations as separately named Dekopon capabilities.
 //!
 //! Every operation is one fixed REST request shape (or one fixed pre-read plus one write) against
-//! `api.github.com`, projected into a small bounded output. There is deliberately no generic
+//! the GitHub REST API, projected into a small bounded output. The origin is `api.github.com`
+//! unless the owner sets `providerSettings.gh.baseUrl`; no model input names it. There is deliberately no generic
 //! `gh.api.*` passthrough and no GraphQL: broker HTTP constraints bind host and method but not
 //! path, so path discipline is exactly what this guest exists to provide. A grant of
 //! `gh.pull-request.read` is authority to read pull requests, not authority over everything the
@@ -26,6 +27,7 @@
 use crate::error::ProviderError;
 #[cfg(test)]
 use dekopon_provider_sdk::CapabilityId;
+use dekopon_provider_sdk::provider::endpoint::Base;
 use dekopon_provider_sdk::provider::{Header, HttpError, Request, Response, method};
 use dekopon_provider_sdk::provider::{Proposal, Provider, Usage};
 use dekopon_provider_sdk::{EffectKind, ProviderCapability, RiskLevel};
@@ -41,9 +43,22 @@ mod repos;
 mod reviews;
 pub mod typed;
 
-const DEFAULT_ENDPOINT: &str = "https://api.github.com";
-const PRODUCTION_HOST: &str = "api.github.com";
-const MAX_ENDPOINT_BYTES: usize = 512;
+const GITHUB_API: Base = Base::from_static("https://api.github.com");
+
+/// The owner's `providerSettings.gh`: `baseUrl` replaces the GitHub API origin, for GitHub
+/// Enterprise Server or a recording proxy. The broker's grant decides what it may reach.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GhSettings {
+    #[serde(default)]
+    base_url: Option<Base>,
+}
+
+impl GhSettings {
+    fn base(self) -> Base {
+        self.base_url.unwrap_or(GITHUB_API)
+    }
+}
 
 const ACCEPT_JSON: &str = "application/vnd.github+json";
 const ACCEPT_DIFF: &str = "application/vnd.github.diff";
@@ -160,26 +175,27 @@ where
     F: FnMut(Request) -> Result<Response, HttpError>,
 {
     let send: &mut dyn FnMut(Request) -> Result<Response, HttpError> = &mut send;
+    let base = &GITHUB_API;
     match capability.as_str() {
-        ids::CONTENT_READ => content::read(input, send),
-        ids::PR_LIST => pulls::list(input, send),
-        ids::PR_READ => pulls::read(input, send),
-        ids::PR_FILES => pulls::files(input, send),
-        ids::PR_DIFF => pulls::diff(input, send),
-        ids::PR_REVIEWS => pulls::reviews(input, send),
-        ids::PR_STATUS => pulls::status(input, send),
-        ids::PR_APPROVE => reviews::approve(input, send),
-        ids::PR_COMMENT => reviews::comment(input, send),
-        ids::PR_REQUEST_CHANGES => reviews::request_changes(input, send),
-        ids::PR_MERGE => reviews::merge(input, send),
-        ids::REPO_READ => repos::repo(input, send),
-        ids::BRANCH_READ => repos::branch(input, send),
-        ids::COMMIT_READ => repos::commit(input, send),
-        ids::USER_READ => repos::user(input, send),
-        ids::ISSUE_READ => issues::read(input, send),
-        ids::ISSUE_LIST => issues::list(input, send),
-        ids::ISSUE_COMMENTS_READ => issues::comments(input, send),
-        ids::ISSUE_COMMENT => issues::comment(input, send),
+        ids::CONTENT_READ => content::read(input, base, send),
+        ids::PR_LIST => pulls::list(input, base, send),
+        ids::PR_READ => pulls::read(input, base, send),
+        ids::PR_FILES => pulls::files(input, base, send),
+        ids::PR_DIFF => pulls::diff(input, base, send),
+        ids::PR_REVIEWS => pulls::reviews(input, base, send),
+        ids::PR_STATUS => pulls::status(input, base, send),
+        ids::PR_APPROVE => reviews::approve(input, base, send),
+        ids::PR_COMMENT => reviews::comment(input, base, send),
+        ids::PR_REQUEST_CHANGES => reviews::request_changes(input, base, send),
+        ids::PR_MERGE => reviews::merge(input, base, send),
+        ids::REPO_READ => repos::repo(input, base, send),
+        ids::BRANCH_READ => repos::branch(input, base, send),
+        ids::COMMIT_READ => repos::commit(input, base, send),
+        ids::USER_READ => repos::user(input, base, send),
+        ids::ISSUE_READ => issues::read(input, base, send),
+        ids::ISSUE_LIST => issues::list(input, base, send),
+        ids::ISSUE_COMMENTS_READ => issues::comments(input, base, send),
+        ids::ISSUE_COMMENT => issues::comment(input, base, send),
         _ => Err(ProviderError::new(
             "unknown-capability",
             "unsupported gh capability",
@@ -392,7 +408,6 @@ fn capabilities() -> Vec<ProviderCapability> {
             object_schema(
                 json!({
                     "login": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "GitHub login."},
-                    "endpoint": endpoint_property(),
                 }),
                 &["login"],
             ),
@@ -400,7 +415,7 @@ fn capabilities() -> Vec<ProviderCapability> {
     ]
 }
 
-/// Builds an object schema whose properties always include `owner`, `repo`, and `endpoint`.
+/// Builds an object schema whose properties always include `owner` and `repo`.
 fn repo_schema(mut extra: Value, required: &[&str]) -> Value {
     let properties = extra.as_object_mut().expect("schema fragments are objects");
     properties.insert(
@@ -411,7 +426,6 @@ fn repo_schema(mut extra: Value, required: &[&str]) -> Value {
         "repo".to_owned(),
         json!({"type": "string", "maxLength": MAX_REPO_BYTES, "description": "Repository name."}),
     );
-    properties.insert("endpoint".to_owned(), endpoint_property());
     let mut all_required = vec!["owner", "repo"];
     all_required.extend_from_slice(required);
     object_schema(Value::Object(properties.clone()), &all_required)
@@ -423,14 +437,6 @@ fn object_schema(properties: Value, required: &[&str]) -> Value {
         "properties": properties,
         "required": required,
         "additionalProperties": false
-    })
-}
-
-fn endpoint_property() -> Value {
-    json!({
-        "type": "string",
-        "maxLength": MAX_ENDPOINT_BYTES,
-        "description": "Optional broker-constrained endpoint; defaults to the GitHub API. Plain HTTP accepts only literal loopback test endpoints."
     })
 }
 
@@ -624,27 +630,12 @@ fn encode_path(value: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Endpoint and request construction
+// Request construction
 // ---------------------------------------------------------------------------
 
-/// Resolves the request origin: production GitHub HTTPS or a literal loopback test endpoint.
-fn endpoint(value: Option<&str>) -> Result<String, ProviderError> {
-    let value = value.unwrap_or(DEFAULT_ENDPOINT);
-    if value.len() > MAX_ENDPOINT_BYTES {
-        return Err(invalid_endpoint());
-    }
-    if matches!(value, "https://api.github.com" | "https://api.github.com/") {
-        return Ok(format!("https://{PRODUCTION_HOST}"));
-    }
-    let authority = value.strip_prefix("http://").ok_or_else(invalid_endpoint)?;
-    let authority = authority.strip_suffix('/').unwrap_or(authority);
-    let address = authority
-        .parse::<std::net::SocketAddr>()
-        .map_err(|_| invalid_endpoint())?;
-    if address.port() == 0 || !address.ip().is_loopback() {
-        return Err(invalid_endpoint());
-    }
-    Ok(format!("http://{address}"))
+/// Joins a `/`-rooted request path onto the configured base, keeping any base path prefix once.
+fn url(base: &Base, path: &str) -> Result<String, ProviderError> {
+    base.join(path).map_err(|_| invalid_request())
 }
 
 /// Builds a request carrying exactly the constant GitHub headers.
@@ -804,13 +795,6 @@ fn invalid_input() -> ProviderError {
     )
 }
 
-fn invalid_endpoint() -> ProviderError {
-    ProviderError::new(
-        "invalid-endpoint",
-        "endpoint must be production GitHub HTTPS or explicit loopback HTTP",
-    )
-}
-
 fn invalid_request() -> ProviderError {
     ProviderError::new(
         "invalid-request",
@@ -941,10 +925,11 @@ mod tests {
     use dekopon_provider_sdk::provider;
     use dekopon_provider_sdk::provider::HttpErrorCode;
     use dekopon_provider_sdk::{EffectKind, RiskLevel};
+    use dekopon_provider_sdk_testkit::{HttpScript, Native};
     use serde_json::json;
 
     use super::testutil::{capability, scripted, step};
-    use super::{Gh, HttpError, Response, endpoint, invoke_with, truncate_text};
+    use super::{Gh, HttpError, Response, invoke_with, truncate_text};
 
     #[test]
     fn manifest_covers_the_full_designed_surface() {
@@ -1015,34 +1000,96 @@ mod tests {
         }
     }
 
-    #[test]
-    fn endpoints_fail_closed() {
-        assert_eq!(
-            endpoint(None).expect("default endpoint is valid"),
-            "https://api.github.com"
-        );
-        assert_eq!(
-            endpoint(Some("https://api.github.com/")).expect("trailing slash accepted"),
-            "https://api.github.com"
-        );
-        for denied in [
-            "https://api.github.com.evil.com",
-            "https://github.com",
-            "https://example.com",
-            "https://user@api.github.com",
-            "https://api.github.com/repos",
-            "https://api.github.com?x=1",
-            "http://api.github.com",
-            "http://127.0.0.1",
-            "http://192.168.1.10:8080",
-            "http://localhost:8080",
-        ] {
-            assert!(endpoint(Some(denied)).is_err(), "accepted {denied}");
+    fn repo_reply() -> Response {
+        Response {
+            status: 200,
+            headers: Vec::new(),
+            body: json!({"name":"hello","private":false,"default_branch":"main","fork":false,"updated_at":"2026-01-01T00:00:00Z"})
+                .to_string()
+                .into_bytes(),
         }
-        assert!(
-            endpoint(Some("http://127.0.0.1:43123")).is_ok(),
-            "literal loopback with port is the test escape hatch"
+    }
+
+    #[test]
+    fn base_url_setting_replaces_the_github_origin_and_fails_closed() {
+        let repo = json!({"owner": "octo", "repo": "hello"}).to_string();
+        for (settings, host, uri) in [
+            (
+                None,
+                "api.github.com",
+                "https://api.github.com/repos/octo/hello",
+            ),
+            (
+                Some(json!({})),
+                "api.github.com",
+                "https://api.github.com/repos/octo/hello",
+            ),
+            (
+                Some(json!({"baseUrl": "https://ghe.example.test/api/v3/"})),
+                "ghe.example.test",
+                "https://ghe.example.test/api/v3/repos/octo/hello",
+            ),
+        ] {
+            let mut native = Native::<Gh>::new().http(HttpScript::new(host, "GET", repo_reply()));
+            if let Some(settings) = settings.clone() {
+                native = native.settings(settings);
+            }
+            let output = native.call("gh.repo.read", &repo);
+            assert_eq!(output.status, 0, "{settings:?}: {}", output.stderr);
+            let sent = native.requests();
+            assert_eq!(sent.len(), 1, "{settings:?}");
+            assert_eq!(sent[0].uri, uri, "{settings:?}");
+        }
+        for settings in [
+            json!({"baseUrl": "https://api.github.com?x=1"}),
+            json!({"baseUrl": "https://user@api.github.com"}),
+            json!({"baseUrl": "https://api.github.com/#top"}),
+            json!({"baseUrl": "ftp://api.github.com"}),
+            json!({"baseUrl": "api.github.com"}),
+            json!({"baseUrl": "https://"}),
+            json!({"baseUrl": 443}),
+            json!({"endpoint": "https://api.github.com"}),
+        ] {
+            let native = Native::<Gh>::new()
+                .settings(settings.clone())
+                .http(HttpScript::new("api.github.com", "GET", repo_reply()));
+            let output = native.call("gh.repo.read", &repo);
+            assert_ne!(output.status, 0, "accepted {settings}");
+            assert!(
+                output.stderr.contains("settings"),
+                "{settings}: {}",
+                output.stderr
+            );
+            assert!(native.requests().is_empty(), "{settings}");
+        }
+        let native =
+            Native::<Gh>::new().http(HttpScript::new("api.github.com", "GET", repo_reply()));
+        let output = native.call(
+            "gh.repo.read",
+            &json!({"owner": "octo", "repo": "hello", "endpoint": "http://127.0.0.1:43123"})
+                .to_string(),
         );
+        assert_ne!(output.status, 0, "a model-supplied endpoint is refused");
+        assert!(native.requests().is_empty());
+    }
+
+    #[test]
+    fn no_capability_schema_names_an_origin() {
+        let manifest = provider::manifest::<Gh>().expect("manifest");
+        assert_eq!(manifest.capabilities.len(), 19);
+        for capability in &manifest.capabilities {
+            let properties = capability.input_schema["properties"]
+                .as_object()
+                .expect("object schema");
+            for name in properties.keys() {
+                let lower = name.to_ascii_lowercase();
+                assert!(
+                    !lower.contains("endpoint") && !lower.contains("url"),
+                    "{} carries {name}",
+                    capability.id
+                );
+            }
+        }
     }
 
     #[test]
