@@ -80,6 +80,16 @@ $EDITOR broker-credentials.yaml
 `chmod 600` is enforced, not suggested. The broker rejects group or world readability, symlinks,
 hard links, and wrong ownership. `broker-credentials.yaml` is ignored by Git.
 
+### Credential diagnostics
+
+The provider also supports classic PATs and GitHub App installation tokens; see
+[credential setup and refusal codes](../../README.md#credentials-and-authentication-status).
+The six-capability review workflow does not grant `gh.auth.status`. To enable that diagnostic,
+the owner must add its own read-only, Low-risk constraint set with `credential: github-pat`, the
+same API host, GET only, and `maxRequests: 1`, plus the matching Cedar permission and agent
+capability entry. `gh auth status` then reports the core quota and any expiration/scopes headers
+without exposing the credential. A successful result does not establish repository access.
+
 ## 3. Adjust the placeholders
 
 | Placeholder | File | Replace with |
