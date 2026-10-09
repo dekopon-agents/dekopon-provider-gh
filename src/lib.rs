@@ -50,13 +50,17 @@ const GITHUB_API: Base = Base::from_static("https://api.github.com");
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GhSettings {
-    #[serde(default)]
-    base_url: Option<Base>,
+    #[serde(default = "default_base")]
+    base_url: Base,
+}
+
+fn default_base() -> Base {
+    GITHUB_API
 }
 
 impl GhSettings {
     fn base(self) -> Base {
-        self.base_url.unwrap_or(GITHUB_API)
+        self.base_url
     }
 }
 

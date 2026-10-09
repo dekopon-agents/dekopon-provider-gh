@@ -175,6 +175,16 @@ fn real_component_conforms_and_reaches_only_the_owner_base_url()
     assert_ne!(invalid.status, 0);
     assert!(invalid.stderr.contains("settings"), "{}", invalid.stderr);
     assert!(invalid.http_calls.is_empty());
+    let null_base = Harness::<Gh>::get(component())
+        .settings(json!({"baseUrl": null}))
+        .call("gh.repo.read", json!({"owner":"octo","repo":"hello"}))?;
+    assert_ne!(null_base.status, 0);
+    assert!(
+        null_base.stderr.contains("settings"),
+        "{}",
+        null_base.stderr
+    );
+    assert!(null_base.http_calls.is_empty());
     let owner_base =
         Harness::<Gh>::get(component()).http(HttpScript::new("localhost", "GET", response.clone()));
     let origin = owner_base.origin().expect("script origin").to_owned();
