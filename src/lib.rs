@@ -34,6 +34,7 @@ use dekopon_provider_sdk::{EffectKind, ProviderCapability, RiskLevel};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
+mod auth;
 pub mod commands;
 mod content;
 pub mod error;
@@ -103,6 +104,7 @@ const MAX_LABELS: usize = 20;
 /// renaming a capability is a compile error rather than an exit code a model discovers
 /// mid-session.
 pub(crate) mod ids {
+    pub(crate) const AUTH_STATUS: &str = "gh.auth.status";
     pub(crate) const CONTENT_READ: &str = "gh.content.read";
     pub(crate) const PR_LIST: &str = "gh.pull-request.list";
     pub(crate) const PR_READ: &str = "gh.pull-request.read";
@@ -152,6 +154,7 @@ impl Provider for Gh {
         typed::IssueComment,
         typed::PrMerge,
         typed::UserRead,
+        typed::AuthStatus,
     );
     fn propose(args: Self::Args, stdin_piped: bool) -> Result<Proposal<Self>, Usage> {
         commands::propose(args, stdin_piped)
@@ -196,6 +199,7 @@ where
         ids::BRANCH_READ => repos::branch(input, base, send),
         ids::COMMIT_READ => repos::commit(input, base, send),
         ids::USER_READ => repos::user(input, base, send),
+        ids::AUTH_STATUS => auth::status(input, base, send),
         ids::ISSUE_READ => issues::read(input, base, send),
         ids::ISSUE_LIST => issues::list(input, base, send),
         ids::ISSUE_COMMENTS_READ => issues::comments(input, base, send),
@@ -228,6 +232,11 @@ fn capabilities() -> Vec<ProviderCapability> {
     };
 
     vec![
+        read(
+            ids::AUTH_STATUS,
+            "Reads the credential core quota and available authentication metadata",
+            object_schema(json!({}), &[]),
+        ),
         // Tier 1 — the review workflow slice.
         read(
             ids::CONTENT_READ,
@@ -693,14 +702,38 @@ fn send_get(
 /// authorization refusal. A 429 is rate limiting by definition, with or without the header.
 fn status_error(response: &Response) -> ProviderError {
     match response.status {
-        401 => ProviderError::new("unauthorized", "endpoint rejected the request credentials"),
+        401 => ProviderError::new(
+            "unauthorized",
+            "credential rejected: expired, revoked or malformed",
+        ),
         403 if rate_limit_exhausted(response) => rate_limited(),
-        403 => ProviderError::new("forbidden", "endpoint refused the request"),
-        404 => ProviderError::new("not-found", "the requested resource was not found"),
+        403 => forbidden(response),
+        404 => ProviderError::new("not-found", "not found, or not visible to this credential"),
         422 => ProviderError::new("unprocessable", "endpoint refused the request as invalid"),
         429 => rate_limited(),
         _ => unexpected_status(),
     }
+}
+
+fn forbidden(response: &Response) -> ProviderError {
+    let message = if let Some(permissions) = header_text(response, "x-accepted-github-permissions")
+    {
+        format!("credential lacks a permission this call needs; GitHub accepts: {permissions}")
+    } else if let Some(accepted) = header_text(response, "x-accepted-oauth-scopes") {
+        let held = header_text(response, "x-oauth-scopes").unwrap_or_default();
+        format!("credential lacks a scope; GitHub accepts: {accepted}; credential has: {held}")
+    } else {
+        "credential is not permitted to make this call".to_owned()
+    };
+    ProviderError::new("forbidden", message)
+}
+
+fn header_text<'a>(response: &'a Response, name: &str) -> Option<&'a str> {
+    response
+        .headers
+        .iter()
+        .find(|header| header.name.eq_ignore_ascii_case(name))
+        .and_then(|header| core::str::from_utf8(&header.value).ok())
 }
 
 fn rate_limited() -> ProviderError {
@@ -939,7 +972,7 @@ mod tests {
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 19);
+        assert_eq!(manifest.capabilities.len(), 20);
 
         let external_writes = manifest
             .capabilities
@@ -1080,7 +1113,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 19);
+        assert_eq!(manifest.capabilities.len(), 20);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()

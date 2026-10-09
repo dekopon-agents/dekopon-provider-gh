@@ -107,6 +107,16 @@ fn has_piped_body(id: &str) -> bool {
 }
 
 capability!(
+    AuthStatus,
+    AuthStatusInput,
+    crate::ids::AUTH_STATUS,
+    "auth.status",
+    "Reads the credential core quota and available authentication metadata",
+    crate::auth::status,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
     ContentRead,
     ContentReadInput,
     "gh.content.read",
@@ -299,6 +309,7 @@ capability!(
 
 pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
     match id {
+        crate::ids::AUTH_STATUS => Proposal::to::<AuthStatus>(AuthStatusInput(input)),
         "gh.content.read" => Proposal::to::<ContentRead>(ContentReadInput(input)),
         "gh.pull-request.list" => Proposal::to::<PrList>(PrListInput(input)),
         "gh.pull-request.read" => Proposal::to::<PrRead>(PrReadInput(input)),
