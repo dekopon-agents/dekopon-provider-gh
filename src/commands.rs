@@ -138,6 +138,14 @@ fn tree() -> Command {
                     .num_args(0..),
             ),
         )
+        .subcommand(
+            Command::new("auth")
+                .about("Inspect the broker-bound GitHub credential")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new("status").about("Read quota, token expiration, and scopes"),
+                ),
+        )
         .subcommand(pull_requests())
         .subcommand(
             Command::new("repo")
@@ -586,6 +594,7 @@ fn dispatch(
             insert_required_text(&mut input, "ref", matches);
             ids::COMMIT_READ
         }
+        ("auth", "status") => ids::AUTH_STATUS,
         ("user", "view") => {
             insert_required_text(&mut input, "login", matches);
             ids::USER_READ
@@ -621,6 +630,7 @@ pub(crate) const DISPATCH_TABLE: &[(&str, &str, &str)] = &[
     ("branch", "view", ids::BRANCH_READ),
     ("commit", "view", ids::COMMIT_READ),
     ("user", "view", ids::USER_READ),
+    ("auth", "status", ids::AUTH_STATUS),
 ];
 
 fn insert_repo(input: &mut Map<String, Value>, matches: &ArgMatches) -> Result<(), ProviderError> {
