@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-12
+
+### Added
+
+- Inspect credential quota, expiration, and scopes with `gh auth status`.
+
+### Changed
+
+- Move to provider SDK and testkit 0.45.0 to support additional GitHub capabilities.
+
+### Fixed
+
+- Explain rejected credentials, required permissions or scopes, and ambiguous not-found responses.
+- Reject `providerSettings.gh.baseUrl: null` as invalid settings instead of using the default.
+
 ## [0.8.0] - 2026-10-08
 
 ### Added
