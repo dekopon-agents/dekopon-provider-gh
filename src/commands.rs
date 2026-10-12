@@ -215,6 +215,15 @@ fn tree() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("auth")
+                .about("Inspect the broker credential")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new("status")
+                        .about("Read the credential's rate-limit quota, expiry, and scopes"),
+                ),
+        )
+        .subcommand(
             Command::new("user")
                 .about("Work with users")
                 .subcommand_required(true)
@@ -590,6 +599,7 @@ fn dispatch(
             insert_required_text(&mut input, "login", matches);
             ids::USER_READ
         }
+        ("auth", "status") => ids::AUTH_STATUS,
         _ => unreachable!("the tree has no other subcommand than {command}"),
     };
 
@@ -621,6 +631,7 @@ pub(crate) const DISPATCH_TABLE: &[(&str, &str, &str)] = &[
     ("branch", "view", ids::BRANCH_READ),
     ("commit", "view", ids::COMMIT_READ),
     ("user", "view", ids::USER_READ),
+    ("auth", "status", ids::AUTH_STATUS),
 ];
 
 fn insert_repo(input: &mut Map<String, Value>, matches: &ArgMatches) -> Result<(), ProviderError> {
@@ -983,6 +994,7 @@ mod tests {
                 "gh.user.read",
                 json!({"login": "cpetersen"}),
             ),
+            (&["auth", "status"], "gh.auth.status", json!({})),
         ];
 
         for (arguments, capability, input) in cases {

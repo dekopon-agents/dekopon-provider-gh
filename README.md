@@ -2,7 +2,7 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Nineteen narrow repository, pull-request, and issue capabilities with fixed request shapes, bounded
+Twenty narrow repository, pull-request, issue, and credential-status capabilities with fixed request shapes, bounded
 output projections, and SHA-pinned review/merge writes. There is deliberately no `gh.api.*`
 passthrough: a path-level escape hatch would collapse per-capability policy into "everything the
 credential can reach".
@@ -52,6 +52,7 @@ JSON to stdout; failures write to stderr with a nonzero status. Filter stdout wi
 | `gh.repo.read` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` | read-only |
 | `gh.issue.read` / `.list` / `gh.issue-comments.read` | read-only |
 | `gh.issue.comment` | external-write |
+| `gh.auth.status` | read-only |
 
 `gh.pull-request.status` reads the pull request's head, then lists GitHub Actions workflow runs and
 legacy commit statuses at that SHA. This deliberately avoids the Checks REST API: GitHub documents
@@ -97,6 +98,41 @@ No capability input names the origin, so a model cannot choose where a call goes
 only moves where the component sends: the capability's `allowedHosts` (plus
 `allowPlaintextLoopback` for an `http://` loopback recorder) and the credential's `destinations`
 still decide what a call may reach, so a new `baseUrl` needs both updated to its authority.
+
+### Credentials
+
+The broker injects one of three kinds of GitHub credential; the component never sees which.
+
+- **Fine-grained personal access token.** Limit it to the repositories the agent may touch and
+  grant only what its granted capabilities need: **Contents: Read-only** for `gh.content.read`,
+  `gh.repo.read`, `gh.branch.read` and `gh.commit.read`; **Pull requests** (read, or read and write
+  for reviews and merge) for `gh.pull-request.*`; **Issues** for `gh.issue.*` and
+  `gh.issue-comments.read`; **Actions: Read-only** and **Commit statuses: Read-only** for
+  `gh.pull-request.status`. Merging also needs **Contents: Read and write**.
+- **Classic personal access token.** `repo` covers private repositories, `public_repo` public ones
+  only. Classic tokens cannot be limited to a repository, so prefer fine-grained.
+- **GitHub App installation token.** Install the App on the repositories, give it the same
+  permissions as a fine-grained token, and let the broker's credential source mint the hour-long
+  installation token. Writes then appear as the App's bot account.
+
+`gh auth status` (`gh.auth.status`) makes one `GET /rate_limit` and prints the core quota, plus
+`tokenExpiration` when GitHub reports one and `scopes` for a classic token. It costs no quota. A
+`limit` of 60 means no credential reached GitHub: check the credential's `destinations` against
+`baseUrl`.
+
+### Errors
+
+A refused call fails with a stable code; the message names what GitHub said about the credential and
+quotes nothing else from the response.
+
+| Code | Message | What to do |
+|---|---|---|
+| `unauthorized` | `credential rejected: expired, revoked or malformed` | Replace the token; `gh auth status` fails the same way until you do |
+| `forbidden` | `credential lacks a permission this call needs; GitHub accepts: contents=read` | Fine-grained token or App: add the named permission, or the repository to its access list |
+| `forbidden` | `credential lacks a scope; GitHub accepts: repo; credential has: read:org` | Classic token: add the accepted scope |
+| `forbidden` | `credential is not permitted to make this call` | GitHub named no permission: branch protection, an organization policy or a token restriction refused the call |
+| `not-found` | `not found, or not visible to this credential` | Check the owner, repository and number; GitHub answers 404, not 403, for a private repository the credential cannot see |
+| `rate-limited` | `endpoint rate limit is exhausted` | Wait for `reset` in `gh auth status` |
 
 ## Releases
 

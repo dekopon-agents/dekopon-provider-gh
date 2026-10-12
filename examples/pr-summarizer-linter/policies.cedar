@@ -24,7 +24,8 @@ when { context has via && context.via == "dekopon-gatewayd" };
 // pins the surface to this one agent. Approval, request-changes, and merge are deliberately absent.
 @id("pr-summarizer-linter-gh-surface")
 permit(principal == Dekopon::Principal::"maintainer",
-       action in [Dekopon::Action::"gh.content.read",
+       action in [Dekopon::Action::"gh.auth.status",
+                  Dekopon::Action::"gh.content.read",
                   Dekopon::Action::"gh.pull-request.read",
                   Dekopon::Action::"gh.pull-request.files",
                   Dekopon::Action::"gh.pull-request.diff",

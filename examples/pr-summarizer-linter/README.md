@@ -248,6 +248,7 @@ or query, headers, token, or provider output. Earlier decision/execution pairs s
 | Broker says a capability has no constraint set | Policy and `broker.yaml` disagree; startup failed closed |
 | Broker says credential is unknown or host is uncovered | Credentials file is absent/misnamed or lacks `api.github.com` (or the `providerSettings.gh.baseUrl` authority) |
 | `invalid-settings` on every `gh` call | `providerSettings.gh` has a key other than `baseUrl`, or `baseUrl` carries a query, fragment or userinfo |
+| `unauthorized`, `forbidden` or `not-found` from GitHub | The message names the credential's problem; ask the agent to run `gh auth status` and see the provider's [error table](../../README.md#errors) |
 | Gateway exits naming an environment variable | Slack or model credential variable is unset; only its name is logged |
 
 Approval, request-changes, and merge do not produce runtime provider errors here: they are absent
@@ -268,7 +269,7 @@ execution, and audit — not from trusting the summary.
 ## Related
 
 - [dekopon's Slack example](https://github.com/dekopon-agents/dekopon/blob/main/examples/slack/README.md) — app manifest, tokens, and Slack identifiers.
-- [the provider](../../README.md) — all nineteen capabilities and no raw passthrough.
+- [the provider](../../README.md) — all twenty capabilities and no raw passthrough.
 - [`gatewayd.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/gatewayd.md) — routing, sessions, and conversation bounds.
 - [`dekopon-brokerd`](https://github.com/dekopon-agents/dekopon/blob/main/crates/dekopon-brokerd/README.md) — broker configuration and recovery.
 - [`security-model.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/security-model.md) — trust boundaries and limitations.

@@ -53,6 +53,7 @@ spec:
     If asked for anything outside pull-request summarization and lint review, decline and explain
     what you can do instead. You have no authority of your own.
   capabilities:
+    - gh.auth.status
     - gh.content.read
     - gh.pull-request.read
     - gh.pull-request.files

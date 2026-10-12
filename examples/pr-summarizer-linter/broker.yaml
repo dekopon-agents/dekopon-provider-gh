@@ -30,7 +30,7 @@ policiesPath: policies.cedar
 strict: true
 
 providers:
-  # The checked-in gh component: 19 narrow GitHub capabilities and no `gh.api.*` passthrough.
+  # The checked-in gh component: 20 narrow GitHub capabilities and no `gh.api.*` passthrough.
   # It must be a regular single-link file owned by this UID under owner-controlled directories.
   - ../../gh-provider.wasm
 
@@ -143,6 +143,22 @@ constraintSets:
         maxRequests: 3
         maxRequestBytes: 16384
         maxResponseBytes: 4194304
+        allowPlaintextLoopback: false
+  gh.auth.status:
+    provider: gh
+    effect: read-only
+    risk: Low
+    credential: github-pat
+    constraints:
+      timeoutMs: 10000
+      maxOutputBytes: 4096
+      http:
+        allowedHosts: [api.github.com]
+        # One GET /rate_limit; it reports the credential's quota and expiry and costs no quota.
+        allowedMethods: [GET]
+        maxRequests: 1
+        maxRequestBytes: 16384
+        maxResponseBytes: 65536
         allowPlaintextLoopback: false
   gh.pull-request.comment:
     provider: gh

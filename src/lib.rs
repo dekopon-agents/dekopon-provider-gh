@@ -34,6 +34,7 @@ use dekopon_provider_sdk::{EffectKind, ProviderCapability, RiskLevel};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
+mod auth;
 pub mod commands;
 mod content;
 pub mod error;
@@ -96,6 +97,7 @@ const MAX_TIMESTAMP_BYTES: usize = 64;
 const MAX_LOGIN_OUT_BYTES: usize = 64;
 const MAX_LIST_ITEMS: usize = 50;
 const MAX_LABELS: usize = 20;
+const MAX_PERMISSIONS_OUT_BYTES: usize = 256;
 
 /// Every capability identifier this component exports, named once.
 ///
@@ -122,6 +124,7 @@ pub(crate) mod ids {
     pub(crate) const ISSUE_LIST: &str = "gh.issue.list";
     pub(crate) const ISSUE_COMMENTS_READ: &str = "gh.issue-comments.read";
     pub(crate) const ISSUE_COMMENT: &str = "gh.issue.comment";
+    pub(crate) const AUTH_STATUS: &str = "gh.auth.status";
 }
 
 pub struct Gh;
@@ -152,6 +155,7 @@ impl Provider for Gh {
         typed::IssueComment,
         typed::PrMerge,
         typed::UserRead,
+        typed::AuthStatus,
     );
     fn propose(args: Self::Args, stdin_piped: bool) -> Result<Proposal<Self>, Usage> {
         commands::propose(args, stdin_piped)
@@ -200,6 +204,7 @@ where
         ids::ISSUE_LIST => issues::list(input, base, send),
         ids::ISSUE_COMMENTS_READ => issues::comments(input, base, send),
         ids::ISSUE_COMMENT => issues::comment(input, base, send),
+        ids::AUTH_STATUS => auth::status(input, base, send),
         _ => Err(ProviderError::new(
             "unknown-capability",
             "unsupported gh capability",
@@ -415,6 +420,11 @@ fn capabilities() -> Vec<ProviderCapability> {
                 }),
                 &["login"],
             ),
+        ),
+        read(
+            ids::AUTH_STATUS,
+            "Reads the broker credential's core rate-limit quota, expiry, and classic scopes",
+            object_schema(json!({}), &[]),
         ),
     ]
 }
@@ -693,14 +703,45 @@ fn send_get(
 /// authorization refusal. A 429 is rate limiting by definition, with or without the header.
 fn status_error(response: &Response) -> ProviderError {
     match response.status {
-        401 => ProviderError::new("unauthorized", "endpoint rejected the request credentials"),
+        401 => ProviderError::new(
+            "unauthorized",
+            "credential rejected: expired, revoked or malformed",
+        ),
         403 if rate_limit_exhausted(response) => rate_limited(),
-        403 => ProviderError::new("forbidden", "endpoint refused the request"),
-        404 => ProviderError::new("not-found", "the requested resource was not found"),
+        403 => ProviderError::new("forbidden", forbidden_message(response)),
+        404 => ProviderError::new("not-found", "not found, or not visible to this credential"),
         422 => ProviderError::new("unprocessable", "endpoint refused the request as invalid"),
         429 => rate_limited(),
         _ => unexpected_status(),
     }
+}
+
+fn forbidden_message(response: &Response) -> String {
+    if let Some(permissions) = permission_header(response, "x-accepted-github-permissions") {
+        return format!(
+            "credential lacks a permission this call needs; GitHub accepts: {permissions}"
+        );
+    }
+    if let Some(accepted) = permission_header(response, "x-accepted-oauth-scopes") {
+        let held = permission_header(response, "x-oauth-scopes").unwrap_or("none");
+        return format!(
+            "credential lacks a scope; GitHub accepts: {accepted}; credential has: {held}"
+        );
+    }
+    "credential is not permitted to make this call".to_owned()
+}
+
+/// Returns a non-empty permission or scope list header, or `None` when it is absent or carries
+/// anything beyond the bounded grammar of permission names, so no other response text is quoted.
+fn permission_header<'a>(response: &'a Response, name: &'a str) -> Option<&'a str> {
+    let value = core::str::from_utf8(header_values(response, name).next()?).ok()?;
+    let value = value.trim();
+    (!value.is_empty()
+        && value.len() <= MAX_PERMISSIONS_OUT_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b" _-:.,;=".contains(&byte)))
+    .then_some(value)
 }
 
 fn rate_limited() -> ProviderError {
@@ -939,7 +980,7 @@ mod tests {
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 19);
+        assert_eq!(manifest.capabilities.len(), 20);
 
         let external_writes = manifest
             .capabilities
@@ -1080,7 +1121,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 19);
+        assert_eq!(manifest.capabilities.len(), 20);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()

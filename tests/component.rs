@@ -13,7 +13,7 @@ fn component() -> std::path::PathBuf {
 #[test]
 fn manifest_keeps_read_and_write_grants_independent() {
     let manifest = provider::manifest::<Gh>().expect("closed manifest");
-    assert_eq!(manifest.capabilities.len(), 19);
+    assert_eq!(manifest.capabilities.len(), 20);
     for cap in &manifest.capabilities {
         assert_eq!(cap.input_schema["additionalProperties"], false);
         assert!(cap.id.as_str().starts_with("gh."));
@@ -206,5 +206,159 @@ fn real_component_conforms_and_reaches_only_the_owner_base_url()
     assert_eq!(native.requests().len(), 1);
     let value: Value = serde_json::from_slice(&output.stdout)?;
     assert_eq!(value["name"], "hello");
+    Ok(())
+}
+
+fn through_owner_base(
+    capability: &str,
+    input: Value,
+    path: &str,
+    response: Response,
+) -> dekopon_provider_sdk_testkit::ComponentOutput {
+    let run = Harness::<Gh>::get(component()).http(HttpScript::new("localhost", "GET", response));
+    let origin = run.origin().expect("script origin").to_owned();
+    let output = run
+        .settings(json!({"baseUrl": format!("{origin}/api/v3/")}))
+        .call(capability, input)
+        .expect("the component runs");
+    assert_eq!(output.http_calls.len(), 1, "{}", output.stderr);
+    let request = output
+        .http_request
+        .as_ref()
+        .expect("one request reached the script");
+    assert_eq!(request.method, "GET");
+    assert_eq!(request.uri, format!("{origin}/api/v3{path}"));
+    assert!(
+        !request
+            .headers
+            .iter()
+            .any(|header| header.name.eq_ignore_ascii_case("authorization")),
+        "the guest sent authorization"
+    );
+    output
+}
+
+fn refusal(status: u16, headers: &[(&str, &str)]) -> Response {
+    Response {
+        status,
+        headers: headers
+            .iter()
+            .map(|(name, value)| Header::text(*name, *value).expect("fixture header"))
+            .collect(),
+        body: br#"{"message":"refused"}"#.to_vec(),
+    }
+}
+
+fn refused_repo_read(status: u16, headers: &[(&str, &str)]) -> String {
+    let output = through_owner_base(
+        "gh.repo.read",
+        json!({"owner":"octo","repo":"hello"}),
+        "/repos/octo/hello",
+        refusal(status, headers),
+    );
+    assert_ne!(output.status, 0);
+    assert!(output.stdout.is_empty());
+    output.stderr
+}
+
+#[test]
+fn forbidden_names_the_accepted_permission() {
+    let stderr = refused_repo_read(
+        403,
+        &[
+            ("x-accepted-github-permissions", "contents=read"),
+            ("x-accepted-oauth-scopes", "repo"),
+            ("x-ratelimit-remaining", "4999"),
+        ],
+    );
+    assert!(
+        stderr.contains(
+            "credential lacks a permission this call needs; GitHub accepts: contents=read"
+        ),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("refused"), "{stderr}");
+}
+
+#[test]
+fn forbidden_names_classic_scopes_against_held_scopes() {
+    let stderr = refused_repo_read(
+        403,
+        &[
+            ("x-accepted-oauth-scopes", "repo"),
+            ("x-oauth-scopes", "read:org"),
+        ],
+    );
+    assert!(
+        stderr.contains("credential lacks a scope; GitHub accepts: repo; credential has: read:org"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn not_found_does_not_assert_existence() {
+    let stderr = refused_repo_read(404, &[]);
+    assert!(
+        stderr.contains("not found, or not visible to this credential"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn unauthorized_says_the_credential_was_rejected() {
+    let stderr = refused_repo_read(401, &[]);
+    assert!(
+        stderr.contains("credential rejected: expired, revoked or malformed"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn auth_status_reports_quota_and_expiry() -> Result<(), Box<dyn std::error::Error>> {
+    let quota = json!({
+        "resources": {"core": {"limit": 5000, "remaining": 4321, "reset": 1_760_000_000, "used": 679}},
+        "rate": {"limit": 5000, "remaining": 4321, "reset": 1_760_000_000, "used": 679}
+    });
+    let reply = |headers: Vec<Header>| Response {
+        status: 200,
+        headers,
+        body: quota.to_string().into_bytes(),
+    };
+    let classic = through_owner_base(
+        "gh.auth.status",
+        json!({}),
+        "/rate_limit",
+        reply(vec![
+            Header::text(
+                "github-authentication-token-expiration",
+                "2026-11-01 00:00:00 UTC",
+            )?,
+            Header::text("x-oauth-scopes", "repo, read:org")?,
+        ]),
+    );
+    assert_eq!(classic.status, 0, "{}", classic.stderr);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&classic.stdout)?,
+        json!({
+            "core": {"limit": 5000, "remaining": 4321, "reset": 1_760_000_000},
+            "tokenExpiration": "2026-11-01 00:00:00 UTC",
+            "scopes": ["repo", "read:org"]
+        })
+    );
+    let installation =
+        through_owner_base("gh.auth.status", json!({}), "/rate_limit", reply(vec![]));
+    assert_eq!(installation.status, 0, "{}", installation.stderr);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&installation.stdout)?,
+        json!({"core": {"limit": 5000, "remaining": 4321, "reset": 1_760_000_000}})
+    );
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = provider::command::<Gh>(&["auth".to_owned(), "status".to_owned()], false)
+    else {
+        panic!("gh auth status proposes")
+    };
+    assert_eq!(capability.as_str(), "gh.auth.status");
+    assert_eq!(input, json!({}));
     Ok(())
 }

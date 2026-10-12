@@ -296,6 +296,16 @@ capability!(
     EffectKind::ExternalWrite,
     RiskLevel::Medium
 );
+capability!(
+    AuthStatus,
+    AuthStatusInput,
+    "gh.auth.status",
+    "auth.status",
+    "Reads the broker credential's core rate-limit quota, expiry, and classic scopes",
+    crate::auth::status,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
 
 pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
     match id {
@@ -322,6 +332,7 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
             Proposal::to::<IssueCommentsRead>(IssueCommentsReadInput(input))
         }
         "gh.issue.comment" => Proposal::to::<IssueComment>(IssueCommentInput(input)),
+        "gh.auth.status" => Proposal::to::<AuthStatus>(AuthStatusInput(input)),
         _ => unreachable!("the command dispatch uses only declared IDs"),
     }
 }
