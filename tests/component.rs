@@ -13,7 +13,7 @@ fn component() -> std::path::PathBuf {
 #[test]
 fn manifest_keeps_read_and_write_grants_independent() {
     let manifest = provider::manifest::<Gh>().expect("closed manifest");
-    assert_eq!(manifest.capabilities.len(), 19);
+    assert_eq!(manifest.capabilities.len(), 20);
     for cap in &manifest.capabilities {
         assert_eq!(cap.input_schema["additionalProperties"], false);
         assert!(cap.id.as_str().starts_with("gh."));
@@ -206,5 +206,187 @@ fn real_component_conforms_and_reaches_only_the_owner_base_url()
     assert_eq!(native.requests().len(), 1);
     let value: Value = serde_json::from_slice(&output.stdout)?;
     assert_eq!(value["name"], "hello");
+    Ok(())
+}
+
+fn scripted_component_get(
+    response: Response,
+    capability: &str,
+    input: Value,
+    path: &str,
+) -> Result<dekopon_provider_sdk_testkit::ComponentOutput, Box<dyn std::error::Error>> {
+    let harness =
+        Harness::<Gh>::get(component()).http(HttpScript::new("localhost", "GET", response));
+    let base = format!("{}/gh", harness.origin().expect("script origin"));
+    let output = harness
+        .settings(json!({"baseUrl": base}))
+        .call(capability, input)?;
+    assert_eq!(output.http_calls.len(), 1);
+    let request = output.http_request.as_ref().expect("recorded request");
+    assert_eq!(request.method, "GET");
+    assert_eq!(request.uri, format!("{base}{path}"));
+    assert!(
+        !request
+            .headers
+            .iter()
+            .any(|header| header.name.eq_ignore_ascii_case("authorization"))
+    );
+    Ok(output)
+}
+
+#[test]
+fn forbidden_names_the_accepted_permission() -> Result<(), Box<dyn std::error::Error>> {
+    let output = scripted_component_get(
+        Response {
+            status: 403,
+            headers: vec![
+                Header::text("X-Accepted-GitHub-Permissions", "contents=read")?,
+                Header::text("x-accepted-oauth-scopes", "repo")?,
+            ],
+            body: br#"{"message":"untrusted response body"}"#.to_vec(),
+        },
+        "gh.repo.read",
+        json!({"owner":"octo","repo":"hello"}),
+        "/repos/octo/hello",
+    )?;
+    assert_ne!(output.status, 0);
+    assert_eq!(
+        output.stderr,
+        "credential lacks a permission this call needs; GitHub accepts: contents=read\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn forbidden_names_classic_scopes_against_held_scopes() -> Result<(), Box<dyn std::error::Error>> {
+    let output = scripted_component_get(
+        Response {
+            status: 403,
+            headers: vec![
+                Header::text("x-accepted-oauth-scopes", "repo")?,
+                Header::text("x-oauth-scopes", "read:org")?,
+            ],
+            body: br#"{"message":"untrusted response body"}"#.to_vec(),
+        },
+        "gh.repo.read",
+        json!({"owner":"octo","repo":"hello"}),
+        "/repos/octo/hello",
+    )?;
+    assert_ne!(output.status, 0);
+    assert_eq!(
+        output.stderr,
+        "credential lacks a scope; GitHub accepts: repo; credential has: read:org\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn not_found_does_not_assert_existence() -> Result<(), Box<dyn std::error::Error>> {
+    let output = scripted_component_get(
+        Response {
+            status: 404,
+            headers: vec![],
+            body: vec![],
+        },
+        "gh.repo.read",
+        json!({"owner":"octo","repo":"hello"}),
+        "/repos/octo/hello",
+    )?;
+    assert_ne!(output.status, 0);
+    assert_eq!(
+        output.stderr,
+        "not found, or not visible to this credential\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn unauthorized_says_the_credential_was_rejected() -> Result<(), Box<dyn std::error::Error>> {
+    let output = scripted_component_get(
+        Response {
+            status: 401,
+            headers: vec![],
+            body: vec![],
+        },
+        "gh.repo.read",
+        json!({"owner":"octo","repo":"hello"}),
+        "/repos/octo/hello",
+    )?;
+    assert_ne!(output.status, 0);
+    assert_eq!(
+        output.stderr,
+        "credential rejected: expired, revoked or malformed\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn auth_status_reports_quota_and_expiry() -> Result<(), Box<dyn std::error::Error>> {
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = provider::command::<Gh>(&["auth".to_owned(), "status".to_owned()], false)
+    else {
+        panic!("auth status must propose its capability")
+    };
+    assert_eq!(capability.as_str(), "gh.auth.status");
+    assert_eq!(input, json!({}));
+    for headers_present in [true, false] {
+        let headers = if headers_present {
+            vec![
+                Header::text(
+                    "GitHub-Authentication-Token-Expiration",
+                    "2026-10-13 00:00:00 UTC",
+                )?,
+                Header::text("X-OAuth-Scopes", "repo, read:org")?,
+            ]
+        } else {
+            vec![]
+        };
+        let output = scripted_component_get(
+            Response {
+                status: 200,
+                headers,
+                body: json!({
+                    "resources": {
+                        "core": {"limit": 5000, "remaining": 4999, "reset": 1791853200, "used": 1},
+                        "search": {"limit": 30, "remaining": 29, "reset": 1791850000}
+                    },
+                    "rate": {"limit": 60, "remaining": 59, "reset": 1}
+                })
+                .to_string()
+                .into_bytes(),
+            },
+            capability.as_str(),
+            input.clone(),
+            "/rate_limit",
+        )?;
+        assert_eq!(output.status, 0, "{}", output.stderr);
+        let mut expected = json!({"limit": 5000, "remaining": 4999, "reset": 1791853200});
+        if headers_present {
+            expected["tokenExpiration"] = json!("2026-10-13 00:00:00 UTC");
+            expected["scopes"] = json!("repo, read:org");
+        }
+        assert_eq!(serde_json::from_slice::<Value>(&output.stdout)?, expected);
+    }
+    Ok(())
+}
+
+#[test]
+fn forbidden_without_permission_headers_stays_generic() -> Result<(), Box<dyn std::error::Error>> {
+    let output = scripted_component_get(
+        Response {
+            status: 403,
+            headers: vec![],
+            body: br#"{"message":"untrusted response body"}"#.to_vec(),
+        },
+        "gh.repo.read",
+        json!({"owner":"octo","repo":"hello"}),
+        "/repos/octo/hello",
+    )?;
+    assert_ne!(output.status, 0);
+    assert_eq!(
+        output.stderr,
+        "credential is not permitted to make this call\n"
+    );
     Ok(())
 }

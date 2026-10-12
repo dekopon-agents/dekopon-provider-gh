@@ -69,6 +69,13 @@ exposing comment, approval, request-changes, and merge as separate capabilities.
 constrains only comment. The token’s own repository scope remains important: Cedar does not inspect
 provider input paths and therefore cannot restrict `owner/repo` itself.
 
+Classic PAT and GitHub App installation-token setup, plus the credential error messages, are
+covered in the [provider authentication guide](../../README.md#credentials-and-authentication-status).
+`gh auth status` is the separate read-only `gh.auth.status` capability. This six-capability reviewer
+does not grant it: to enable it, an owner must add it to the catalog and policy and give it its own
+Low-risk, read-only constraint set with the same credential and one GET request. A successful
+quota check does not establish access to a particular repository.
+
 Then create the owner-only credentials file:
 
 ```console
@@ -268,7 +275,7 @@ execution, and audit — not from trusting the summary.
 ## Related
 
 - [dekopon's Slack example](https://github.com/dekopon-agents/dekopon/blob/main/examples/slack/README.md) — app manifest, tokens, and Slack identifiers.
-- [the provider](../../README.md) — all nineteen capabilities and no raw passthrough.
+- [the provider](../../README.md) — all twenty capabilities and no raw passthrough.
 - [`gatewayd.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/gatewayd.md) — routing, sessions, and conversation bounds.
 - [`dekopon-brokerd`](https://github.com/dekopon-agents/dekopon/blob/main/crates/dekopon-brokerd/README.md) — broker configuration and recovery.
 - [`security-model.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/security-model.md) — trust boundaries and limitations.

@@ -1,6 +1,6 @@
 # Guidance for coding agents
 
-The GitHub provider for Dekopon: one Wasm component, nineteen narrow capabilities, no `gh.api.*`
+The GitHub provider for Dekopon: one Wasm component, twenty narrow capabilities, no `gh.api.*`
 passthrough. [README.md](README.md) is the design; read the section your change touches.
 
 ## Contract

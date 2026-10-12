@@ -30,7 +30,6 @@ policiesPath: policies.cedar
 strict: true
 
 providers:
-  # The checked-in gh component: 19 narrow GitHub capabilities and no `gh.api.*` passthrough.
   # It must be a regular single-link file owned by this UID under owner-controlled directories.
   - ../../gh-provider.wasm
 

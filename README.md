@@ -2,7 +2,7 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Nineteen narrow repository, pull-request, and issue capabilities with fixed request shapes, bounded
+Twenty narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
 output projections, and SHA-pinned review/merge writes. There is deliberately no `gh.api.*`
 passthrough: a path-level escape hatch would collapse per-capability policy into "everything the
 credential can reach".
@@ -16,6 +16,7 @@ The component exports `run-command`, so the word behaves like the upstream comma
 
 ```
 gh --help
+gh auth status
 gh pr view 7 -R owner/repo
 gh pr review 7 -R owner/repo --approve
 gh issue comment 3 -R owner/repo --body "..."
@@ -46,6 +47,7 @@ JSON to stdout; failures write to stderr with a nonzero status. Filter stdout wi
 
 | Capability | Effect |
 |---|---|
+| `gh.auth.status` | read-only |
 | `gh.content.read` | read-only |
 | `gh.pull-request.list` / `.read` / `.files` / `.diff` / `.reviews` / `.status` | read-only |
 | `gh.pull-request.approve` / `.comment` / `.request-changes` / `.merge` | external-write |
@@ -78,6 +80,54 @@ Drop `gh-provider.wasm` into a provider directory the broker loads:
 providers:
   - /opt/dekopon/providers
 ```
+
+### Credentials and authentication status
+
+Create a [personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
+in GitHub Settings → Developer settings → Personal access tokens. For a fine-grained PAT, select
+its resource owner, expiration, and only the repositories the provider should reach; grant the
+repository permissions needed by your enabled capabilities. The
+[reviewer example](examples/pr-summarizer-linter/README.md#2-create-the-github-token) lists its
+Contents, Pull requests, Actions, and Commit statuses permissions. Complete organization approval
+when required. For a classic PAT, choose the scopes the endpoints need (`repo` for private
+repository access), set an expiration, and authorize organization SSO when required. Classic scopes
+can cover more repositories than a fine-grained token.
+
+For a GitHub App, register the App with the repository permissions your enabled capabilities need
+and install it on the intended account and repositories. An owner-side process uses the App's
+private key to sign a JWT and
+[generate an installation access token](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
+Store the installation token in the broker's credential binding, not the JWT or private key.
+Installation tokens expire after one hour; renew them owner-side and restart the broker to load the
+replacement before expiration. This provider does not mint or refresh tokens.
+
+For either credential kind, use the broker's owner-only credentials file and bind its symbolic
+name to each granted capability's constraint set. Bind its destinations to `api.github.com`, or
+the authority in the owner's `baseUrl`; the guest receives no token. See the
+[credential template](examples/pr-summarizer-linter/broker-credentials.yaml.example) and
+[broker constraints](examples/pr-summarizer-linter/broker.yaml). Never put a token in capability
+input, model text, or provider settings.
+
+Grant `gh.auth.status` separately as read-only, Low risk, with that credential and one allowed GET.
+`gh auth status` (or direct `gh.auth.status` with `{}` input) requests `{baseUrl}/rate_limit` once
+and prints the core quota as `limit`, `remaining`, and `reset` (Unix seconds). It includes
+`tokenExpiration` and `scopes` as strings only when GitHub sends
+`github-authentication-token-expiration` and `x-oauth-scopes`, respectively. Missing fields are
+omitted. This reports GitHub's quota and header metadata; it does not identify the credential kind
+or prove that it can see a particular repository.
+
+| Error code | Message | What to do |
+|---|---|---|
+| `unauthorized` | `credential rejected: expired, revoked or malformed` | Replace or renew the broker-bound token and restart the broker to load it. |
+| `forbidden` | `credential lacks a permission this call needs; GitHub accepts: <permissions>` | Check the fine-grained PAT or App permissions GitHub names, repository selection, and organization approval. |
+| `forbidden` | `credential lacks a scope; GitHub accepts: <scopes>; credential has: <scopes>` | Compare accepted classic PAT scopes with held scopes; grant only what this call needs. Missing held-scope metadata is reported as `not reported`. |
+| `forbidden` | `credential is not permitted to make this call` | Check credential permissions, repository access, and organization restrictions; GitHub supplied no accepted-permission or accepted-scope header. |
+| `not-found` | `not found, or not visible to this credential` | Check the resource spelling and the token's repository access; a 404 does not prove absence. |
+| `rate-limited` | `endpoint rate limit is exhausted` | Wait for the quota reset or GitHub's retry guidance before retrying. |
+
+Accepted GitHub permissions take precedence over OAuth scopes when both headers are present.
+A 403 with `x-ratelimit-remaining: 0` and every 429 retain the rate-limit error. Diagnostics quote
+only the named permission/scope headers, never the response body.
 
 ### `baseUrl`
 
