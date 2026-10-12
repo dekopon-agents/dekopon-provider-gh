@@ -86,12 +86,10 @@ providers:
 Create a [personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
 in GitHub Settings → Developer settings → Personal access tokens. For a fine-grained PAT, select
 its resource owner, expiration, and only the repositories the provider should reach; grant the
-repository permissions needed by your enabled capabilities. The
-[reviewer example](examples/pr-summarizer-linter/README.md#2-create-the-github-token) lists its
-Contents, Pull requests, Actions, and Commit statuses permissions. Complete organization approval
-when required. For a classic PAT, choose the scopes the endpoints need (`repo` for private
-repository access), set an expiration, and authorize organization SSO when required. Classic scopes
-can cover more repositories than a fine-grained token.
+repository permissions needed by your enabled capabilities (see the map below). Complete
+organization approval when required. For a classic PAT, choose the scopes the endpoints need
+(`repo` for private repository access), set an expiration, and authorize organization SSO when
+required. Classic scopes can cover more repositories than a fine-grained token.
 
 For a GitHub App, register the App with the repository permissions your enabled capabilities need
 and install it on the intended account and repositories. An owner-side process uses the App's
@@ -108,13 +106,25 @@ the authority in the owner's `baseUrl`; the guest receives no token. See the
 [broker constraints](examples/pr-summarizer-linter/broker.yaml). Never put a token in capability
 input, model text, or provider settings.
 
-Grant `gh.auth.status` separately as read-only, Low risk, with that credential and one allowed GET.
-`gh auth status` (or direct `gh.auth.status` with `{}` input) requests `{baseUrl}/rate_limit` once
-and prints the core quota as `limit`, `remaining`, and `reset` (Unix seconds). It includes
-`tokenExpiration` and `scopes` as strings only when GitHub sends
-`github-authentication-token-expiration` and `x-oauth-scopes`, respectively. Missing fields are
-omitted. This reports GitHub's quota and header metadata; it does not identify the credential kind
-or prove that it can see a particular repository.
+Grant each capability separately; the [reviewer example](examples/pr-summarizer-linter/README.md)
+shows the broker grant steps. `gh.auth.status` is read-only, Low risk, and needs one allowed GET.
+It reports quota and available credential-header metadata, not repository visibility or credential
+kind.
+
+For fine-grained PATs and GitHub App installations, grant repository permissions for the
+capabilities you enable (Read unless marked Write):
+
+| Capability | Fine-grained permission |
+|---|---|
+| `gh.auth.status`, `gh.user.read` | None (public endpoint / rate limit) |
+| `gh.repo.read` | Metadata: Read |
+| `gh.content.read`, `gh.branch.read`, `gh.commit.read` | Contents: Read |
+| `gh.pull-request.list`, `.read`, `.files`, `.diff`, `.reviews` | Pull requests: Read |
+| `gh.pull-request.status` | Pull requests: Read; Actions: Read; Commit statuses: Read |
+| `gh.pull-request.approve`, `.comment`, `.request-changes` | Pull requests: Write |
+| `gh.pull-request.merge` | Pull requests: Write; Contents: Write |
+| `gh.issue.read`, `.list`, `gh.issue-comments.read` | Issues: Read |
+| `gh.issue.comment` | Issues: Write |
 
 | Error code | Message | What to do |
 |---|---|---|

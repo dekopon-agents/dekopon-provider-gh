@@ -281,6 +281,81 @@ fn forbidden_names_classic_scopes_against_held_scopes() -> Result<(), Box<dyn st
 }
 
 #[test]
+fn long_headers_are_bounded_without_rejecting_the_call() -> Result<(), Box<dyn std::error::Error>> {
+    let long = "x".repeat(5000);
+    let output = scripted_component_get(
+        Response {
+            status: 403,
+            headers: vec![Header::text("x-accepted-github-permissions", &long)?],
+            body: vec![],
+        },
+        "gh.repo.read",
+        json!({"owner":"octo","repo":"hello"}),
+        "/repos/octo/hello",
+    )?;
+    assert_ne!(output.status, 0);
+    assert_eq!(output.stderr.len(), 4097);
+    assert!(
+        output
+            .stderr
+            .starts_with("credential lacks a permission this call needs; GitHub accepts: ")
+    );
+
+    let output = scripted_component_get(
+        Response {
+            status: 200,
+            headers: vec![
+                Header::text("github-authentication-token-expiration", &long)?,
+                Header::text("x-oauth-scopes", format!("future:scope,{long}"))?,
+            ],
+            body: json!({"resources":{"core":{"limit":1,"remaining":0,"reset":1}}})
+                .to_string()
+                .into_bytes(),
+        },
+        "gh.auth.status",
+        json!({}),
+        "/rate_limit",
+    )?;
+    assert_eq!(output.status, 0, "{}", output.stderr);
+    let value: Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(value["tokenExpiration"].as_str().unwrap().len(), 64);
+    assert_eq!(value["scopes"].as_str().unwrap().len(), 4096);
+    assert!(
+        value["scopes"]
+            .as_str()
+            .unwrap()
+            .starts_with("future:scope,")
+    );
+    Ok(())
+}
+
+#[test]
+fn empty_permission_header_falls_back_to_classic_scopes() -> Result<(), Box<dyn std::error::Error>>
+{
+    for empty in ["", "   "] {
+        let output = scripted_component_get(
+            Response {
+                status: 403,
+                headers: vec![
+                    Header::text("x-accepted-github-permissions", empty)?,
+                    Header::text("x-accepted-oauth-scopes", "repo")?,
+                ],
+                body: vec![],
+            },
+            "gh.repo.read",
+            json!({"owner":"octo","repo":"hello"}),
+            "/repos/octo/hello",
+        )?;
+        assert_ne!(output.status, 0);
+        assert_eq!(
+            output.stderr,
+            "credential lacks a scope; GitHub accepts: repo; credential has: not reported\n"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn not_found_does_not_assert_existence() -> Result<(), Box<dyn std::error::Error>> {
     let output = scripted_component_get(
         Response {

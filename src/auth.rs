@@ -1,9 +1,16 @@
 use crate::error::ProviderError;
-use crate::{ACCEPT_JSON, decode, header_text, invalid_input, send_get, url};
+use crate::{
+    ACCEPT_JSON, MAX_MESSAGE_OUT_BYTES, MAX_TIMESTAMP_BYTES, decode, header_text, invalid_input,
+    send_get, timestamp, truncate_text, url,
+};
 use dekopon_provider_sdk::provider::endpoint::Base;
 use dekopon_provider_sdk::provider::{HttpError, Request, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StatusInput {}
 
 #[derive(Deserialize)]
 struct RateLimit {
@@ -27,9 +34,7 @@ pub(crate) fn status(
     base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
-    if input.as_object().is_none_or(|object| !object.is_empty()) {
-        return Err(invalid_input());
-    }
+    let _input = serde_json::from_value::<StatusInput>(input).map_err(|_| invalid_input())?;
     let response = send_get(send, url(base, "/rate_limit")?, ACCEPT_JSON)?;
     let quota = decode::<RateLimit>(&response.body)?.resources.core;
     let mut output = json!({
@@ -42,7 +47,17 @@ pub(crate) fn status(
         ("x-oauth-scopes", "scopes"),
     ] {
         if let Some(value) = header_text(&response, header) {
-            output[field] = json!(value);
+            let max = if field == "tokenExpiration" {
+                MAX_TIMESTAMP_BYTES
+            } else {
+                MAX_MESSAGE_OUT_BYTES
+            };
+            let bounded = truncate_text(value, max).0;
+            output[field] = json!(if field == "tokenExpiration" {
+                timestamp(&bounded)?
+            } else {
+                &bounded
+            });
         }
     }
     Ok(output)

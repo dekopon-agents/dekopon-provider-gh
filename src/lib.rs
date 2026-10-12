@@ -725,11 +725,16 @@ fn forbidden(response: &Response) -> ProviderError {
     } else {
         "credential is not permitted to make this call".to_owned()
     };
-    ProviderError::new("forbidden", message)
+    ProviderError::new(
+        "forbidden",
+        truncate_text(&message, MAX_MESSAGE_OUT_BYTES).0,
+    )
 }
 
 fn header_text<'a>(response: &'a Response, name: &'a str) -> Option<&'a str> {
-    header_values(response, name).find_map(|value| core::str::from_utf8(value).ok())
+    header_values(response, name)
+        .filter_map(|value| core::str::from_utf8(value).ok())
+        .find(|value| !value.trim().is_empty())
 }
 
 fn rate_limited() -> ProviderError {
