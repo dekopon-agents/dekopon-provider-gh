@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn oversized_binary_cli_refuses_without_corrupting_base64_or_typed_reads() {
+    fn native_oversized_binary_cli_refuses_without_corrupting_base64_or_typed_reads() {
         use std::{cell::Cell, rc::Rc};
         let bound = crate::MAX_CONTENT_OUT_BYTES;
         let read = |bytes: &[u8], cli: bool| {
