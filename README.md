@@ -37,10 +37,12 @@ marker; the authorized invocation reads at most 4 KiB of UTF-8 from stdin before
 Nothing piped is a usage error rather than an empty comment. `gh api` accepts only three named GET routes (`users/LOGIN`, `repos/OWNER/REPO/branches/BRANCH`,
 `repos/OWNER/REPO/commits/REF`). No arbitrary route or API flag is accepted.
 
-Flags that would change what a command means — `--json`, `--jq`, `--web`, `--checkout` — are
-rejected by name rather than accepted as no-ops. The three finite `gh api` reads return bounded
-upstream JSON objects; other successful invocations still write projected JSON to stdout.
-Failures write to stderr with a nonzero status. Filter stdout with the shell's
+Supported `gh pr list/view`, `gh issue list/view`, `gh repo view/read-file/read-dir` commands
+accept closed, comma-separated `--json FIELDS`; bare, unknown and repeated fields refuse as usage.
+Without `--json`, these commands print tab-separated rows (files print decoded content).
+`--jq`, `--template`, `--web` and `--checkout` still refuse. The three finite `gh api` reads
+return bounded upstream JSON objects. Direct typed invocation retains JSON output; failures
+write to stderr with a nonzero status. Filter stdout with the shell's
 `jq` builtin.
 
 ## Capabilities

@@ -146,9 +146,11 @@ fn retained_reads_succeed_only_with_their_own_http_grant() -> Result<(), Box<dyn
             path,
         )?;
         assert_eq!(output.status, 0, "{id}: {}", output.stderr);
-        let value: Value = serde_json::from_slice(&output.stdout)?;
-        assert!(!value[*field].is_null(), "{id} was not executed");
-        if *id != "gh.content.read" {
+        if *id == "gh.content.read" {
+            assert_eq!(output.stdout, b"yes");
+        } else {
+            let value: Value = serde_json::from_slice(&output.stdout)?;
+            assert!(!value[*field].is_null(), "{id} was not executed");
             assert_eq!(
                 value, *body,
                 "{id} must return the bounded upstream API shape"
@@ -156,6 +158,177 @@ fn retained_reads_succeed_only_with_their_own_http_grant() -> Result<(), Box<dyn
         }
     }
     Ok(())
+}
+
+#[test]
+fn component_repo_and_content_render_selected_json_and_default_text()
+-> Result<(), Box<dyn std::error::Error>> {
+    let cases: &[(&[&str], &str, &str, Value, &str)] = &[
+        (
+            &[
+                "repo",
+                "view",
+                "octo/hello",
+                "--json",
+                "owner,description,defaultBranchRef,url",
+            ],
+            "gh.repo.read",
+            "/repos/octo/hello",
+            json!({"name":"hello","owner":{"login":"octo"},"private":false,"default_branch":"main","fork":false,"updated_at":"2026-01-01T00:00:00Z"}),
+            "json",
+        ),
+        (
+            &["repo", "view", "octo/hello"],
+            "gh.repo.read",
+            "/repos/octo/hello",
+            json!({"name":"hello","owner":{"login":"octo"},"private":false,"default_branch":"main","fork":false,"updated_at":"2026-01-01T00:00:00Z"}),
+            "text",
+        ),
+        (
+            &[
+                "repo",
+                "read-file",
+                "README.md",
+                "-R",
+                "octo/hello",
+                "--json",
+                "gitSHA,content,htmlUrl",
+            ],
+            "gh.content.read",
+            "/repos/octo/hello/contents/README.md",
+            json!({"type":"file","path":"README.md","sha":"abc","size":3,"encoding":"base64","content":"eWVz"}),
+            "file-json",
+        ),
+        (
+            &[
+                "repo",
+                "read-dir",
+                "-R",
+                "octo/hello",
+                "--json",
+                "name,gitSHA,path",
+            ],
+            "gh.content.read",
+            "/repos/octo/hello/contents/",
+            json!([{"name":"README.md","type":"file","sha":"abc","size":3}]),
+            "dir-json",
+        ),
+        (
+            &["repo", "read-dir", "-R", "octo/hello"],
+            "gh.content.read",
+            "/repos/octo/hello/contents/",
+            json!([{"name":"README.md","type":"file","sha":"abc","size":3}]),
+            "dir-text",
+        ),
+    ];
+    for (words, id, path, body, shape) in cases {
+        let CommandRunOutcome::Proposed {
+            capability, input, ..
+        } = provider::command::<Gh>(
+            &words.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
+            false,
+        )
+        else {
+            panic!("must propose {words:?}")
+        };
+        assert_eq!(capability.as_str(), *id);
+        let output = scripted_component_get(
+            Response {
+                status: 200,
+                headers: vec![],
+                body: body.to_string().into_bytes(),
+            },
+            id,
+            input,
+            path,
+        )?;
+        assert_eq!(output.status, 0, "{}", output.stderr);
+        match *shape {
+            "json" => assert_eq!(
+                serde_json::from_slice::<Value>(&output.stdout)?,
+                json!({"owner":{"login":"octo"},"description":null,"defaultBranchRef":{"name":"main"},"url":null})
+            ),
+            "text" => assert_eq!(output.stdout, b"octo/hello\t\n"),
+            "file-json" => assert_eq!(
+                serde_json::from_slice::<Value>(&output.stdout)?,
+                json!({"gitSHA":"abc","content":"yes","htmlUrl":null})
+            ),
+            "dir-json" => assert_eq!(
+                serde_json::from_slice::<Value>(&output.stdout)?,
+                json!([{"name":"README.md","gitSHA":"abc","path":"README.md"}])
+            ),
+            "dir-text" => assert_eq!(output.stdout, b"README.md\tfile\t3\n"),
+            _ => unreachable!(),
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn component_list_json_is_an_array_with_nested_logins_and_nulls()
+-> Result<(), Box<dyn std::error::Error>> {
+    let words = [
+        "pr",
+        "list",
+        "-R",
+        "octo/hello",
+        "--json",
+        "author,number,closedAt",
+    ];
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = provider::command::<Gh>(&words.map(str::to_owned), false)
+    else {
+        panic!("list must propose")
+    };
+    assert_eq!(capability.as_str(), "gh.pull-request.list");
+    let sha = "a".repeat(40);
+    let body = json!([{"number":7,"title":"Ship","state":"open","user":{"login":"octo"},"head":{"ref":"feature","sha":sha},"base":{"ref":"main","sha":"b".repeat(40)},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}]).to_string().into_bytes();
+    let output = scripted_component_get(
+        Response {
+            status: 200,
+            headers: vec![],
+            body: body.clone(),
+        },
+        capability.as_str(),
+        input,
+        "/repos/octo/hello/pulls?state=open&page=1&per_page=20",
+    )?;
+    assert_eq!(output.status, 0, "{}", output.stderr);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout)?,
+        json!([{"author":{"login":"octo"},"number":7,"closedAt":null}])
+    );
+    let words = ["pr", "list", "-R", "octo/hello"];
+    let CommandRunOutcome::Proposed { input, .. } =
+        provider::command::<Gh>(&words.map(str::to_owned), false)
+    else {
+        panic!("text list must propose")
+    };
+    let text = scripted_component_get(
+        Response {
+            status: 200,
+            headers: vec![],
+            body,
+        },
+        capability.as_str(),
+        input,
+        "/repos/octo/hello/pulls?state=open&page=1&per_page=20",
+    )?;
+    assert_eq!(text.status, 0, "{}", text.stderr);
+    assert_eq!(text.stdout, b"7\tShip\tfeature\t2026-01-01T00:00:00Z\n");
+    Ok(())
+}
+
+#[test]
+fn native_invalid_cli_selection_never_sends_http() {
+    let native = Native::<Gh>::new();
+    let result = native.call(
+        "gh.repo.read",
+        &json!({"owner":"octo","repo":"hello","_cliOutput":"unknown"}).to_string(),
+    );
+    assert_ne!(result.status, 0);
+    assert!(native.requests().is_empty());
 }
 
 #[test]

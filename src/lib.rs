@@ -39,6 +39,7 @@ pub mod commands;
 mod content;
 pub mod error;
 mod issues;
+mod output;
 mod pulls;
 mod repos;
 mod reviews;

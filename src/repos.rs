@@ -17,6 +17,8 @@ use crate::{
 struct RepoInput {
     owner: String,
     repo: String,
+    #[serde(default, rename = "_cli")]
+    cli: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,7 +81,8 @@ pub(crate) fn repo(
         ),
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let repo = decode::<RawRepo>(&response.body)?;
+    let raw = decode::<Value>(&response.body)?;
+    let repo = serde_json::from_value::<RawRepo>(raw.clone()).map_err(|_| invalid_response())?;
     // The name echo binds the response to the request without being case-brittle: GitHub
     // canonicalizes repository casing.
     if !repo.name.eq_ignore_ascii_case(&input.repo) {
@@ -88,14 +91,41 @@ pub(crate) fn repo(
 
     let (description, description_truncated) =
         bounded_optional(repo.description.as_deref(), MAX_DESCRIPTION_OUT_BYTES);
+    if !input.cli {
+        return Ok(json!({
+            "name": repo.name,
+            "owner": login_out(repo.owner.as_ref()),
+            "private": repo.private,
+            "visibility": repo.visibility,
+            "defaultBranch": repo.default_branch,
+            "fork": repo.fork,
+            "archived": repo.archived,
+            "description": description,
+            "descriptionTruncated": description_truncated,
+            "pushedAt": repo.pushed_at,
+            "updatedAt": timestamp(&repo.updated_at)?,
+        }));
+    }
+    let owner = login_out(repo.owner.as_ref());
+    let full_name = raw["full_name"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("{}/{}", owner.as_str().unwrap_or(&input.owner), repo.name));
     Ok(json!({
         "name": repo.name,
-        "owner": login_out(repo.owner.as_ref()),
+        "owner": owner,
+        "nameWithOwner": full_name,
+        "url": raw["html_url"],
+        "createdAt": raw["created_at"],
+        "isPrivate": repo.private,
+        "isFork": repo.fork,
+        "isArchived": repo.archived,
+        "defaultBranchRef": {"name": repo.default_branch},
         "private": repo.private,
         "visibility": repo.visibility,
-        "defaultBranch": repo.default_branch,
         "fork": repo.fork,
         "archived": repo.archived,
+        "defaultBranch": repo.default_branch,
         "description": description,
         "descriptionTruncated": description_truncated,
         "pushedAt": repo.pushed_at,

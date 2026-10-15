@@ -142,18 +142,21 @@ fn tree() -> Command {
                     Command::new("read-file")
                         .arg(Arg::new("path").required(true).value_name("PATH"))
                         .arg(repo_arg(true))
-                        .arg(Arg::new("ref").long("ref").value_name("REF")),
+                        .arg(Arg::new("ref").long("ref").value_name("REF"))
+                        .arg(json_arg()),
                 )
                 .subcommand(
                     Command::new("read-dir")
                         .arg(Arg::new("path").value_name("PATH"))
                         .arg(repo_arg(true))
-                        .arg(Arg::new("ref").long("ref").value_name("REF")),
+                        .arg(Arg::new("ref").long("ref").value_name("REF"))
+                        .arg(json_arg()),
                 )
                 .subcommand(
                     Command::new("view")
                         .about("Read repository metadata: default branch, visibility, flags")
-                        .arg(Arg::new("slug").value_name("OWNER/REPO").required(true)),
+                        .arg(Arg::new("slug").value_name("OWNER/REPO").required(true))
+                        .arg(json_arg()),
                 ),
         )
         .subcommand(issues())
@@ -179,13 +182,15 @@ fn pull_requests() -> Command {
                         .long("author")
                         .value_name("LOGIN")
                         .help("Login filter applied to the fetched page, after pagination"),
-                ),
+                )
+                .arg(json_arg()),
         )
         .subcommand(
             Command::new("view")
                 .about("Read one pull request's metadata, state, and head/base")
                 .arg(number_arg("Pull-request number"))
-                .arg(repo_arg(true)),
+                .arg(repo_arg(true))
+                .arg(json_arg()),
         )
         .subcommand(
             Command::new("diff")
@@ -238,7 +243,8 @@ fn issues() -> Command {
             Command::new("view")
                 .about("Read one issue with a bounded body")
                 .arg(number_arg("Issue number"))
-                .arg(repo_arg(true)),
+                .arg(repo_arg(true))
+                .arg(json_arg()),
         )
         .subcommand(
             Command::new("list")
@@ -250,7 +256,8 @@ fn issues() -> Command {
                         .value_name("STATE")
                         .value_parser(["open", "closed"])
                         .help("open or closed"),
-                ),
+                )
+                .arg(json_arg()),
         )
         .subcommand(
             Command::new("comment")
@@ -265,6 +272,14 @@ fn issues() -> Command {
 ///
 /// There is no git working tree here, so nothing can be inferred: a missing `-R` is clap's own
 /// required-argument error naming the exact form, never a guess.
+fn json_arg() -> Arg {
+    Arg::new("json")
+        .long("json")
+        .value_name("FIELDS")
+        .num_args(0..=1)
+        .default_missing_value("")
+}
+
 fn repo_arg(required: bool) -> Arg {
     Arg::new("repo")
         .short('R')
@@ -455,6 +470,33 @@ fn dispatch(
         _ => unreachable!("the tree has no other subcommand than {command}"),
     };
 
+    if let Some(fields) = crate::output::fields(area, verb)
+        && matches.try_get_one::<String>("json").is_ok()
+    {
+        let selection = match matches.get_one::<String>("json") {
+            Some(value) if value.is_empty() => {
+                return Err(usage(format!(
+                    "gh {command}: --json requires fields: {fields}"
+                )));
+            }
+            Some(value) => {
+                let mut seen = std::collections::HashSet::new();
+                for field in value.split(',') {
+                    if !fields.split(',').any(|allowed| allowed == field) || !seen.insert(field) {
+                        return Err(usage(format!(
+                            "gh {command}: invalid --json field selection"
+                        )));
+                    }
+                }
+                value.as_str()
+            }
+            None => "",
+        };
+        input.insert("_cliOutput".to_owned(), Value::String(selection.to_owned()));
+        if area == "repo" && matches!(verb, "read-file" | "read-dir") {
+            input.insert("_cliKind".to_owned(), Value::String(verb.to_owned()));
+        }
+    }
     Ok((capability, Value::Object(input)))
 }
 
@@ -680,7 +722,10 @@ mod tests {
     fn the_first_argument_is_the_area_not_the_command_word() {
         let (capability, input) = dispatch(&["pr", "view", "7", "-R", "o/r"]);
         assert_eq!(capability, "gh.pull-request.read");
-        assert_eq!(input, json!({"owner": "o", "repo": "r", "number": 7}));
+        assert_eq!(
+            input,
+            json!({"owner": "o", "repo": "r", "number": 7, "_cliOutput": ""})
+        );
     }
 
     /// The manifest is what the broker authorizes against, so a command word that proposes a
@@ -847,7 +892,17 @@ mod tests {
         for (arguments, capability, input) in cases {
             let (called, sent) = dispatch(arguments);
             assert_eq!(called, *capability, "{arguments:?}");
-            assert_eq!(sent, *input, "{arguments:?}");
+            let mut expected = input.clone();
+            if let Some(fields) = crate::output::fields(arguments[0], arguments[1])
+                && !matches!((arguments[0], arguments[1]), ("pr", "checks"))
+            {
+                assert!(!fields.is_empty());
+                expected["_cliOutput"] = json!("");
+                if arguments[0] == "repo" && matches!(arguments[1], "read-file" | "read-dir") {
+                    expected["_cliKind"] = json!(arguments[1]);
+                }
+            }
+            assert_eq!(sent, expected, "{arguments:?}");
         }
     }
 
@@ -872,7 +927,7 @@ mod tests {
         assert!(stdout.contains("no raw API passthrough"), "{stdout:?}");
         let (stdout, _, _) = rendered(&["pr", "view", "-h"]);
         assert!(
-            stdout.contains("\nUsage: gh pr view --repo <OWNER/REPO> <NUMBER>\n"),
+            stdout.contains("\nUsage: gh pr view [OPTIONS] --repo <OWNER/REPO> <NUMBER>\n"),
             "{stdout:?}"
         );
     }
@@ -1020,8 +1075,49 @@ mod tests {
             let message = failure.message().to_owned();
             assert!(message.contains(flag), "{message}");
         }
-        let (_, _, status) = rendered(&["pr", "view", "7", "-R", "o/r", "--json=number,title"]);
-        assert_eq!(status, 2);
+        let (id, input) = dispatch(&["pr", "view", "7", "-R", "o/r", "--json=number,title"]);
+        assert_eq!(id, "gh.pull-request.read");
+        assert_eq!(input["_cliOutput"], "number,title");
+    }
+
+    #[test]
+    fn native_json_field_selection_is_closed_before_proposal() {
+        for (area, verb, args, listed) in [
+            ("pr", "view", vec!["7", "-R", "o/r"], "headRefOid"),
+            ("issue", "list", vec!["-R", "o/r"], "assignees"),
+            ("repo", "view", vec!["o/r"], "defaultBranchRef"),
+            (
+                "repo",
+                "read-file",
+                vec!["README.md", "-R", "o/r"],
+                "gitSHA",
+            ),
+        ] {
+            let mut words = vec![area, verb];
+            words.extend(&args);
+            words.push("--json");
+            let error = refuse(&words);
+            assert_eq!(error.code(), "usage");
+            assert!(error.message().contains(listed), "{error:?}");
+            for selection in ["", "title,title", "unknown", "title,"] {
+                let mut words = vec![area, verb];
+                words.extend(&args);
+                words.push("--json");
+                words.push(selection);
+                let outcome =
+                    dekopon_provider_sdk::provider::command::<crate::Gh>(&argv(&words), false);
+                assert!(
+                    matches!(
+                        outcome,
+                        dekopon_provider_sdk::CommandRunOutcome::Failed { .. }
+                    ),
+                    "{words:?}"
+                );
+            }
+        }
+        let (id, input) = dispatch(&["repo", "view", "o/r", "--json", "owner,url"]);
+        assert_eq!(id, "gh.repo.read");
+        assert_eq!(input["_cliOutput"], "owner,url");
     }
 
     #[test]

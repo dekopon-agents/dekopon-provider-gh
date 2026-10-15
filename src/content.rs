@@ -21,6 +21,8 @@ struct Input {
     path: String,
     #[serde(default, rename = "ref")]
     reference: Option<String>,
+    #[serde(default, rename = "_cli")]
+    cli: bool,
 }
 
 /// One entry of a directory listing response.
@@ -85,13 +87,24 @@ pub(crate) fn read(
     // rather than sniffing bytes.
     let value = decode::<Value>(&response.body)?;
     if value.is_array() {
-        return project_directory(&input.path, value);
+        return project_directory(&input.path, value, input.cli);
     }
-    let content = serde_json::from_value::<RawContent>(value).map_err(|_| invalid_response())?;
-    project_content(&input.path, content)
+    let content =
+        serde_json::from_value::<RawContent>(value.clone()).map_err(|_| invalid_response())?;
+    let mut projected = project_content(&input.path, content)?;
+    if input.cli && projected["type"] == "file" {
+        let name = input.path.rsplit('/').next().unwrap_or_default();
+        projected["name"] = json!(name);
+        projected["gitSHA"] = projected["sha"].clone();
+        projected["url"] = value["url"].clone();
+        projected["htmlUrl"] = value["html_url"].clone();
+        projected["gitUrl"] = value["git_url"].clone();
+        projected["downloadUrl"] = value["download_url"].clone();
+    }
+    Ok(projected)
 }
 
-fn project_directory(path: &str, value: Value) -> Result<Value, ProviderError> {
+fn project_directory(path: &str, value: Value, cli: bool) -> Result<Value, ProviderError> {
     let raw = serde_json::from_value::<Vec<RawEntry>>(value).map_err(|_| invalid_response())?;
     let truncated = raw.len() > MAX_DIR_ENTRIES;
     let entries = raw
@@ -101,12 +114,21 @@ fn project_directory(path: &str, value: Value) -> Result<Value, ProviderError> {
             if entry.name.is_empty() || entry.name.len() > 512 || entry.sha.len() > 64 {
                 return Err(invalid_response());
             }
-            Ok(json!({
+            let mut row = json!({
                 "name": entry.name,
                 "type": entry.kind,
                 "size": entry.size,
                 "sha": entry.sha,
-            }))
+            });
+            if cli {
+                row["path"] = json!(if path.is_empty() {
+                    entry.name.clone()
+                } else {
+                    format!("{path}/{}", entry.name)
+                });
+                row["gitSHA"] = row["sha"].clone();
+            }
+            Ok(row)
         })
         .collect::<Result<Vec<_>, ProviderError>>()?;
     Ok(json!({
