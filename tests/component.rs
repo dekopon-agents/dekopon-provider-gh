@@ -1,7 +1,7 @@
 use dekopon_gh_provider::Gh;
 use dekopon_provider_sdk::provider::{Header, Http, ImportSet, Needs, Provider, Response};
 use dekopon_provider_sdk::{CommandRunOutcome, EffectKind, RiskLevel, provider};
-use dekopon_provider_sdk_testkit::{Harness, HttpScript, Native, conformance};
+use dekopon_provider_sdk_testkit::{Harness, HarnessError, HttpScript, Native, conformance};
 use serde_json::{Value, json};
 
 fn component() -> std::path::PathBuf {
@@ -66,7 +66,7 @@ fn manifest_keeps_read_and_write_grants_independent() {
 }
 
 #[test]
-fn removed_ids_cannot_run_and_existing_api_reads_require_their_own_grants() {
+fn native_removed_ids_cannot_run_without_http() {
     for removed in [
         "gh.pull-request.files",
         "gh.pull-request.reviews",
@@ -80,43 +80,77 @@ fn removed_ids_cannot_run_and_existing_api_reads_require_their_own_grants() {
         assert_ne!(result.status, 0, "{removed}");
         assert!(native.requests().is_empty(), "{removed}");
     }
-    for (id, input) in [
-        ("gh.user.read", json!({"login":"octo"})),
-        (
-            "gh.branch.read",
-            json!({"owner":"octo","repo":"hello","branch":"main"}),
-        ),
-        (
-            "gh.commit.read",
-            json!({"owner":"octo","repo":"hello","ref":"main"}),
-        ),
-        (
-            "gh.content.read",
-            json!({"owner":"octo","repo":"hello","path":"README.md"}),
-        ),
-    ] {
-        let denied = Harness::<Gh>::get(component()).call(id, input);
-        assert!(denied.is_err(), "{id} must have its own HTTP grant");
-    }
 }
 
 #[test]
-fn api_user_read_uses_only_the_existing_user_grant() -> Result<(), Box<dyn std::error::Error>> {
-    let args = ["api", "users/octo"].map(str::to_owned);
-    let CommandRunOutcome::Proposed {
-        capability, input, ..
-    } = provider::command::<Gh>(&args, false)
-    else {
-        panic!("finite route must propose")
-    };
-    assert_eq!(capability.as_str(), "gh.user.read");
-    let output = scripted_component_get(
-        Response { status: 200, headers: vec![], body: br#"{"login":"octo","type":"User","public_repos":1,"followers":2,"created_at":"2026-01-01T00:00:00Z"}"#.to_vec() },
-        capability.as_str(),
-        input,
-        "/users/octo",
-    )?;
-    assert_eq!(output.status, 0, "{}", output.stderr);
+fn retained_reads_succeed_only_with_their_own_http_grant() -> Result<(), Box<dyn std::error::Error>>
+{
+    let cases: &[(&[&str], &str, &str, Value, &str)] = &[
+        (
+            &["api", "users/octo"],
+            "gh.user.read",
+            "/users/octo",
+            json!({"login":"octo","type":"User","public_repos":1,"followers":2,"created_at":"2026-01-01T00:00:00Z"}),
+            "login",
+        ),
+        (
+            &["api", "repos/octo/hello/branches/main"],
+            "gh.branch.read",
+            "/repos/octo/hello/branches/main",
+            json!({"name":"main","commit":{"sha":"a".repeat(40)},"protected":false}),
+            "headSha",
+        ),
+        (
+            &["api", "repos/octo/hello/commits/main"],
+            "gh.commit.read",
+            "/repos/octo/hello/commits/main",
+            json!({"sha":"c".repeat(40),"commit":{"message":"ship","author":{"name":"Octo","date":"2026-01-01T00:00:00Z"}},"author":{"login":"octo"},"stats":{"additions":1,"deletions":0,"total":1},"files":[]}),
+            "sha",
+        ),
+        (
+            &["repo", "read-file", "README.md", "-R", "octo/hello"],
+            "gh.content.read",
+            "/repos/octo/hello/contents/README.md",
+            json!({"type":"file","path":"README.md","sha":"abc","size":3,"encoding":"base64","content":"eWVz"}),
+            "content",
+        ),
+    ];
+    for (argv, id, path, body, field) in cases {
+        let CommandRunOutcome::Proposed {
+            capability, input, ..
+        } = provider::command::<Gh>(
+            &argv
+                .iter()
+                .map(|word| (*word).to_owned())
+                .collect::<Vec<_>>(),
+            false,
+        )
+        else {
+            panic!("{argv:?} must propose")
+        };
+        assert_eq!(capability.as_str(), *id, "{argv:?}");
+        match Harness::<Gh>::get(component()).call(id, input.clone()) {
+            Err(HarnessError::Invocation(failure)) => {
+                assert!(failure.http_calls.is_empty(), "{id} denial sent HTTP");
+            }
+            other => panic!("{id} without HTTP authority: {other:?}"),
+        }
+        let output = scripted_component_get(
+            Response {
+                status: 200,
+                headers: vec![],
+                body: body.to_string().into_bytes(),
+            },
+            id,
+            input,
+            path,
+        )?;
+        assert_eq!(output.status, 0, "{id}: {}", output.stderr);
+        assert!(
+            !serde_json::from_slice::<Value>(&output.stdout)?[*field].is_null(),
+            "{id} was not executed"
+        );
+    }
     Ok(())
 }
 
