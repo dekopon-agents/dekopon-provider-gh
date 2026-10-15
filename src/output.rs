@@ -115,18 +115,6 @@ pub(crate) fn select(value: &Value, fields: &str, list: bool) -> Value {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    #[test]
-    fn native_invalid_selection_has_typed_invalid_input_code() {
-        let error = super::validate_selection("gh.repo.read", Some(&json!("unknown")), None)
-            .expect_err("unknown field must fail before HTTP");
-        assert_eq!(error.code(), "invalid-input");
-    }
-}
-
 pub(crate) fn render(
     id: &str,
     input: &Value,
@@ -205,4 +193,16 @@ pub(crate) fn render(
         output.push('\n');
     }
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    #[test]
+    fn native_invalid_selection_has_typed_invalid_input_code() {
+        let error = super::validate_selection("gh.repo.read", Some(&json!("unknown")), None)
+            .expect_err("unknown field must fail before HTTP");
+        assert_eq!(error.code(), "invalid-input");
+    }
 }
