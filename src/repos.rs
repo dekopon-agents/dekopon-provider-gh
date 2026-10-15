@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_read_preserves_upstream_nested_fields() {
+    fn native_commit_read_preserves_upstream_nested_fields() {
         let output = invoke_with(
             &capability("gh.commit.read"),
             json!({"owner": "octo", "repo": "hello", "ref": "main"}),
