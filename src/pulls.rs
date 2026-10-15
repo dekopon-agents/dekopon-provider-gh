@@ -10,8 +10,8 @@ use crate::{
     ACCEPT_DIFF, ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_DESCRIPTION_OUT_BYTES, MAX_DIFF_OUT_BYTES,
     MAX_LIST_ITEMS, MAX_PATCH_OUT_BYTES, MAX_PR_BODY_OUT_BYTES, MAX_TITLE_OUT_BYTES, RawUser,
     bounded_optional, decode, has_next_link, invalid_input, invalid_response, is_sha, login_out,
-    percent_encode, send_get, timestamp, truncate_text, url, validate_login, validate_number,
-    validate_page, validate_repo,
+    marked_optional, marked_text, percent_encode, send_get, timestamp, truncate_text, url,
+    validate_login, validate_number, validate_page, validate_repo,
 };
 
 // ---------------------------------------------------------------------------
@@ -185,8 +185,8 @@ pub(crate) fn read(
 }
 
 fn cli_pull(pull: &RawPull, raw: &Value, fields: &str) -> Result<Value, ProviderError> {
-    let (title, _) = truncate_text(&pull.title, MAX_TITLE_OUT_BYTES);
-    let (body, _) = bounded_optional(pull.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
+    let title = marked_text(&pull.title, MAX_TITLE_OUT_BYTES);
+    let body = marked_optional(pull.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
     let state = if pull.merged.unwrap_or(false) || !raw["merged_at"].is_null() {
         "MERGED"
     } else if pull.state == "closed" {

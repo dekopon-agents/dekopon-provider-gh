@@ -8,8 +8,8 @@ use serde_json::{Value, json};
 
 use crate::{
     ACCEPT_JSON, MAX_DESCRIPTION_OUT_BYTES, RawUser, bounded_optional, decode, encode_path,
-    invalid_input, invalid_response, is_sha, login_out, percent_encode, send_get, timestamp, url,
-    validate_login, validate_ref, validate_repo,
+    invalid_input, invalid_response, is_sha, login_out, marked_optional, percent_encode, send_get,
+    timestamp, url, validate_login, validate_ref, validate_repo,
 };
 
 #[derive(Debug, Deserialize)]
@@ -126,7 +126,7 @@ pub(crate) fn repo(
         "fork": repo.fork,
         "archived": repo.archived,
         "defaultBranch": repo.default_branch,
-        "description": description,
+        "description": marked_optional(repo.description.as_deref(), MAX_DESCRIPTION_OUT_BYTES),
         "descriptionTruncated": description_truncated,
         "pushedAt": repo.pushed_at,
         "updatedAt": timestamp(&repo.updated_at)?,

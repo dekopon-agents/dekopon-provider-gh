@@ -763,6 +763,22 @@ fn truncate_text(value: &str, max: usize) -> (String, bool) {
     (value[..end].to_owned(), true)
 }
 
+fn truncation_marker(kept: usize, total: usize) -> String {
+    format!("\n[dekopon: truncated to {kept} bytes of {total}]")
+}
+
+fn marked_text(value: &str, max: usize) -> String {
+    let (mut text, truncated) = truncate_text(value, max);
+    if truncated {
+        text.push_str(&truncation_marker(text.len(), value.len()));
+    }
+    text
+}
+
+fn marked_optional(value: Option<&str>, max: usize) -> Value {
+    value.map_or(Value::Null, |text| Value::String(marked_text(text, max)))
+}
+
 /// Projects an optional free-text field into `(text, truncated)` JSON values.
 fn bounded_optional(value: Option<&str>, max: usize) -> (Value, bool) {
     match value {

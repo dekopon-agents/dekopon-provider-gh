@@ -9,9 +9,9 @@ use serde_json::{Value, json};
 use crate::{
     ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_LABELS, MAX_LIST_ITEMS, MAX_PR_BODY_OUT_BYTES,
     MAX_TITLE_OUT_BYTES, RawUser, bounded_optional, decode, github_json_request, has_next_link,
-    http_failed, invalid_input, invalid_response, login_out, percent_encode, send_get,
-    status_error, timestamp, truncate_text, url, validate_body, validate_login, validate_number,
-    validate_page, validate_repo,
+    http_failed, invalid_input, invalid_response, login_out, marked_optional, marked_text,
+    percent_encode, send_get, status_error, timestamp, truncate_text, url, validate_body,
+    validate_login, validate_number, validate_page, validate_repo,
 };
 
 #[derive(Debug, Deserialize)]
@@ -167,8 +167,8 @@ pub(crate) fn read(
 }
 
 fn cli_issue(issue: &RawIssue, raw: &Value, fields: &str) -> Result<Value, ProviderError> {
-    let (title, _) = truncate_text(&issue.title, MAX_TITLE_OUT_BYTES);
-    let (body, _) = bounded_optional(issue.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
+    let title = marked_text(&issue.title, MAX_TITLE_OUT_BYTES);
+    let body = marked_optional(issue.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
     if (fields.split(',').any(|field| field == "assignees")
         && raw["assignees"]
             .as_array()

@@ -40,6 +40,8 @@ Nothing piped is a usage error rather than an empty comment. `gh api` accepts on
 Supported `gh pr list/view`, `gh issue list/view`, `gh repo view/read-file/read-dir` commands
 accept closed, comma-separated `--json FIELDS`; bare, unknown and repeated fields refuse as usage.
 Without `--json`, these commands print tab-separated rows (files print decoded content).
+A text field cut at its byte bound ends, in JSON and text alike, with the line
+`[dekopon: truncated to N bytes of M]`.
 `--jq`, `--template`, `--web` and `--checkout` still refuse. The three finite `gh api` reads
 return bounded upstream JSON objects. Direct typed invocation retains JSON output; failures
 write to stderr with a nonzero status. Filter stdout with the shell's

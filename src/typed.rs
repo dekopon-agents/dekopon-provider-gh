@@ -11,9 +11,20 @@ use crate::{Gh, GhSettings, error::ProviderError};
 // has its own schema and keeps the existing native validation at the HTTP boundary.
 macro_rules! capability {
     ($name:ident, $input:ident, $id:expr, $short:expr, $description:expr, $handler:path, $effect:expr, $risk:expr) => {
-        #[derive(Deserialize, Serialize)]
+        #[derive(Serialize)]
         #[serde(transparent)]
         pub struct $input(Value);
+        impl<'de> Deserialize<'de> for $input {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let input = Value::deserialize(deserializer)?;
+                if input.get("_cli").is_some()
+                    || crate::output::validate_selection($id, input.get("_cliOutput"), input.get("_cliKind")).is_err()
+                {
+                    return Err(serde::de::Error::custom("invalid gh output selection"));
+                }
+                Ok(Self(input))
+            }
+        }
         impl JsonSchema for $input {
             fn schema_name() -> std::borrow::Cow<'static, str> {
                 stringify!($input).into()
@@ -86,7 +97,6 @@ macro_rules! capability {
                 }
                 let selection = input.as_object_mut().and_then(|object| object.remove("_cliOutput"));
                 let kind = input.as_object_mut().and_then(|object| object.remove("_cliKind"));
-                crate::output::validate_selection($id, selection.as_ref(), kind.as_ref())?;
                 let mut render_input = input.clone();
                 if let Some(kind) = kind { render_input["_cliKind"] = kind; }
                 if let Some(Value::String(fields)) = selection.as_ref() {

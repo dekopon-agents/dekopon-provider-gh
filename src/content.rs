@@ -91,7 +91,7 @@ pub(crate) fn read(
     }
     let content =
         serde_json::from_value::<RawContent>(value.clone()).map_err(|_| invalid_response())?;
-    let mut projected = project_content(&input.path, content)?;
+    let mut projected = project_content(&input.path, content, input.cli)?;
     if input.cli && projected["type"] == "file" {
         let name = input.path.rsplit('/').next().unwrap_or_default();
         projected["name"] = json!(name);
@@ -139,13 +139,17 @@ fn project_directory(path: &str, value: Value, cli: bool) -> Result<Value, Provi
     }))
 }
 
-fn project_content(requested_path: &str, content: RawContent) -> Result<Value, ProviderError> {
+fn project_content(
+    requested_path: &str,
+    content: RawContent,
+    cli: bool,
+) -> Result<Value, ProviderError> {
     // The path echo binds the response to the request; a mismatch is a broken or hostile reply.
     if content.path != requested_path {
         return Err(invalid_response());
     }
     match content.kind.as_str() {
-        "file" => project_file(content),
+        "file" => project_file(content, cli),
         "symlink" | "submodule" => {
             let target = content
                 .target
@@ -162,7 +166,7 @@ fn project_content(requested_path: &str, content: RawContent) -> Result<Value, P
 }
 
 /// Decodes a file body and re-projects it bounded: UTF-8 text when valid, base64 otherwise.
-fn project_file(content: RawContent) -> Result<Value, ProviderError> {
+fn project_file(content: RawContent, cli: bool) -> Result<Value, ProviderError> {
     if content.encoding.as_deref() != Some("base64") {
         return Err(invalid_response());
     }
@@ -174,20 +178,21 @@ fn project_file(content: RawContent) -> Result<Value, ProviderError> {
         .collect::<Vec<u8>>();
     let bytes = STANDARD.decode(&compact).map_err(|_| invalid_response())?;
 
-    let (encoding, text, truncated) = match core::str::from_utf8(&bytes) {
+    let (encoding, mut text, kept) = match core::str::from_utf8(&bytes) {
         Ok(text) => {
-            let (bounded, truncated) = truncate_text(text, MAX_CONTENT_OUT_BYTES);
-            ("utf-8", bounded, truncated)
+            let (bounded, _) = truncate_text(text, MAX_CONTENT_OUT_BYTES);
+            let kept = bounded.len();
+            ("utf-8", bounded, kept)
         }
         Err(_) => {
             let bounded = &bytes[..bytes.len().min(MAX_CONTENT_OUT_BYTES)];
-            (
-                "base64",
-                STANDARD.encode(bounded),
-                bounded.len() < bytes.len(),
-            )
+            ("base64", STANDARD.encode(bounded), bounded.len())
         }
     };
+    let truncated = kept < bytes.len();
+    if cli && truncated {
+        text.push_str(&crate::truncation_marker(kept, bytes.len()));
+    }
 
     Ok(json!({
         "type": "file",
