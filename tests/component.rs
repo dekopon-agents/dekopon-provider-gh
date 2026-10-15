@@ -265,6 +265,46 @@ fn component_repo_and_content_render_selected_json_and_default_text()
 }
 
 #[test]
+fn component_small_binary_read_file_keeps_decodable_base64()
+-> Result<(), Box<dyn std::error::Error>> {
+    let words = [
+        "repo",
+        "read-file",
+        "logo.bin",
+        "-R",
+        "octo/hello",
+        "--json",
+        "encoding,content",
+    ];
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = provider::command::<Gh>(&words.map(str::to_owned), false)
+    else {
+        panic!("read-file must propose")
+    };
+    assert_eq!(capability.as_str(), "gh.content.read");
+    let output = scripted_component_get(
+        Response {
+            status: 200,
+            headers: vec![],
+            body: json!({
+                "type":"file","path":"logo.bin","sha":"abc","size":3,
+                "encoding":"base64","content":"/wD+"
+            })
+            .to_string()
+            .into_bytes(),
+        },
+        capability.as_str(),
+        input,
+        "/repos/octo/hello/contents/logo.bin",
+    )?;
+    assert_eq!(output.status, 0, "{}", output.stderr);
+    let value: Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(value, json!({"encoding":"base64","content":"/wD+"}));
+    Ok(())
+}
+
+#[test]
 fn component_list_json_is_an_array_with_nested_logins_and_nulls()
 -> Result<(), Box<dyn std::error::Error>> {
     let words = [
