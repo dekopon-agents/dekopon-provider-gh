@@ -806,7 +806,10 @@ fn collect_pages(
             return Ok(rows);
         }
         let next = url(base, &format!("{path}&page={}&per_page=100", page + 1))?;
-        let mut found = false;
+        let mut next_page = false;
+        let mut previous_page = false;
+        let mut first_page = false;
+        let mut last_page = None;
         for link in links {
             let link = std::str::from_utf8(link).map_err(|_| invalid_response())?;
             for part in link.split(',') {
@@ -823,15 +826,27 @@ fn collect_pages(
                 if !matches!(rel, "next" | "prev" | "first" | "last") {
                     return Err(invalid_response());
                 }
-                if rel == "next" {
-                    if found || page_value != page + 1 || target != next {
-                        return Err(invalid_response());
+                match rel {
+                    "next" if !next_page && page_value == page + 1 && target == next => {
+                        next_page = true;
                     }
-                    found = true;
+                    "prev" if !previous_page && page > 1 && page_value == page - 1 => {
+                        previous_page = true;
+                    }
+                    "first" if !first_page && page_value == 1 => {
+                        first_page = true;
+                    }
+                    "last" if last_page.is_none() && page_value >= page => {
+                        last_page = Some(page_value);
+                    }
+                    _ => return Err(invalid_response()),
                 }
             }
         }
-        if !found {
+        if last_page.is_some_and(|last| (last > page) != next_page) {
+            return Err(invalid_response());
+        }
+        if !next_page {
             return Ok(rows);
         }
     }
@@ -1127,6 +1142,138 @@ mod tests {
         let error = invoke_with(&capability("gh.pull-request.list"), input, scripted(steps))
             .expect_err("ceiling fails without rows");
         assert_eq!(error.code(), "request-ceiling");
+    }
+
+    #[test]
+    fn native_sparse_pages_reach_100_matches_or_fail_on_a_later_upstream_error() {
+        use super::testutil::{json_response, response_with_headers};
+        let prefix = "https://api.github.com/repos/octo/hello/pulls?state=open";
+        let pull = |id: u64, author: &str| {
+            json!({
+                "id":id,"number":id,"title":"Ship","state":"open","user":{"login":author},
+                "head":{"ref":"topic","sha":"a".repeat(40)},
+                "base":{"ref":"main","sha":"b".repeat(40)},
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"
+            })
+        };
+        let link = format!(
+            "<{prefix}&page=2&per_page=100>; rel=\"next\", <{prefix}&page=2&per_page=100>; rel=\"last\""
+        );
+        let first = json!([pull(1, "other"), pull(2, "dev")]);
+        let second = std::iter::once(pull(2, "dev"))
+            .chain((3..=101).map(|number| pull(number, "dev")))
+            .collect::<Vec<_>>();
+        let input =
+            json!({"owner":"octo","repo":"hello","author":"dev","_cli":"number","_cliLimit":100});
+        let result = invoke_with(
+            &capability("gh.pull-request.list"),
+            input.clone(),
+            scripted(vec![
+                step(
+                    move |request| assert_eq!(request.uri, format!("{prefix}&page=1&per_page=100")),
+                    response_with_headers(200, &[("link", &link)], &first),
+                ),
+                step(
+                    move |request| assert_eq!(request.uri, format!("{prefix}&page=2&per_page=100")),
+                    json_response(200, &json!(second)),
+                ),
+            ]),
+        )
+        .expect("100 distinct author matches across two pages");
+        let rows = result["pullRequests"].as_array().expect("rows");
+        assert_eq!(rows.len(), 100);
+        assert_eq!(rows[0]["number"], 2);
+        assert_eq!(rows[99]["number"], 101);
+        let error = invoke_with(
+            &capability("gh.pull-request.list"),
+            input,
+            scripted(vec![
+                step(
+                    move |request| assert_eq!(request.uri, format!("{prefix}&page=1&per_page=100")),
+                    response_with_headers(200, &[("link", &link)], &json!([pull(2, "dev")])),
+                ),
+                step(
+                    move |request| assert_eq!(request.uri, format!("{prefix}&page=2&per_page=100")),
+                    json_response(502, &json!({})),
+                ),
+            ]),
+        )
+        .expect_err("later upstream error must discard staged rows");
+        assert_eq!(error.code(), "unexpected-status");
+    }
+
+    #[test]
+    fn native_second_page_with_consistent_prev_and_last_exhausts_short() {
+        use super::testutil::response_with_headers;
+        let path = "https://api.github.com/repos/octo/hello/issues?state=open";
+        let issue = |number| {
+            json!({"id":number,"number":number,"title":"Fix","state":"open",
+            "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"})
+        };
+        let next = format!(
+            "<{path}&page=2&per_page=100>; rel=\"next\", <{path}&page=2&per_page=100>; rel=\"last\""
+        );
+        let exhausted = format!(
+            "<{path}&page=1&per_page=100>; rel=\"prev\", <{path}&page=2&per_page=100>; rel=\"last\""
+        );
+        let result = invoke_with(
+            &capability("gh.issue.list"),
+            json!({"owner":"octo","repo":"hello","_cli":"number","_cliLimit":100}),
+            scripted(vec![
+                step(
+                    move |request| assert_eq!(request.uri, format!("{path}&page=1&per_page=100")),
+                    response_with_headers(200, &[("link", &next)], &json!([issue(1)])),
+                ),
+                step(
+                    move |request| assert_eq!(request.uri, format!("{path}&page=2&per_page=100")),
+                    response_with_headers(200, &[("link", &exhausted)], &json!([issue(2)])),
+                ),
+            ]),
+        )
+        .expect("valid last-page metadata is exhaustion");
+        assert_eq!(result["issues"].as_array().expect("rows").len(), 2);
+        assert_eq!(result["issues"][1]["number"], 2);
+    }
+
+    #[test]
+    fn native_inconsistent_last_or_repeated_prev_refuses_without_stdout() {
+        let path = "https://api.github.com/repos/octo/hello/issues?state=open";
+        let issue = json!([{"id":1,"number":1,"title":"Fix","state":"open",
+            "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}]);
+        for link in [
+            format!("<{path}&page=3&per_page=100>; rel=\"last\""),
+            format!("<{path}&page=1&per_page=100>; rel=\"prev\""),
+        ] {
+            let native = Native::<Gh>::new().http(HttpScript::new(
+                "api.github.com",
+                "GET",
+                Response {
+                    status: 200,
+                    headers: vec![super::Header::text("link", &link).expect("fixture link")],
+                    body: issue.to_string().into_bytes(),
+                },
+            ));
+            let output = native.call(
+                "gh.issue.list",
+                &json!({"owner":"octo","repo":"hello",
+                "_cliOutput":"number","_cliLimit":30})
+                .to_string(),
+            );
+            assert_ne!(output.status, 0, "{link} must not signal exhaustion");
+            assert!(
+                output.stdout.is_empty(),
+                "{link} must not emit partial rows"
+            );
+            let sent = native.requests();
+            assert_eq!(sent.len(), 1);
+            assert_eq!(sent[0].uri, format!("{path}&page=1&per_page=100"));
+            assert!(
+                !sent[0]
+                    .headers
+                    .iter()
+                    .any(|header| header.name.eq_ignore_ascii_case("authorization"))
+            );
+        }
     }
 
     #[test]

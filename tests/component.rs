@@ -241,6 +241,53 @@ fn component_list_rejects_a_bad_cursor_without_partial_stdout()
 }
 
 #[test]
+fn component_issue_list_exhausts_one_page_short_of_its_limit()
+-> Result<(), Box<dyn std::error::Error>> {
+    let words = [
+        "issue",
+        "list",
+        "-R",
+        "octo/hello",
+        "-L",
+        "100",
+        "--json",
+        "number",
+    ];
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = provider::command::<Gh>(&words.map(str::to_owned), false)
+    else {
+        panic!("issue list proposes")
+    };
+    let issue = |number: u64, pull: bool| {
+        let mut row = json!({"id":number,"number":number,"title":"Fix","state":"open",
+            "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"});
+        if pull {
+            row["pull_request"] = json!({"url":"https://api.github.com/pulls/2"});
+        }
+        row
+    };
+    let result = scripted_component_get(
+        Response {
+            status: 200,
+            headers: vec![],
+            body: json!([issue(1, false), issue(2, true)])
+                .to_string()
+                .into_bytes(),
+        },
+        capability.as_str(),
+        input,
+        "/repos/octo/hello/issues?state=open&page=1&per_page=100",
+    )?;
+    assert_eq!(result.status, 0, "{}", result.stderr);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&result.stdout)?,
+        json!([{"number":1}])
+    );
+    Ok(())
+}
+
+#[test]
 fn component_repo_and_content_render_selected_json_and_default_text()
 -> Result<(), Box<dyn std::error::Error>> {
     let cases: &[(&[&str], &str, &str, Value, &str)] = &[
