@@ -830,7 +830,7 @@ fn collect_pages(
         base,
         path,
         limit,
-        |body| decode::<Vec<Value>>(body),
+        decode::<Vec<Value>>,
         project,
     )
 }
