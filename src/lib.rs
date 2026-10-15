@@ -357,7 +357,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             ids::SEARCH_REPOS,
-            "Search repositories of one owner",
+            "Search repositories for an owner",
             search_schema(false, false),
         ),
         read(
@@ -1373,7 +1373,7 @@ mod tests {
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 18);
+        assert_eq!(manifest.capabilities.len(), 23);
 
         let external_writes = manifest
             .capabilities
@@ -1514,7 +1514,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 18);
+        assert_eq!(manifest.capabilities.len(), 23);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()

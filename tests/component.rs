@@ -13,7 +13,7 @@ fn component() -> std::path::PathBuf {
 #[test]
 fn manifest_keeps_read_and_write_grants_independent() {
     let manifest = provider::manifest::<Gh>().expect("closed manifest");
-    assert_eq!(manifest.capabilities.len(), 18);
+    assert_eq!(manifest.capabilities.len(), 23);
     assert!(
         manifest
             .capabilities
