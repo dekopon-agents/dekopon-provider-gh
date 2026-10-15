@@ -651,6 +651,27 @@ fn send_get(
     Ok(response)
 }
 
+fn view_items(
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+    base: &Base,
+    path: &str,
+    required: &[&str],
+) -> Result<Vec<Value>, ProviderError> {
+    let response = send_get(send, url(base, path)?, ACCEPT_JSON)?;
+    if header_values(&response, "link").next().is_some() {
+        return Err(invalid_response());
+    }
+    let items = decode::<Vec<Value>>(&response.body)?;
+    if items.len() > 100
+        || items
+            .iter()
+            .any(|item| required.iter().any(|key| item[*key].is_null()))
+    {
+        return Err(invalid_response());
+    }
+    Ok(items)
+}
+
 /// Maps a non-success GitHub status to a stable, model-safe error code.
 ///
 /// A 403 is rate limiting only when GitHub says the primary quota is exhausted; a plain 403 is an

@@ -183,7 +183,7 @@ pub(crate) fn render(
                 Value::Array(items) => output.push_str(
                     &items
                         .iter()
-                        .filter_map(Value::as_str)
+                        .filter_map(|item| item.as_str().or_else(|| item["name"].as_str()))
                         .collect::<Vec<_>>()
                         .join(","),
                 ),

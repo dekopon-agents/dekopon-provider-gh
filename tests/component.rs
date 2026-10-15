@@ -321,6 +321,197 @@ fn component_list_json_is_an_array_with_nested_logins_and_nulls()
 }
 
 #[test]
+fn component_pr_and_issue_fields_render_command_shapes() -> Result<(), Box<dyn std::error::Error>> {
+    let sha = "a".repeat(40);
+    let pr = json!({"number":7,"title":"Ship","state":"open","body":null,"draft":true,"user":{"login":"octo"},"assignees":[{"login":"dev"}],"labels":[{"name":"ready"}],"head":{"ref":"topic","sha":sha},"base":{"ref":"main","sha":"b".repeat(40)},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","closed_at":null,"merged_at":null,"html_url":"https://github.com/octo/hello/pull/7"});
+    let issue = json!({"number":9,"title":"Fix","state":"closed","body":"details","user":{"login":"octo"},"assignees":[{"login":"dev"}],"labels":[{"name":"bug"}],"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","closed_at":"2026-01-02T00:00:00Z","html_url":"https://github.com/octo/hello/issues/9"});
+    let cases: &[(&[&str], &str, &str, Value, Value)] = &[
+        (
+            &[
+                "pr",
+                "list",
+                "-R",
+                "octo/hello",
+                "--json",
+                "assignees,author,baseRefOid,body,closedAt,headRefName,isDraft,labels,state,url",
+            ],
+            "gh.pull-request.list",
+            "/repos/octo/hello/pulls?state=open&page=1&per_page=20",
+            json!([pr]),
+            json!([{"assignees":[{"login":"dev"}],"author":{"login":"octo"},"baseRefOid":"b".repeat(40),"body":null,"closedAt":null,"headRefName":"topic","isDraft":true,"labels":[{"name":"ready"}],"state":"OPEN","url":"https://github.com/octo/hello/pull/7"}]),
+        ),
+        (
+            &[
+                "issue",
+                "view",
+                "9",
+                "-R",
+                "octo/hello",
+                "--json",
+                "assignees,author,body,closedAt,labels,state,url",
+            ],
+            "gh.issue.read",
+            "/repos/octo/hello/issues/9",
+            issue.clone(),
+            json!({"assignees":[{"login":"dev"}],"author":{"login":"octo"},"body":"details","closedAt":"2026-01-02T00:00:00Z","labels":[{"name":"bug"}],"state":"CLOSED","url":"https://github.com/octo/hello/issues/9"}),
+        ),
+        (
+            &["pr", "view", "7", "-R", "octo/hello"],
+            "gh.pull-request.read",
+            "/repos/octo/hello/pulls/7",
+            pr.clone(),
+            json!("Ship\t\n"),
+        ),
+        (
+            &["issue", "view", "9", "-R", "octo/hello"],
+            "gh.issue.read",
+            "/repos/octo/hello/issues/9",
+            issue.clone(),
+            json!("Fix\tdetails\n"),
+        ),
+        (
+            &[
+                "issue",
+                "list",
+                "-R",
+                "octo/hello",
+                "--json",
+                "assignees,author,body,closedAt,createdAt,labels,number,state,title,updatedAt,url",
+            ],
+            "gh.issue.list",
+            "/repos/octo/hello/issues?state=open&page=1&per_page=20",
+            json!([issue.clone()]),
+            json!([{"assignees":[{"login":"dev"}],"author":{"login":"octo"},"body":"details","closedAt":"2026-01-02T00:00:00Z","createdAt":"2026-01-01T00:00:00Z","labels":[{"name":"bug"}],"number":9,"state":"CLOSED","title":"Fix","updatedAt":"2026-01-02T00:00:00Z","url":"https://github.com/octo/hello/issues/9"}]),
+        ),
+        (
+            &["issue", "list", "-R", "octo/hello"],
+            "gh.issue.list",
+            "/repos/octo/hello/issues?state=open&page=1&per_page=20",
+            json!([issue]),
+            json!("9\tFix\tbug\t2026-01-02T00:00:00Z\n"),
+        ),
+    ];
+    for (words, id, path, response, expected) in cases {
+        let CommandRunOutcome::Proposed {
+            capability, input, ..
+        } = provider::command::<Gh>(
+            &words
+                .iter()
+                .map(|word| (*word).to_owned())
+                .collect::<Vec<_>>(),
+            false,
+        )
+        else {
+            panic!("must propose {words:?}")
+        };
+        assert_eq!(capability.as_str(), *id);
+        let output = scripted_component_get(
+            Response {
+                status: 200,
+                headers: vec![],
+                body: response.to_string().into_bytes(),
+            },
+            id,
+            input,
+            path,
+        )?;
+        assert_eq!(output.status, 0, "{words:?}: {}", output.stderr);
+        if expected.is_string() {
+            assert_eq!(output.stdout, expected.as_str().expect("text").as_bytes());
+        } else {
+            assert_eq!(
+                serde_json::from_slice::<Value>(&output.stdout)?,
+                *expected,
+                "{words:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn component_pr_view_full_fields_keep_denial_separate_from_success()
+-> Result<(), Box<dyn std::error::Error>> {
+    let words = [
+        "pr",
+        "view",
+        "7",
+        "-R",
+        "octo/hello",
+        "--json",
+        "assignees,author,baseRefName,baseRefOid,body,closedAt,createdAt,headRefName,headRefOid,isDraft,labels,mergedAt,number,state,title,updatedAt,url",
+    ];
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = provider::command::<Gh>(&words.map(str::to_owned), false)
+    else {
+        panic!("pr view must propose")
+    };
+    assert_eq!(capability.as_str(), "gh.pull-request.read");
+    match Harness::<Gh>::get(component()).call(capability.as_str(), input.clone()) {
+        Err(HarnessError::Invocation(failure)) => assert!(failure.http_calls.is_empty()),
+        other => panic!("denial must send zero HTTP: {other:?}"),
+    }
+    let reply = json!({"number":7,"title":"Ship","state":"closed","merged":true,"draft":false,"body":null,"user":{"login":"octo"},"assignees":[{"login":"dev"}],"labels":[{"name":"ready"}],"head":{"ref":"topic","sha":"a".repeat(40)},"base":{"ref":"main","sha":"b".repeat(40)},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","closed_at":"2026-01-02T00:00:00Z","merged_at":"2026-01-02T00:00:00Z","html_url":"https://github.com/octo/hello/pull/7"});
+    let output = scripted_component_get(
+        Response {
+            status: 200,
+            headers: vec![],
+            body: reply.to_string().into_bytes(),
+        },
+        capability.as_str(),
+        input,
+        "/repos/octo/hello/pulls/7",
+    )?;
+    assert_eq!(output.status, 0, "{}", output.stderr);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout)?,
+        json!({"assignees":[{"login":"dev"}],"author":{"login":"octo"},"baseRefName":"main","baseRefOid":"b".repeat(40),"body":null,"closedAt":"2026-01-02T00:00:00Z","createdAt":"2026-01-01T00:00:00Z","headRefName":"topic","headRefOid":"a".repeat(40),"isDraft":false,"labels":[{"name":"ready"}],"mergedAt":"2026-01-02T00:00:00Z","number":7,"state":"MERGED","title":"Ship","updatedAt":"2026-01-02T00:00:00Z","url":"https://github.com/octo/hello/pull/7"})
+    );
+    Ok(())
+}
+
+#[test]
+fn native_failed_view_expansion_cannot_emit_partial_json() {
+    let words = ["pr", "view", "7", "-R", "octo/hello", "--json", "files"];
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = provider::command::<Gh>(&words.map(str::to_owned), false)
+    else {
+        panic!("files must propose")
+    };
+    let response = json!({"number":7,"title":"Ship","state":"open","head":{"ref":"topic","sha":"a".repeat(40)},"base":{"ref":"main","sha":"b".repeat(40)},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"});
+    let native = Native::<Gh>::new().http(HttpScript::new(
+        "api.github.com",
+        "GET",
+        Response {
+            status: 200,
+            headers: vec![],
+            body: response.to_string().into_bytes(),
+        },
+    ));
+    let result = native.call(capability.as_str(), &input.to_string());
+    assert_ne!(result.status, 0);
+    assert!(result.stdout.is_empty());
+    let requests = native.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0].uri,
+        "https://api.github.com/repos/octo/hello/pulls/7"
+    );
+    assert_eq!(
+        requests[1].uri,
+        "https://api.github.com/repos/octo/hello/pulls/7/files?per_page=100"
+    );
+    assert!(requests.iter().all(|request| {
+        !request
+            .headers
+            .iter()
+            .any(|header| header.name.eq_ignore_ascii_case("authorization"))
+    }));
+}
+
+#[test]
 fn component_content_kind_mismatch_never_renders_success() -> Result<(), Box<dyn std::error::Error>>
 {
     let mut results = Vec::new();

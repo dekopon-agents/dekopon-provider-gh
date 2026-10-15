@@ -89,8 +89,12 @@ macro_rules! capability {
                 crate::output::validate_selection($id, selection.as_ref(), kind.as_ref())?;
                 let mut render_input = input.clone();
                 if let Some(kind) = kind { render_input["_cliKind"] = kind; }
-                if selection.is_some() && matches!($id, "gh.repo.read" | "gh.content.read") {
-                    input["_cli"] = Value::Bool(true);
+                if let Some(Value::String(fields)) = selection.as_ref() {
+                    if matches!($id, "gh.repo.read" | "gh.content.read") {
+                        input["_cli"] = Value::Bool(true);
+                    } else {
+                        input["_cli"] = Value::String(fields.clone());
+                    }
                 }
                 let result = $handler(input, &base, &mut |request| http.send(request))?;
                 if let Some(Value::String(selection)) = selection {

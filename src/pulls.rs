@@ -71,18 +71,29 @@ pub(crate) fn fetch_pull(
     repo: &str,
     number: u32,
 ) -> Result<RawPull, ProviderError> {
+    fetch_pull_with_raw(send, base, owner, repo, number).map(|(pull, _)| pull)
+}
+
+fn fetch_pull_with_raw(
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+    base: &Base,
+    owner: &str,
+    repo: &str,
+    number: u32,
+) -> Result<(RawPull, Value), ProviderError> {
     let uri = url(
         base,
         &format!(
             "/repos/{}/{}/pulls/{number}",
             percent_encode(owner),
-            percent_encode(repo),
+            percent_encode(repo)
         ),
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let pull = decode::<RawPull>(&response.body)?;
+    let raw = decode::<Value>(&response.body)?;
+    let pull = serde_json::from_value::<RawPull>(raw.clone()).map_err(|_| invalid_response())?;
     pull.validate(number)?;
-    Ok(pull)
+    Ok((pull, raw))
 }
 
 // ---------------------------------------------------------------------------
@@ -95,6 +106,8 @@ struct ReadInput {
     owner: String,
     repo: String,
     number: u32,
+    #[serde(default, rename = "_cli")]
+    cli: Option<String>,
 }
 
 pub(crate) fn read(
@@ -106,7 +119,46 @@ pub(crate) fn read(
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
-    let pull = fetch_pull(send, base, &input.owner, &input.repo, input.number)?;
+    let (pull, raw) = fetch_pull_with_raw(send, base, &input.owner, &input.repo, input.number)?;
+    if let Some(fields) = input.cli.as_deref() {
+        let mut projected = cli_pull(&pull, &raw, fields)?;
+        let path = format!(
+            "/repos/{}/{}/",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo)
+        );
+        if fields.split(',').any(|field| field == "files") {
+            projected["files"] = json!(crate::view_items(send, base, &format!("{path}pulls/{}/files?per_page=100", input.number), &["filename", "status", "additions", "deletions"])?
+                .into_iter().map(|file| json!({"path": file["filename"], "status": file["status"], "additions": file["additions"], "deletions": file["deletions"]})).collect::<Vec<_>>());
+        }
+        if fields
+            .split(',')
+            .any(|field| matches!(field, "reviews" | "latestReviews"))
+        {
+            let reviews = crate::view_items(send, base, &format!("{path}pulls/{}/reviews?per_page=100", input.number), &["state"])?
+                .into_iter().map(|review| json!({"author": review["user"]["login"].as_str().map(|login| json!({"login": login})), "body": review["body"], "state": review["state"], "submittedAt": review["submitted_at"]})).collect::<Vec<_>>();
+            if fields.split(',').any(|field| field == "latestReviews") {
+                let mut latest = std::collections::BTreeMap::new();
+                for review in &reviews {
+                    if let Some(login) = review["author"]["login"].as_str() {
+                        let previous = latest
+                            .entry(login.to_owned())
+                            .or_insert_with(|| review.clone());
+                        if review["submittedAt"].as_str() > previous["submittedAt"].as_str() {
+                            *previous = review.clone();
+                        }
+                    }
+                }
+                projected["latestReviews"] = json!(latest.into_values().collect::<Vec<_>>());
+            }
+            projected["reviews"] = json!(reviews);
+        }
+        if fields.split(',').any(|field| field == "comments") {
+            projected["comments"] = json!(crate::view_items(send, base, &format!("{path}issues/{}/comments?per_page=100", input.number), &["created_at"])?
+                .into_iter().map(|comment| json!({"author": comment["user"]["login"].as_str().map(|login| json!({"login": login})), "body": comment["body"], "createdAt": comment["created_at"]})).collect::<Vec<_>>());
+        }
+        return Ok(projected);
+    }
 
     let (title, _) = truncate_text(&pull.title, MAX_TITLE_OUT_BYTES);
     let (body, body_truncated) = bounded_optional(pull.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
@@ -129,6 +181,50 @@ pub(crate) fn read(
         "mergeableState": pull.mergeable_state,
         "createdAt": timestamp(&pull.created_at)?,
         "updatedAt": timestamp(&pull.updated_at)?,
+    }))
+}
+
+fn cli_pull(pull: &RawPull, raw: &Value, fields: &str) -> Result<Value, ProviderError> {
+    let (title, _) = truncate_text(&pull.title, MAX_TITLE_OUT_BYTES);
+    let (body, _) = bounded_optional(pull.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
+    let state = if pull.merged.unwrap_or(false) || !raw["merged_at"].is_null() {
+        "MERGED"
+    } else if pull.state == "closed" {
+        "CLOSED"
+    } else {
+        "OPEN"
+    };
+    if (fields.split(',').any(|field| field == "assignees")
+        && raw["assignees"]
+            .as_array()
+            .is_some_and(|items| items.len() > MAX_LIST_ITEMS))
+        || (fields.split(',').any(|field| field == "labels")
+            && raw["labels"]
+                .as_array()
+                .is_some_and(|items| items.len() > crate::MAX_LABELS))
+    {
+        return Err(invalid_response());
+    }
+    let users = |key: &str| {
+        raw[key]
+            .as_array()
+            .map(|users| {
+                users
+                    .iter()
+                    .filter_map(|user| user["login"].as_str().map(|login| json!({"login": login})))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+    Ok(json!({
+        "number": pull.number, "title": title, "body": body, "state": state,
+        "author": raw["user"]["login"].as_str().map(|login| json!({"login": login})),
+        "assignees": users("assignees"), "labels": raw["labels"].as_array().cloned().unwrap_or_default(),
+        "baseRefName": pull.base.name, "baseRefOid": pull.base.sha,
+        "headRefName": pull.head.name, "headRefOid": pull.head.sha,
+        "isDraft": pull.draft, "closedAt": raw["closed_at"], "mergedAt": raw["merged_at"],
+        "createdAt": timestamp(&pull.created_at)?, "updatedAt": timestamp(&pull.updated_at)?,
+        "url": raw["html_url"],
     }))
 }
 
@@ -167,6 +263,8 @@ struct ListInput {
     page: Option<u32>,
     #[serde(default)]
     per_page: Option<u32>,
+    #[serde(default, rename = "_cli")]
+    cli: Option<String>,
 }
 
 pub(crate) fn list(
@@ -195,23 +293,27 @@ pub(crate) fn list(
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let has_more = has_next_link(&response);
-    let pulls = decode::<Vec<RawPull>>(&response.body)?;
+    let pulls = decode::<Vec<Value>>(&response.body)?;
 
     // `author` filters the fetched page after pagination — the REST list endpoint has no author
     // parameter. The schema description says so, so a model is not surprised by a short page.
     let items = pulls
         .into_iter()
-        .filter(|pull| match input.author.as_deref() {
-            Some(author) => pull
-                .user
-                .as_ref()
-                .is_some_and(|user| user.login.eq_ignore_ascii_case(author)),
+        .filter(|raw| match input.author.as_deref() {
+            Some(author) => raw["user"]["login"]
+                .as_str()
+                .is_some_and(|login| login.eq_ignore_ascii_case(author)),
             None => true,
         })
         .take(MAX_LIST_ITEMS)
-        .map(|pull| {
+        .map(|raw| {
+            let pull =
+                serde_json::from_value::<RawPull>(raw.clone()).map_err(|_| invalid_response())?;
             if !is_sha(&pull.head.sha) {
                 return Err(invalid_response());
+            }
+            if let Some(fields) = input.cli.as_deref() {
+                return cli_pull(&pull, &raw, fields);
             }
             let (title, _) = truncate_text(&pull.title, MAX_TITLE_OUT_BYTES);
             Ok(json!({
@@ -648,6 +750,97 @@ mod tests {
             "created_at": "2026-08-01T00:00:00Z",
             "updated_at": "2026-08-02T00:00:00Z",
         })
+    }
+
+    #[test]
+    fn native_view_expands_selected_fields_on_one_grant_or_fails_without_partial_output() {
+        use std::{cell::Cell, rc::Rc};
+        let path = "https://api.github.com/repos/octo/hello";
+        let responses = [
+            (
+                format!("{path}/pulls/7"),
+                json_response(200, &pull_body(7, "open", false, false)),
+            ),
+            (
+                format!("{path}/pulls/7/files?per_page=100"),
+                json_response(
+                    200,
+                    &json!([{"filename":"src/lib.rs","status":"modified","additions":2,"deletions":1}]),
+                ),
+            ),
+            (
+                format!("{path}/pulls/7/reviews?per_page=100"),
+                json_response(
+                    200,
+                    &json!([{"state":"APPROVED","user":{"login":"dev"},"submitted_at":"2026-01-01T00:00:00Z"},{"state":"COMMENTED","user":{"login":"dev"},"submitted_at":"2026-01-02T00:00:00Z"}]),
+                ),
+            ),
+            (
+                format!("{path}/issues/7/comments?per_page=100"),
+                json_response(
+                    200,
+                    &json!([{"user":{"login":"reviewer"},"body":"ship","created_at":"2026-01-03T00:00:00Z"}]),
+                ),
+            ),
+        ];
+        for failing in [false, true] {
+            let seen = Rc::new(Cell::new(0));
+            let steps = responses
+                .iter()
+                .enumerate()
+                .map(|(index, (uri, reply))| {
+                    let uri = uri.clone();
+                    let seen = Rc::clone(&seen);
+                    let reply = if failing && index == 3 {
+                        json_response(502, &json!({}))
+                    } else {
+                        reply.clone()
+                    };
+                    step(
+                        move |request| {
+                            assert_eq!(request.uri, uri);
+                            assert_eq!(request.method, "GET");
+                            seen.set(seen.get() + 1);
+                        },
+                        reply,
+                    )
+                })
+                .collect();
+            let result = invoke_with(
+                &capability("gh.pull-request.read"),
+                json!({"owner":"octo","repo":"hello","number":7,"_cli":"files,reviews,latestReviews,comments"}),
+                scripted(steps),
+            );
+            assert_eq!(seen.get(), 4);
+            if failing {
+                assert_eq!(
+                    result
+                        .expect_err("late upstream failure must refuse")
+                        .code(),
+                    "unexpected-status"
+                );
+            } else {
+                let value = result.expect("all reads complete");
+                assert_eq!(value["files"][0]["path"], "src/lib.rs");
+                assert_eq!(value["reviews"].as_array().expect("reviews").len(), 2);
+                assert_eq!(value["latestReviews"][0]["state"], "COMMENTED");
+                assert_eq!(value["comments"][0]["author"]["login"], "reviewer");
+            }
+        }
+    }
+
+    #[test]
+    fn native_view_refuses_an_unfinished_extra_page() {
+        for link in [
+            "<https://api.github.com/repos/octo/hello/pulls/7/files?page=2>; rel=\"next\"",
+            "malformed cursor",
+        ] {
+            let output = invoke_with(&capability("gh.pull-request.read"), json!({"owner":"octo","repo":"hello","number":7,"_cli":"files"}), scripted(vec![
+                step(|request| assert_eq!(request.uri, "https://api.github.com/repos/octo/hello/pulls/7"), json_response(200, &pull_body(7, "open", false, false))),
+                step(|request| assert_eq!(request.uri, "https://api.github.com/repos/octo/hello/pulls/7/files?per_page=100"), response_with_headers(200, &[("link", link)], &json!([{"filename":"a","status":"modified","additions":1,"deletions":0}]))),
+            ])).expect_err("partial files are not success");
+            assert_eq!(output.code(), "invalid-response");
+        }
     }
 
     #[test]

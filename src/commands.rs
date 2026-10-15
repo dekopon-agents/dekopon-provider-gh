@@ -1122,6 +1122,40 @@ mod tests {
     }
 
     #[test]
+    fn native_view_only_fields_are_closed_before_proposal() {
+        for words in [
+            &["pr", "list", "-R", "o/r", "--json", "files"][..],
+            &["pr", "view", "7", "-R", "o/r", "--json", "files,unknown"],
+            &[
+                "issue",
+                "view",
+                "9",
+                "-R",
+                "o/r",
+                "--json",
+                "comments,comments",
+            ],
+        ] {
+            let outcome = dekopon_provider_sdk::provider::command::<crate::Gh>(&argv(words), false);
+            assert!(
+                matches!(outcome, dekopon_provider_sdk::CommandRunOutcome::Failed { error } if error.code == "usage"),
+                "{words:?}"
+            );
+        }
+        let (id, input) = dispatch(&[
+            "pr",
+            "view",
+            "7",
+            "-R",
+            "o/r",
+            "--json",
+            "files,latestReviews",
+        ]);
+        assert_eq!(id, "gh.pull-request.read");
+        assert_eq!(input["_cliOutput"], "files,latestReviews");
+    }
+
+    #[test]
     fn api_accepts_only_finite_routes_without_flags_or_queries() {
         for route in [
             "repos/o/r/pulls",

@@ -20,6 +20,8 @@ struct ReadInput {
     owner: String,
     repo: String,
     number: u32,
+    #[serde(default, rename = "_cli")]
+    cli: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,6 +35,8 @@ struct ListInput {
     page: Option<u32>,
     #[serde(default)]
     per_page: Option<u32>,
+    #[serde(default, rename = "_cli")]
+    cli: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,9 +123,24 @@ pub(crate) fn read(
         ),
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let issue = decode::<RawIssue>(&response.body)?;
+    let raw = decode::<Value>(&response.body)?;
+    let issue = serde_json::from_value::<RawIssue>(raw.clone()).map_err(|_| invalid_response())?;
     if issue.number != input.number {
         return Err(invalid_response());
+    }
+    if let Some(fields) = input.cli.as_deref() {
+        let mut projected = cli_issue(&issue, &raw, fields)?;
+        if fields.split(',').any(|field| field == "comments") {
+            let path = format!(
+                "/repos/{}/{}/issues/{}/comments?per_page=100",
+                percent_encode(&input.owner),
+                percent_encode(&input.repo),
+                input.number
+            );
+            projected["comments"] = json!(crate::view_items(send, base, &path, &["created_at"])?
+                .into_iter().map(|comment| json!({"author": comment["user"]["login"].as_str().map(|login| json!({"login": login})), "body": comment["body"], "createdAt": comment["created_at"]})).collect::<Vec<_>>());
+        }
+        return Ok(projected);
     }
 
     let (title, _) = truncate_text(&issue.title, MAX_TITLE_OUT_BYTES);
@@ -147,6 +166,33 @@ pub(crate) fn read(
     }))
 }
 
+fn cli_issue(issue: &RawIssue, raw: &Value, fields: &str) -> Result<Value, ProviderError> {
+    let (title, _) = truncate_text(&issue.title, MAX_TITLE_OUT_BYTES);
+    let (body, _) = bounded_optional(issue.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
+    if (fields.split(',').any(|field| field == "assignees")
+        && raw["assignees"]
+            .as_array()
+            .is_some_and(|items| items.len() > MAX_LIST_ITEMS))
+        || ((fields.is_empty() || fields.split(',').any(|field| field == "labels"))
+            && raw["labels"]
+                .as_array()
+                .is_some_and(|items| items.len() > MAX_LABELS))
+    {
+        return Err(invalid_response());
+    }
+    Ok(json!({
+        "number": issue.number, "title": title, "body": body,
+        "state": if issue.state == "closed" { "CLOSED" } else { "OPEN" },
+        "author": raw["user"]["login"].as_str().map(|login| json!({"login": login})),
+        "assignees": raw["assignees"].as_array().map(|users| users.iter()
+            .filter_map(|user| user["login"].as_str().map(|login| json!({"login": login})))
+            .collect::<Vec<_>>()).unwrap_or_default(),
+        "labels": raw["labels"].as_array().cloned().unwrap_or_default(),
+        "closedAt": raw["closed_at"], "createdAt": timestamp(&issue.created_at)?,
+        "updatedAt": timestamp(&issue.updated_at)?, "url": raw["html_url"],
+    }))
+}
+
 pub(crate) fn list(
     input: Value,
     base: &Base,
@@ -169,12 +215,17 @@ pub(crate) fn list(
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let has_more = has_next_link(&response);
-    let issues = decode::<Vec<RawIssue>>(&response.body)?;
+    let issues = decode::<Vec<Value>>(&response.body)?;
 
     let items = issues
         .into_iter()
         .take(MAX_LIST_ITEMS)
-        .map(|issue| {
+        .map(|raw| {
+            let issue =
+                serde_json::from_value::<RawIssue>(raw.clone()).map_err(|_| invalid_response())?;
+            if let Some(fields) = input.cli.as_deref() {
+                return cli_issue(&issue, &raw, fields);
+            }
             let (title, _) = truncate_text(&issue.title, MAX_TITLE_OUT_BYTES);
             Ok(json!({
                 "number": issue.number,
@@ -307,6 +358,51 @@ mod tests {
             value["pull_request"] = json!({"url": "https://api.github.com/..."});
         }
         value
+    }
+
+    #[test]
+    fn native_issue_view_comments_complete_or_refuse_the_same_read() {
+        let issue = issue(5, false);
+        let id = capability("gh.issue.read");
+        let input = json!({"owner":"octo","repo":"hello","number":5,"_cli":"comments"});
+        for status in [200, 500] {
+            let result = invoke_with(
+                &id,
+                input.clone(),
+                scripted(vec![
+                    step(
+                        |request| {
+                            assert_eq!(
+                                request.uri,
+                                "https://api.github.com/repos/octo/hello/issues/5"
+                            )
+                        },
+                        json_response(200, &issue),
+                    ),
+                    step(
+                        |request| {
+                            assert_eq!(
+                                request.uri,
+                                "https://api.github.com/repos/octo/hello/issues/5/comments?per_page=100"
+                            )
+                        },
+                        json_response(
+                            status,
+                            &json!([{"user":{"login":"dev"},"body":"done","created_at":"2026-01-03T00:00:00Z"}]),
+                        ),
+                    ),
+                ]),
+            );
+            if status == 200 {
+                let output = result.expect("comments complete");
+                assert_eq!(output["comments"][0]["author"]["login"], "dev");
+            } else {
+                assert_eq!(
+                    result.expect_err("late error must not succeed").code(),
+                    "unexpected-status"
+                );
+            }
+        }
     }
 
     #[test]

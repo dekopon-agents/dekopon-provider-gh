@@ -156,9 +156,9 @@ capabilities only while vouching for an allowed Slack subject.
 A session typically proposes commands like these through the sandboxed `gh` builtin:
 
 ```console
-$ gh pr view 7 -R owner/repo
-{"number":7,"title":"Cache the provider registry between invocations","state":"open",
- "draft":false,"headSha":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26","baseRef":"main",...}
+$ gh pr view 7 -R owner/repo --json number,title,state,headRefOid,baseRefName,url
+{"number":7,"title":"Cache the provider registry between invocations","state":"OPEN",
+ "headRefOid":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26","baseRefName":"main","url":"https://github.com/owner/repo/pull/7"}
 
 $ gh pr diff 7 -R owner/repo
 {"diff":"diff --git a/...","truncated":false}
@@ -169,7 +169,7 @@ $ gh pr checks 7 -R owner/repo
 
 $ gh repo read-file crates/dekopon-broker-host/src/lib.rs -R owner/repo \
     --ref 4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26
-{"path":"crates/dekopon-broker-host/src/lib.rs","encoding":"utf-8","content":"..."}
+...decoded file content...
 
 $ gh pr review 7 -R owner/repo --comment \
     --body "## Summary ...\n\n## Lint findings ...\n\n## Checks ..."
