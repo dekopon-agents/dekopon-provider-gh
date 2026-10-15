@@ -2,14 +2,14 @@
 //!
 //! This is a command-line program, not a client. It owns a fixed subcommand vocabulary with `gh`-CLI
 //! spellings and maps each one onto exactly one `gh.*` capability, returning a
-//! [`CommandInvocation`] the broker then authorizes on the identical path a direct
+//! `CommandInvocation` the broker then authorizes on the identical path a direct
 //! `gh.pull-request.read --number 7` takes — same constraint set, same Cedar decision, same
 //! credential injection. Rewriting proposes; it never grants.
 //!
 //! The command tree is declared once as a [`Command`] and parsed by the SDK's `clap` layer, so
 //! `gh --help` and `gh pr view --help` render on stdout at status 0, `gh bogus` and `gh pr view`
 //! (missing its number) render clap's own usage error on stderr at status 2, and only a
-//! well-formed argv reaches [`dispatch`]. Every subcommand names its capability through the
+//! well-formed argv reaches `dispatch`. Every subcommand names its capability through the
 //! `ids::*` constants `lib.rs` builds the manifest from, so a capability renamed there and
 //! forgotten here is a build error rather than an exit code a model discovers mid-session.
 //!
