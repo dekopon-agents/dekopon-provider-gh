@@ -37,6 +37,8 @@ struct ListInput {
     per_page: Option<u32>,
     #[serde(default, rename = "_cli")]
     cli: Option<String>,
+    #[serde(default, rename = "_cliLimit")]
+    cli_limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -202,6 +204,30 @@ pub(crate) fn list(
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     let state = validate_state(input.state.as_deref())?;
+    if input.cli.is_some() {
+        if input.page.is_some() || input.per_page.is_some() {
+            return Err(invalid_input());
+        }
+        let path = format!(
+            "/repos/{}/{}/issues?state={state}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo)
+        );
+        let fields = input.cli.as_deref().unwrap_or_default();
+        let items =
+            crate::collect_pages(send, base, &path, input.cli_limit.unwrap_or(30), |raw| {
+                let issue = serde_json::from_value::<RawIssue>(raw.clone())
+                    .map_err(|_| invalid_response())?;
+                if issue.pull_request.is_some() {
+                    return Ok(None);
+                }
+                cli_issue(&issue, &raw, fields).map(Some)
+            })?;
+        return Ok(json!({"issues": items}));
+    }
+    if input.cli_limit.is_some() {
+        return Err(invalid_input());
+    }
     let (page, per_page) = validate_page(input.page, input.per_page)?;
     let per_page = per_page.unwrap_or(20);
 
@@ -426,6 +452,18 @@ mod tests {
         assert_eq!(output["labels"], json!(["bug", "p1"]));
         assert_eq!(output["isPullRequest"], false);
         assert_eq!(output["author"], "reporter");
+    }
+
+    #[test]
+    fn native_cli_issue_list_excludes_pull_requests_and_succeeds_on_short_exhaustion() {
+        let result = invoke_with(&capability("gh.issue.list"),
+            json!({"owner":"octo","repo":"hello","_cli":"number","_cliLimit":100}),
+            scripted(vec![step(|request| assert_eq!(request.uri,
+                "https://api.github.com/repos/octo/hello/issues?state=open&page=1&per_page=100"),
+                json_response(200, &json!([issue(1,true), issue(2,false)])))]))
+            .expect("genuine exhaustion is success");
+        assert_eq!(result["issues"].as_array().expect("issues").len(), 1);
+        assert_eq!(result["issues"][0]["number"], 2);
     }
 
     #[test]

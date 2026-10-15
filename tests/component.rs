@@ -13,7 +13,13 @@ fn component() -> std::path::PathBuf {
 #[test]
 fn manifest_keeps_read_and_write_grants_independent() {
     let manifest = provider::manifest::<Gh>().expect("closed manifest");
-    assert_eq!(manifest.capabilities.len(), 17);
+    assert_eq!(manifest.capabilities.len(), 18);
+    assert!(
+        manifest
+            .capabilities
+            .iter()
+            .any(|cap| cap.id.as_str() == "gh.repo.list")
+    );
     for removed in [
         "gh.pull-request.files",
         "gh.pull-request.reviews",
@@ -157,6 +163,80 @@ fn retained_reads_succeed_only_with_their_own_http_grant() -> Result<(), Box<dyn
             );
         }
     }
+    Ok(())
+}
+
+#[test]
+fn component_repo_list_requires_its_own_grant_and_renders_a_short_array()
+-> Result<(), Box<dyn std::error::Error>> {
+    let words = [
+        "repo",
+        "list",
+        "octo",
+        "-L",
+        "100",
+        "--json",
+        "owner,nameWithOwner",
+    ];
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = provider::command::<Gh>(&words.map(str::to_owned), false)
+    else {
+        panic!("repo list proposes")
+    };
+    assert_eq!(capability.as_str(), "gh.repo.list");
+    assert_eq!(input["_cliLimit"], 100);
+    match Harness::<Gh>::get(component()).call("gh.repo.list", input.clone()) {
+        Err(HarnessError::Invocation(failure)) => assert!(failure.http_calls.is_empty()),
+        other => panic!("repo list without its grant must be denied: {other:?}"),
+    }
+    let result = scripted_component_get(
+        Response {
+            status: 200,
+            headers: vec![],
+            body: json!([{"id":10,"name":"hello","full_name":"octo/hello","owner":{"login":"octo"},
+            "private":false,"default_branch":"main","fork":false,
+            "updated_at":"2026-01-01T00:00:00Z"}])
+            .to_string()
+            .into_bytes(),
+        },
+        "gh.repo.list",
+        input,
+        "/users/octo/repos?type=owner&page=1&per_page=100",
+    )?;
+    assert_eq!(result.status, 0, "{}", result.stderr);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&result.stdout)?,
+        json!([{"owner":{"login":"octo"},"nameWithOwner":"octo/hello"}])
+    );
+    Ok(())
+}
+
+#[test]
+fn component_list_rejects_a_bad_cursor_without_partial_stdout()
+-> Result<(), Box<dyn std::error::Error>> {
+    let words = ["issue", "list", "-R", "octo/hello", "--json", "number"];
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = provider::command::<Gh>(&words.map(str::to_owned), false)
+    else {
+        panic!("issue list proposes")
+    };
+    let result = scripted_component_get(
+        Response {
+            status: 200,
+            headers: vec![Header::text("link", "<not-a-valid-cursor>; rel=\"next\"")?],
+            body: json!([{"id":1,"number":1,"title":"Fix","state":"open",
+            "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}])
+            .to_string()
+            .into_bytes(),
+        },
+        capability.as_str(),
+        input,
+        "/repos/octo/hello/issues?state=open&page=1&per_page=100",
+    )?;
+    assert_ne!(result.status, 0);
+    assert!(result.stdout.is_empty());
     Ok(())
 }
 
@@ -332,7 +412,7 @@ fn component_list_json_is_an_array_with_nested_logins_and_nulls()
         },
         capability.as_str(),
         input,
-        "/repos/octo/hello/pulls?state=open&page=1&per_page=20",
+        "/repos/octo/hello/pulls?state=open&page=1&per_page=100",
     )?;
     assert_eq!(output.status, 0, "{}", output.stderr);
     assert_eq!(
@@ -353,7 +433,7 @@ fn component_list_json_is_an_array_with_nested_logins_and_nulls()
         },
         capability.as_str(),
         input,
-        "/repos/octo/hello/pulls?state=open&page=1&per_page=20",
+        "/repos/octo/hello/pulls?state=open&page=1&per_page=100",
     )?;
     assert_eq!(text.status, 0, "{}", text.stderr);
     assert_eq!(text.stdout, b"7\tShip\tfeature\t2026-01-01T00:00:00Z\n");
@@ -376,7 +456,7 @@ fn component_pr_and_issue_fields_render_command_shapes() -> Result<(), Box<dyn s
                 "assignees,author,baseRefOid,body,closedAt,headRefName,isDraft,labels,state,url",
             ],
             "gh.pull-request.list",
-            "/repos/octo/hello/pulls?state=open&page=1&per_page=20",
+            "/repos/octo/hello/pulls?state=open&page=1&per_page=100",
             json!([pr]),
             json!([{"assignees":[{"login":"dev"}],"author":{"login":"octo"},"baseRefOid":"b".repeat(40),"body":null,"closedAt":null,"headRefName":"topic","isDraft":true,"labels":[{"name":"ready"}],"state":"OPEN","url":"https://github.com/octo/hello/pull/7"}]),
         ),
@@ -419,14 +499,14 @@ fn component_pr_and_issue_fields_render_command_shapes() -> Result<(), Box<dyn s
                 "assignees,author,body,closedAt,createdAt,labels,number,state,title,updatedAt,url",
             ],
             "gh.issue.list",
-            "/repos/octo/hello/issues?state=open&page=1&per_page=20",
+            "/repos/octo/hello/issues?state=open&page=1&per_page=100",
             json!([issue.clone()]),
             json!([{"assignees":[{"login":"dev"}],"author":{"login":"octo"},"body":"details","closedAt":"2026-01-02T00:00:00Z","createdAt":"2026-01-01T00:00:00Z","labels":[{"name":"bug"}],"number":9,"state":"CLOSED","title":"Fix","updatedAt":"2026-01-02T00:00:00Z","url":"https://github.com/octo/hello/issues/9"}]),
         ),
         (
             &["issue", "list", "-R", "octo/hello"],
             "gh.issue.list",
-            "/repos/octo/hello/issues?state=open&page=1&per_page=20",
+            "/repos/octo/hello/issues?state=open&page=1&per_page=100",
             json!([issue]),
             json!("9\tFix\tbug\t2026-01-02T00:00:00Z\n"),
         ),

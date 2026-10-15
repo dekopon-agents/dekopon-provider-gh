@@ -265,6 +265,8 @@ struct ListInput {
     per_page: Option<u32>,
     #[serde(default, rename = "_cli")]
     cli: Option<String>,
+    #[serde(default, rename = "_cliLimit")]
+    cli_limit: Option<usize>,
 }
 
 pub(crate) fn list(
@@ -277,6 +279,39 @@ pub(crate) fn list(
     validate_repo(&input.repo)?;
     if let Some(author) = input.author.as_deref() {
         validate_login(author)?;
+    }
+    if input.cli.is_some() {
+        if input.page.is_some() || input.per_page.is_some() {
+            return Err(invalid_input());
+        }
+        let state = input.state.unwrap_or(StateFilter::Open);
+        let path = format!(
+            "/repos/{}/{}/pulls?state={}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo),
+            state.as_str()
+        );
+        let fields = input.cli.as_deref().unwrap_or_default();
+        let items =
+            crate::collect_pages(send, base, &path, input.cli_limit.unwrap_or(30), |raw| {
+                if input.author.as_deref().is_some_and(|author| {
+                    !raw["user"]["login"]
+                        .as_str()
+                        .is_some_and(|login| login.eq_ignore_ascii_case(author))
+                }) {
+                    return Ok(None);
+                }
+                let pull = serde_json::from_value::<RawPull>(raw.clone())
+                    .map_err(|_| invalid_response())?;
+                if !is_sha(&pull.head.sha) || !is_sha(&pull.base.sha) {
+                    return Err(invalid_response());
+                }
+                cli_pull(&pull, &raw, fields).map(Some)
+            })?;
+        return Ok(json!({"pullRequests": items}));
+    }
+    if input.cli_limit.is_some() {
+        return Err(invalid_input());
     }
     let (page, per_page) = validate_page(input.page, input.per_page)?;
     let per_page = per_page.unwrap_or(20);
@@ -295,8 +330,6 @@ pub(crate) fn list(
     let has_more = has_next_link(&response);
     let pulls = decode::<Vec<Value>>(&response.body)?;
 
-    // `author` filters the fetched page after pagination — the REST list endpoint has no author
-    // parameter. The schema description says so, so a model is not surprised by a short page.
     let items = pulls
         .into_iter()
         .filter(|raw| match input.author.as_deref() {

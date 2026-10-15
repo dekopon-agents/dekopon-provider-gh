@@ -153,6 +153,13 @@ fn tree() -> Command {
                         .arg(json_arg()),
                 )
                 .subcommand(
+                    Command::new("list")
+                        .about("List repositories for a named owner")
+                        .arg(Arg::new("owner").required(true).value_name("OWNER"))
+                        .arg(limit_arg())
+                        .arg(json_arg()),
+                )
+                .subcommand(
                     Command::new("view")
                         .about("Read repository metadata: default branch, visibility, flags")
                         .arg(Arg::new("slug").value_name("OWNER/REPO").required(true))
@@ -181,8 +188,9 @@ fn pull_requests() -> Command {
                     Arg::new("author")
                         .long("author")
                         .value_name("LOGIN")
-                        .help("Login filter applied to the fetched page, after pagination"),
+                        .help("Match author across bounded pages"),
                 )
+                .arg(limit_arg())
                 .arg(json_arg()),
         )
         .subcommand(
@@ -248,7 +256,7 @@ fn issues() -> Command {
         )
         .subcommand(
             Command::new("list")
-                .about("List issues (GitHub includes pull requests; each item is flagged)")
+                .about("List issues, excluding pull requests")
                 .arg(repo_arg(true))
                 .arg(
                     Arg::new("state")
@@ -257,6 +265,7 @@ fn issues() -> Command {
                         .value_parser(["open", "closed"])
                         .help("open or closed"),
                 )
+                .arg(limit_arg())
                 .arg(json_arg()),
         )
         .subcommand(
@@ -278,6 +287,14 @@ fn json_arg() -> Arg {
         .value_name("FIELDS")
         .num_args(0..=1)
         .default_missing_value("")
+}
+
+fn limit_arg() -> Arg {
+    Arg::new("limit")
+        .short('L')
+        .long("limit")
+        .value_name("N")
+        .value_parser(clap::value_parser!(u64).range(1..=100))
 }
 
 fn repo_arg(required: bool) -> Arg {
@@ -419,6 +436,12 @@ fn dispatch(
             }
             ids::PR_MERGE
         }
+        ("repo", "list") => {
+            let owner = matches.get_one::<String>("owner").expect("required owner");
+            crate::validate_login(owner).map_err(|_| usage("gh repo list: invalid owner"))?;
+            insert_text(&mut input, "owner", Some(owner));
+            ids::REPO_LIST
+        }
         ("repo", "view") => {
             let slug = matches.get_one::<String>("slug").expect("required slug");
             let (owner, repo) = parse_repo(slug)?;
@@ -470,6 +493,12 @@ fn dispatch(
         _ => unreachable!("the tree has no other subcommand than {command}"),
     };
 
+    if matches!(command.as_str(), "pr list" | "issue list" | "repo list") {
+        input.insert(
+            "_cliLimit".to_owned(),
+            Value::from(matches.get_one::<u64>("limit").copied().unwrap_or(30)),
+        );
+    }
     if let Some(fields) = crate::output::fields(area, verb)
         && matches.try_get_one::<String>("json").is_ok()
     {
@@ -546,6 +575,7 @@ pub(crate) const DISPATCH_TABLE: &[(&str, &str, &str)] = &[
     ("pr", "review", ids::PR_REQUEST_CHANGES),
     ("pr", "merge", ids::PR_MERGE),
     ("repo", "view", ids::REPO_READ),
+    ("repo", "list", ids::REPO_LIST),
     ("repo", "read-file", ids::CONTENT_READ),
     ("repo", "read-dir", ids::CONTENT_READ),
     ("issue", "view", ids::ISSUE_READ),
@@ -636,6 +666,50 @@ mod tests {
 
     use super::{DISPATCH_TABLE, tree};
     use crate::{Gh, error::ProviderError};
+
+    #[test]
+    fn repo_list_and_bounded_limits_propose_their_own_grants() {
+        for (argv, id) in [
+            (
+                &["repo", "list", "octo", "-L", "100", "--json", "name"][..],
+                "gh.repo.list",
+            ),
+            (
+                &[
+                    "pr",
+                    "list",
+                    "-R",
+                    "octo/hello",
+                    "--author",
+                    "dev",
+                    "-L",
+                    "100",
+                ][..],
+                "gh.pull-request.list",
+            ),
+            (
+                &["issue", "list", "-R", "octo/hello", "--limit", "100"][..],
+                "gh.issue.list",
+            ),
+        ] {
+            let (actual, input) = dispatch(argv);
+            assert_eq!(actual, id);
+            assert_eq!(input["_cliLimit"], 100);
+        }
+        assert_eq!(dispatch(&["repo", "list", "octo"]).1["_cliLimit"], 30);
+        for argv in [
+            &["repo", "list"][..],
+            &["repo", "list", "octo", "-L", "101"][..],
+            &["pr", "list", "-R", "octo/hello", "-L", "0"][..],
+        ] {
+            let outcome = run(
+                &argv.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
+                None,
+            )
+            .expect("usage renders");
+            assert!(matches!(outcome, CommandRun::Rendered { status: 2, .. }));
+        }
+    }
 
     #[derive(Debug, PartialEq)]
     enum CommandRun {
@@ -783,7 +857,7 @@ mod tests {
                     "cpetersen",
                 ],
                 "gh.pull-request.list",
-                json!({"owner": "o", "repo": "r", "state": "open", "author": "cpetersen"}),
+                json!({"owner": "o", "repo": "r", "state": "open", "author": "cpetersen", "_cliLimit": 30}),
             ),
             (
                 &["pr", "view", "7", "-R", "o/r"],
@@ -860,7 +934,7 @@ mod tests {
             (
                 &["issue", "list", "-R", "o/r"],
                 "gh.issue.list",
-                json!({"owner": "o", "repo": "r"}),
+                json!({"owner": "o", "repo": "r", "_cliLimit": 30}),
             ),
             (
                 &["issue", "comment", "9", "-R", "o/r", "-b", "done"],

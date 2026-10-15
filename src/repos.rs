@@ -23,6 +23,16 @@ struct RepoInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RepoListInput {
+    owner: String,
+    #[serde(default, rename = "_cli")]
+    cli: Option<String>,
+    #[serde(default, rename = "_cliLimit")]
+    cli_limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct BranchInput {
     owner: String,
     repo: String,
@@ -131,6 +141,47 @@ pub(crate) fn repo(
         "pushedAt": repo.pushed_at,
         "updatedAt": timestamp(&repo.updated_at)?,
     }))
+}
+
+pub(crate) fn list(
+    input: Value,
+    base: &Base,
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+) -> Result<Value, ProviderError> {
+    let input = serde_json::from_value::<RepoListInput>(input).map_err(|_| invalid_input())?;
+    validate_login(&input.owner)?;
+    if input.cli.is_none() && input.cli_limit.is_some() {
+        return Err(invalid_input());
+    }
+    let path = format!("/users/{}/repos?type=owner", percent_encode(&input.owner));
+    let rows = crate::collect_pages(send, base, &path, input.cli_limit.unwrap_or(30), |raw| {
+        let repo =
+            serde_json::from_value::<RawRepo>(raw.clone()).map_err(|_| invalid_response())?;
+        validate_repo(&repo.name).map_err(|_| invalid_response())?;
+        if !raw["owner"]["login"]
+            .as_str()
+            .is_some_and(|login| login.eq_ignore_ascii_case(&input.owner))
+            || !raw["full_name"].as_str().is_some_and(|name| {
+                name.split_once('/').is_some_and(|(owner, name)| {
+                    owner.eq_ignore_ascii_case(&input.owner)
+                        && name.eq_ignore_ascii_case(&repo.name)
+                })
+            })
+        {
+            return Err(invalid_response());
+        }
+        Ok(Some(json!({
+            "name": repo.name, "owner": raw["owner"]["login"],
+            "nameWithOwner": raw["full_name"], "url": raw["html_url"],
+            "createdAt": raw["created_at"], "isPrivate": repo.private,
+            "isFork": repo.fork, "isArchived": repo.archived,
+            "defaultBranchRef": {"name": repo.default_branch},
+            "description": marked_optional(repo.description.as_deref(), MAX_DESCRIPTION_OUT_BYTES),
+            "pushedAt": repo.pushed_at, "updatedAt": timestamp(&repo.updated_at)?,
+            "visibility": repo.visibility,
+        })))
+    })?;
+    Ok(json!({"repositories": rows}))
 }
 
 pub(crate) fn branch(

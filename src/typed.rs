@@ -35,8 +35,11 @@ macro_rules! capability {
                     .find(|c| c.id.as_str() == $id)
                     .expect("declared gh capability")
                     .input_schema;
-                if matches!($id, "gh.pull-request.list" | "gh.pull-request.read" | "gh.issue.list" | "gh.issue.read" | "gh.repo.read" | "gh.content.read") {
+                if matches!($id, "gh.pull-request.list" | "gh.pull-request.read" | "gh.issue.list" | "gh.issue.read" | "gh.repo.read" | "gh.repo.list" | "gh.content.read") {
                     schema["properties"]["_cliOutput"] = serde_json::json!({"type": "string", "maxLength": 512});
+                    if matches!($id, "gh.pull-request.list" | "gh.issue.list" | "gh.repo.list") {
+                        schema["properties"]["_cliLimit"] = serde_json::json!({"type": "integer", "minimum": 1, "maximum": 100});
+                    }
                     if $id == "gh.content.read" {
                         schema["properties"]["_cliKind"] = serde_json::json!({"type": "string", "enum": ["read-file", "read-dir"]});
                     }
@@ -250,6 +253,16 @@ capability!(
     RiskLevel::Low
 );
 capability!(
+    RepoList,
+    RepoListInput,
+    crate::ids::REPO_LIST,
+    "repo.list",
+    "Lists repositories belonging to a named owner",
+    crate::repos::list,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
     BranchRead,
     BranchReadInput,
     "gh.branch.read",
@@ -325,6 +338,7 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
         }
         "gh.pull-request.merge" => Proposal::to::<PrMerge>(PrMergeInput(input)),
         "gh.repo.read" => Proposal::to::<RepoRead>(RepoReadInput(input)),
+        crate::ids::REPO_LIST => Proposal::to::<RepoList>(RepoListInput(input)),
         "gh.branch.read" => Proposal::to::<BranchRead>(BranchReadInput(input)),
         "gh.commit.read" => Proposal::to::<CommitRead>(CommitReadInput(input)),
         "gh.user.read" => Proposal::to::<UserRead>(UserReadInput(input)),

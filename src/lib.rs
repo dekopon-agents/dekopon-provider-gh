@@ -97,6 +97,8 @@ const MAX_DESCRIPTION_OUT_BYTES: usize = 1024;
 const MAX_TIMESTAMP_BYTES: usize = 64;
 const MAX_LOGIN_OUT_BYTES: usize = 64;
 const MAX_LIST_ITEMS: usize = 50;
+const MAX_CLI_LIMIT: usize = 100;
+const MAX_LIST_REQUESTS: usize = 10;
 const MAX_LABELS: usize = 20;
 
 /// Every capability identifier this component exports, named once.
@@ -116,6 +118,7 @@ pub(crate) mod ids {
     pub(crate) const PR_REQUEST_CHANGES: &str = "gh.pull-request.request-changes";
     pub(crate) const PR_MERGE: &str = "gh.pull-request.merge";
     pub(crate) const REPO_READ: &str = "gh.repo.read";
+    pub(crate) const REPO_LIST: &str = "gh.repo.list";
     pub(crate) const BRANCH_READ: &str = "gh.branch.read";
     pub(crate) const COMMIT_READ: &str = "gh.commit.read";
     pub(crate) const USER_READ: &str = "gh.user.read";
@@ -142,6 +145,7 @@ impl Provider for Gh {
         typed::PrDiff,
         typed::PrStatus,
         typed::RepoRead,
+        typed::RepoList,
         typed::BranchRead,
         typed::CommitRead,
         typed::IssueRead,
@@ -189,6 +193,7 @@ where
         ids::PR_REQUEST_CHANGES => reviews::request_changes(input, base, send),
         ids::PR_MERGE => reviews::merge(input, base, send),
         ids::REPO_READ => repos::repo(input, base, send),
+        ids::REPO_LIST => repos::list(input, base, send),
         ids::BRANCH_READ => repos::branch(input, base, send),
         ids::COMMIT_READ => repos::commit(input, base, send),
         ids::USER_READ => repos::user(input, base, send),
@@ -314,6 +319,14 @@ fn capabilities() -> Vec<ProviderCapability> {
             ids::REPO_READ,
             "Reads repository metadata: default branch, visibility, and flags",
             repo_schema(json!({}), &[]),
+        ),
+        read(
+            ids::REPO_LIST,
+            "Lists repositories belonging to a named owner",
+            object_schema(
+                json!({"owner": {"type": "string", "maxLength": MAX_OWNER_BYTES}, "_cliOutput": {"type": "string", "maxLength": 512}, "_cliLimit": {"type": "integer", "minimum": 1, "maximum": MAX_CLI_LIMIT}}),
+                &["owner"],
+            ),
         ),
         read(
             ids::BRANCH_READ,
@@ -742,6 +755,92 @@ fn has_next_link(response: &Response) -> bool {
     })
 }
 
+/// Collects complete REST pages under one capability; no row is returned until every needed
+/// request, projection and cursor has succeeded.
+fn collect_pages(
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+    base: &Base,
+    path: &str,
+    limit: usize,
+    mut project: impl FnMut(Value) -> Result<Option<Value>, ProviderError>,
+) -> Result<Vec<Value>, ProviderError> {
+    if !(1..=MAX_CLI_LIMIT).contains(&limit) {
+        return Err(invalid_input());
+    }
+    let mut rows = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for page in 1..=MAX_LIST_REQUESTS {
+        let uri = url(base, &format!("{path}&page={page}&per_page=100"))?;
+        let response = send_get(send, uri, ACCEPT_JSON)?;
+        let items = decode::<Vec<Value>>(&response.body)?;
+        if items.len() > 100 {
+            return Err(invalid_response());
+        }
+        for item in items {
+            let key = item
+                .get("id")
+                .and_then(Value::as_u64)
+                .map(|id| id.to_string())
+                .or_else(|| {
+                    item.get("full_name")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
+                .or_else(|| {
+                    item.get("number")
+                        .and_then(Value::as_u64)
+                        .map(|n| n.to_string())
+                })
+                .ok_or_else(invalid_response)?;
+            if seen.insert(key)
+                && let Some(row) = project(item)?
+            {
+                rows.push(row);
+                if rows.len() == limit {
+                    return Ok(rows);
+                }
+            }
+        }
+        let links = header_values(&response, "link").collect::<Vec<_>>();
+        if links.is_empty() {
+            return Ok(rows);
+        }
+        let next = url(base, &format!("{path}&page={}&per_page=100", page + 1))?;
+        let mut found = false;
+        for link in links {
+            let link = std::str::from_utf8(link).map_err(|_| invalid_response())?;
+            for part in link.split(',') {
+                let part = part.trim();
+                let (target, rel) = part.split_once(">; rel=\"").ok_or_else(invalid_response)?;
+                let target = target.strip_prefix('<').ok_or_else(invalid_response)?;
+                let rel = rel.strip_suffix('"').ok_or_else(invalid_response)?;
+                let page_value = target
+                    .strip_prefix(&url(base, &format!("{path}&page="))?)
+                    .and_then(|rest| rest.strip_suffix("&per_page=100"))
+                    .and_then(|number| number.parse::<usize>().ok())
+                    .filter(|number| *number > 0)
+                    .ok_or_else(invalid_response)?;
+                if !matches!(rel, "next" | "prev" | "first" | "last") {
+                    return Err(invalid_response());
+                }
+                if rel == "next" {
+                    if found || page_value != page + 1 || target != next {
+                        return Err(invalid_response());
+                    }
+                    found = true;
+                }
+            }
+        }
+        if !found {
+            return Ok(rows);
+        }
+    }
+    Err(ProviderError::new(
+        "request-ceiling",
+        "list exceeded ten requests",
+    ))
+}
+
 // ---------------------------------------------------------------------------
 // Shared response handling
 // ---------------------------------------------------------------------------
@@ -962,10 +1061,100 @@ mod tests {
     use super::{Gh, HttpError, Response, invoke_with, truncate_text};
 
     #[test]
+    fn native_lists_stage_sparse_matches_and_refuse_bad_cursors_and_ceilings() {
+        use super::testutil::{json_response, response_with_headers};
+        let prefix = "https://api.github.com/repos/octo/hello/pulls?state=open";
+        let pull = |number: u64, login: &str| {
+            json!({
+                "id": number, "number": number, "title": "Ship", "state": "open",
+                "user": {"login": login}, "head": {"ref":"topic","sha":"a".repeat(40)},
+                "base": {"ref":"main","sha":"b".repeat(40)},
+                "created_at":"2026-01-01T00:00:00Z", "updated_at":"2026-01-02T00:00:00Z"
+            })
+        };
+        let input =
+            json!({"owner":"octo","repo":"hello","author":"dev","_cli":"number","_cliLimit":2});
+        let next = format!("<{prefix}&page=2&per_page=100>; rel=\"next\"");
+        let output = invoke_with(&capability("gh.pull-request.list"), input.clone(), scripted(vec![
+            step(|request| assert_eq!(request.uri, "https://api.github.com/repos/octo/hello/pulls?state=open&page=1&per_page=100"),
+                response_with_headers(200, &[("link", &next)], &json!([pull(1,"other"), pull(2,"dev")]))),
+            step(|request| assert_eq!(request.uri, "https://api.github.com/repos/octo/hello/pulls?state=open&page=2&per_page=100"),
+                json_response(200, &json!([pull(2,"dev"), pull(3,"dev")]))),
+        ])).expect("matching rows across pages");
+        assert_eq!(output["pullRequests"].as_array().expect("rows").len(), 2);
+        assert_eq!(output["pullRequests"][1]["number"], 3);
+        for (link, status, code) in [
+            (next.as_str(), 502, "unexpected-status"),
+            (
+                "<https://api.github.com/repos/octo/hello/pulls?state=open&page=1&per_page=100>; rel=\"next\"",
+                200,
+                "invalid-response",
+            ),
+            ("bad cursor", 200, "invalid-response"),
+        ] {
+            let steps = if status == 502 {
+                vec![
+                    step(
+                        |_| {},
+                        response_with_headers(200, &[("link", link)], &json!([pull(2, "dev")])),
+                    ),
+                    step(|_| {}, json_response(502, &json!({}))),
+                ]
+            } else {
+                vec![step(
+                    |_| {},
+                    response_with_headers(200, &[("link", link)], &json!([pull(2, "dev")])),
+                )]
+            };
+            let error = invoke_with(
+                &capability("gh.pull-request.list"),
+                input.clone(),
+                scripted(steps),
+            )
+            .expect_err("no partial array");
+            assert_eq!(error.code(), code);
+        }
+        let mut steps = Vec::new();
+        for page in 1..=10 {
+            let next = format!("<{prefix}&page={}&per_page=100>; rel=\"next\"", page + 1);
+            steps.push(step(
+                move |request| {
+                    assert_eq!(request.uri, format!("{prefix}&page={page}&per_page=100"))
+                },
+                response_with_headers(200, &[("link", &next)], &json!([pull(page, "other")])),
+            ));
+        }
+        let error = invoke_with(&capability("gh.pull-request.list"), input, scripted(steps))
+            .expect_err("ceiling fails without rows");
+        assert_eq!(error.code(), "request-ceiling");
+    }
+
+    #[test]
+    fn native_cli_limit_100_stops_at_100_before_an_advertised_next_page() {
+        let rows = (1..=100)
+            .map(|number| {
+                json!({
+                    "id": number, "number": number, "title": "Ship", "state":"open",
+                    "head":{"ref":"topic","sha":"a".repeat(40)},
+                    "base":{"ref":"main","sha":"b".repeat(40)},
+                    "created_at":"2026-01-01T00:00:00Z", "updated_at":"2026-01-02T00:00:00Z"
+                })
+            })
+            .collect::<Vec<_>>();
+        let output = invoke_with(&capability("gh.pull-request.list"),
+            json!({"owner":"octo","repo":"hello","_cli":"number","_cliLimit":100}),
+            scripted(vec![step(|request| assert_eq!(request.uri,
+                "https://api.github.com/repos/octo/hello/pulls?state=open&page=1&per_page=100"),
+                super::testutil::response_with_headers(200, &[("link", "<bad>; rel=\"next\"")], &json!(rows)))]))
+            .expect("limit stops before another request");
+        assert_eq!(output["pullRequests"].as_array().expect("rows").len(), 100);
+    }
+
+    #[test]
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 17);
+        assert_eq!(manifest.capabilities.len(), 18);
 
         let external_writes = manifest
             .capabilities
@@ -1106,7 +1295,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 17);
+        assert_eq!(manifest.capabilities.len(), 18);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()

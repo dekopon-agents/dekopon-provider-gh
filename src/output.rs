@@ -22,7 +22,7 @@ pub(crate) fn fields(area: &str, verb: &str) -> Option<String> {
     let common = match (area, verb) {
         ("pr", "list" | "view") => PR,
         ("issue", "list" | "view") => ISSUE,
-        ("repo", "view") => REPO,
+        ("repo", "view" | "list") => REPO,
         ("repo", "read-file") => FILE,
         ("repo", "read-dir") => DIR,
         ("search", "prs") => SEARCH_PR,
@@ -58,6 +58,7 @@ pub(crate) fn validate_selection(
     };
     let (area, verb) = match (id, kind.and_then(Value::as_str)) {
         ("gh.repo.read", None) => ("repo", "view"),
+        ("gh.repo.list", None) => ("repo", "list"),
         ("gh.content.read", Some("read-file")) => ("repo", "read-file"),
         ("gh.content.read", Some("read-dir")) => ("repo", "read-dir"),
         ("gh.pull-request.read", None) => ("pr", "view"),
@@ -121,8 +122,10 @@ pub(crate) fn render(
     value: &Value,
     selection: &str,
 ) -> Result<String, ProviderError> {
-    let list = matches!(id, "gh.pull-request.list" | "gh.issue.list")
-        || (id == "gh.content.read" && input.get("_cliKind") == Some(&json!("read-dir")));
+    let list = matches!(
+        id,
+        "gh.pull-request.list" | "gh.issue.list" | "gh.repo.list"
+    ) || (id == "gh.content.read" && input.get("_cliKind") == Some(&json!("read-dir")));
     if id == "gh.content.read" {
         let expected = if list { "dir" } else { "file" };
         if value["type"] != expected {
@@ -132,6 +135,7 @@ pub(crate) fn render(
     let source = match id {
         "gh.pull-request.list" => &value["pullRequests"],
         "gh.issue.list" => &value["issues"],
+        "gh.repo.list" => &value["repositories"],
         "gh.content.read" if list => &value["entries"],
         _ => value,
     };
@@ -162,7 +166,7 @@ pub(crate) fn render(
         let cells: &[&str] = match id {
             "gh.pull-request.list" => &["number", "title", "headRefName", "createdAt"],
             "gh.issue.list" => &["number", "title", "labels", "updatedAt"],
-            "gh.repo.read" => &["nameWithOwner", "description"],
+            "gh.repo.read" | "gh.repo.list" => &["nameWithOwner", "description"],
             "gh.pull-request.read" => &["title", "body"],
             "gh.issue.read" => &["title", "body"],
             "gh.content.read" => &["name", "type", "size"],

@@ -2,7 +2,7 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Seventeen narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
+Eighteen narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
 output projections, and SHA-pinned review/merge writes. There is deliberately no `gh.api.*`
 passthrough: a path-level escape hatch would collapse per-capability policy into "everything the
 credential can reach".
@@ -37,9 +37,13 @@ marker; the authorized invocation reads at most 4 KiB of UTF-8 from stdin before
 Nothing piped is a usage error rather than an empty comment. `gh api` accepts only three named GET routes (`users/LOGIN`, `repos/OWNER/REPO/branches/BRANCH`,
 `repos/OWNER/REPO/commits/REF`). No arbitrary route or API flag is accepted.
 
-Supported `gh pr list/view`, `gh issue list/view`, `gh repo view/read-file/read-dir` commands
+Supported `gh pr list/view`, `gh issue list/view`, `gh repo view/list/read-file/read-dir` commands
 accept closed, comma-separated `--json FIELDS`; bare, unknown and repeated fields refuse as usage.
 Without `--json`, these commands print tab-separated rows (files print decoded content).
+`gh pr list`, `gh issue list`, and `gh repo list OWNER` collect up to 100 matching rows
+(default 30) across at most ten REST pages; an exhausted list may return fewer rows.
+`repo list` uses GitHub's public `/users/OWNER/repos` endpoint and cannot enumerate
+private repositories inaccessible there. An interrupted collection prints no partial rows.
 A text field cut at its byte bound ends, in JSON and text alike, with the line
 `[dekopon: truncated to N bytes of M]`.
 `--jq`, `--template`, `--web` and `--checkout` still refuse. The three finite `gh api` reads
@@ -55,7 +59,7 @@ write to stderr with a nonzero status. Filter stdout with the shell's
 | `gh.content.read` | read-only |
 | `gh.pull-request.list` / `.read` / `.diff` / `.status` | read-only |
 | `gh.pull-request.approve` / `.comment` / `.request-changes` / `.merge` | external-write |
-| `gh.repo.read` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` | read-only |
+| `gh.repo.read` / `gh.repo.list` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` | read-only |
 | `gh.issue.read` / `.list` | read-only |
 | `gh.issue.comment` | external-write |
 
@@ -121,7 +125,7 @@ capabilities you enable (Read unless marked Write):
 | Capability | Fine-grained permission |
 |---|---|
 | `gh.auth.status`, `gh.user.read` | None (public endpoint / rate limit) |
-| `gh.repo.read` | Metadata: Read |
+| `gh.repo.read`, `gh.repo.list` | Metadata: Read |
 | `gh.content.read`, `gh.branch.read`, `gh.commit.read` | Contents: Read |
 | `gh.pull-request.list`, `.read`, `.diff` | Pull requests: Read |
 | `gh.pull-request.status` | Pull requests: Read; Actions: Read; Commit statuses: Read |

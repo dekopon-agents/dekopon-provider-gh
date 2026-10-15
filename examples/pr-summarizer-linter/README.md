@@ -147,7 +147,8 @@ dekopon-gatewayd --config gatewayd.yaml
 
 `capability.count: 0` is intentional. The startup probe asks what the gateway’s own direct identity
 may do; both Cedar statements require an attested sender and agent. The gateway reaches the six
-capabilities only while vouching for an allowed Slack subject.
+capabilities only while vouching for an allowed Slack subject. `gh repo list OWNER` is a separate
+`gh.repo.list` read grant; this example does not grant it.
 
 ## 6. Summarize and lint a pull request
 
