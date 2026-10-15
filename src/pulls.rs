@@ -831,14 +831,23 @@ mod tests {
 
     #[test]
     fn native_view_refuses_an_unfinished_extra_page() {
+        use std::{cell::Cell, rc::Rc};
         for link in [
             "<https://api.github.com/repos/octo/hello/pulls/7/files?page=2>; rel=\"next\"",
             "malformed cursor",
         ] {
+            let seen = Rc::new(Cell::new(0));
+            let first = Rc::clone(&seen);
+            let second = Rc::clone(&seen);
             let output = invoke_with(&capability("gh.pull-request.read"), json!({"owner":"octo","repo":"hello","number":7,"_cli":"files"}), scripted(vec![
-                step(|request| assert_eq!(request.uri, "https://api.github.com/repos/octo/hello/pulls/7"), json_response(200, &pull_body(7, "open", false, false))),
-                step(|request| assert_eq!(request.uri, "https://api.github.com/repos/octo/hello/pulls/7/files?per_page=100"), response_with_headers(200, &[("link", link)], &json!([{"filename":"a","status":"modified","additions":1,"deletions":0}]))),
+                step(move |request| { assert_eq!(request.uri, "https://api.github.com/repos/octo/hello/pulls/7"); first.set(first.get() + 1); }, json_response(200, &pull_body(7, "open", false, false))),
+                step(move |request| { assert_eq!(request.uri, "https://api.github.com/repos/octo/hello/pulls/7/files?per_page=100"); second.set(second.get() + 1); }, response_with_headers(200, &[("link", link)], &json!([{"filename":"a","status":"modified","additions":1,"deletions":0}]))),
             ])).expect_err("partial files are not success");
+            assert_eq!(
+                seen.get(),
+                2,
+                "both reads must precede the pagination refusal"
+            );
             assert_eq!(output.code(), "invalid-response");
         }
     }

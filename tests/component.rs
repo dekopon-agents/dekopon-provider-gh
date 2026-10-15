@@ -578,6 +578,113 @@ fn component_content_kind_mismatch_never_renders_success() -> Result<(), Box<dyn
 }
 
 #[test]
+fn component_pr_and_issue_body_truncation_is_visible_in_json_and_tsv()
+-> Result<(), Box<dyn std::error::Error>> {
+    let body = "é".repeat(9000);
+    let marker = "\n[dekopon: truncated to 16384 bytes of 18000]";
+    let shortened = format!("{}{}", "é".repeat(8192), marker);
+    let pr = json!({"number":7,"title":"Ship","state":"open","body":body,"head":{"ref":"topic","sha":"a".repeat(40)},"base":{"ref":"main","sha":"b".repeat(40)},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"});
+    let issue = json!({"number":9,"title":"Fix","state":"open","body":body,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"});
+    for (area, id, path, reply, title, number) in [
+        (
+            "pr",
+            "gh.pull-request.read",
+            "/repos/octo/hello/pulls/7",
+            pr,
+            "Ship",
+            "7",
+        ),
+        (
+            "issue",
+            "gh.issue.read",
+            "/repos/octo/hello/issues/9",
+            issue,
+            "Fix",
+            "9",
+        ),
+    ] {
+        for fields in [Some("body"), None] {
+            let mut words = vec![area, "view", number, "-R", "octo/hello"];
+            if let Some(fields) = fields {
+                words.extend(["--json", fields]);
+            }
+            let CommandRunOutcome::Proposed {
+                capability, input, ..
+            } = provider::command::<Gh>(
+                &words
+                    .iter()
+                    .map(|word| (*word).to_owned())
+                    .collect::<Vec<_>>(),
+                false,
+            )
+            else {
+                panic!("view must propose")
+            };
+            assert_eq!(capability.as_str(), id);
+            let output = scripted_component_get(
+                Response {
+                    status: 200,
+                    headers: vec![],
+                    body: reply.to_string().into_bytes(),
+                },
+                id,
+                input,
+                path,
+            )?;
+            assert_eq!(output.status, 0, "{}", output.stderr);
+            if fields.is_some() {
+                let value: Value = serde_json::from_slice(&output.stdout)?;
+                assert_eq!(value, json!({"body": shortened}));
+            } else {
+                assert_eq!(
+                    output.stdout,
+                    format!("{title}\t{shortened}\n").into_bytes()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn component_invalid_typed_selection_refuses_before_settings_grant()
+-> Result<(), Box<dyn std::error::Error>> {
+    for extra in [
+        json!({"_cliOutput":"unknown"}),
+        json!({"_cliOutput":"name,,url"}),
+        json!({"_cliOutput":5}),
+        json!({"_cli":true}),
+    ] {
+        let mut input = json!({"owner":"octo","repo":"hello"});
+        input
+            .as_object_mut()
+            .expect("input object")
+            .extend(extra.as_object().expect("extra object").clone());
+        let harness = Harness::<Gh>::get(component()).http(HttpScript::new(
+            "localhost",
+            "GET",
+            Response {
+                status: 200,
+                headers: vec![],
+                body: br#"{"name":"hello"}"#.to_vec(),
+            },
+        ));
+        let output = harness
+            .settings(json!({"baseUrl":5}))
+            .call("gh.repo.read", input)?;
+        assert_eq!(output.status, 2, "{extra}");
+        assert_eq!(
+            output.stderr,
+            "the input does not match the capability's input schema\n"
+        );
+        assert!(output.stdout.is_empty());
+        assert!(output.http_calls.is_empty());
+        assert!(output.http_request.is_none());
+    }
+    Ok(())
+}
+
+#[test]
 fn native_invalid_cli_selection_never_sends_http() {
     let native = Native::<Gh>::new().http(HttpScript::new(
         "api.github.com",
