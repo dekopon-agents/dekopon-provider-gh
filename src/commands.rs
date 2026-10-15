@@ -167,6 +167,38 @@ fn tree() -> Command {
                 ),
         )
         .subcommand(issues())
+        .subcommand(search_tree())
+}
+
+fn search_tree() -> Command {
+    let mut command = Command::new("search").subcommand_required(true);
+    for verb in ["prs", "issues", "repos", "code", "commits"] {
+        let mut sub = Command::new(verb)
+            .arg(
+                Arg::new("query")
+                    .required(true)
+                    .num_args(1..)
+                    .value_name("QUERY"),
+            )
+            .arg(Arg::new("owner").long("owner").value_name("OWNER"))
+            .arg(limit_arg())
+            .arg(json_arg());
+        if verb != "repos" {
+            sub = sub.arg(repo_arg(false));
+        }
+        if matches!(verb, "prs" | "issues") {
+            sub = sub.arg(
+                Arg::new("state")
+                    .long("state")
+                    .value_parser(["open", "closed"]),
+            );
+        }
+        if matches!(verb, "prs" | "issues" | "commits") {
+            sub = sub.arg(Arg::new("author").long("author").value_name("LOGIN"));
+        }
+        command = command.subcommand(sub);
+    }
+    command
 }
 
 fn pull_requests() -> Command {
@@ -489,11 +521,70 @@ fn dispatch(
             mark_piped_body(&mut input, matches);
             ids::ISSUE_COMMENT
         }
+        ("search", "prs" | "issues" | "repos" | "code" | "commits") => {
+            let owner = matches.get_one::<String>("owner");
+            let repo = if verb == "repos" {
+                None
+            } else {
+                matches.get_one::<String>("repo")
+            };
+            if owner.is_some() == repo.is_some() {
+                return Err(usage(
+                    "gh search: name --owner or -R; there is no global search here",
+                ));
+            }
+            if let Some(slug) = repo {
+                let (owner, repo) = parse_repo(slug)?;
+                input.insert("owner".into(), Value::String(owner));
+                input.insert("repo".into(), Value::String(repo));
+            } else if let Some(owner) = owner {
+                crate::validate_login(owner).map_err(|_| usage("gh search: invalid owner"))?;
+                input.insert("owner".into(), Value::String(owner.clone()));
+            }
+            let query = matches
+                .get_many::<String>("query")
+                .expect("required query")
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(" ");
+            if query.is_empty()
+                || query.len() > 512
+                || query.chars().any(char::is_control)
+                || query.split_whitespace().any(|word| {
+                    let word = word.to_ascii_lowercase();
+                    ["repo:", "org:", "user:", "owner:"]
+                        .iter()
+                        .any(|q| word.contains(q))
+                        || word == "or"
+                })
+            {
+                return Err(usage("gh search: query cannot change the structural scope"));
+            }
+            input.insert("query".into(), Value::String(query));
+            insert_text(
+                &mut input,
+                "state",
+                matches.try_get_one::<String>("state").ok().flatten(),
+            );
+            if let Some(author) = matches.try_get_one::<String>("author").ok().flatten() {
+                crate::validate_login(author).map_err(|_| usage("gh search: invalid author"))?;
+                insert_text(&mut input, "author", Some(author));
+            }
+            match verb {
+                "prs" => ids::SEARCH_PRS,
+                "issues" => ids::SEARCH_ISSUES,
+                "repos" => ids::SEARCH_REPOS,
+                "code" => ids::SEARCH_CODE,
+                _ => ids::SEARCH_COMMITS,
+            }
+        }
         ("auth", "status") => ids::AUTH_STATUS,
         _ => unreachable!("the tree has no other subcommand than {command}"),
     };
 
-    if matches!(command.as_str(), "pr list" | "issue list" | "repo list") {
+    if matches!(area, "search")
+        || matches!(command.as_str(), "pr list" | "issue list" | "repo list")
+    {
         input.insert(
             "_cliLimit".to_owned(),
             Value::from(matches.get_one::<u64>("limit").copied().unwrap_or(30)),
@@ -582,6 +673,11 @@ pub(crate) const DISPATCH_TABLE: &[(&str, &str, &str)] = &[
     ("issue", "list", ids::ISSUE_LIST),
     ("issue", "comment", ids::ISSUE_COMMENT),
     ("auth", "status", ids::AUTH_STATUS),
+    ("search", "prs", ids::SEARCH_PRS),
+    ("search", "issues", ids::SEARCH_ISSUES),
+    ("search", "repos", ids::SEARCH_REPOS),
+    ("search", "code", ids::SEARCH_CODE),
+    ("search", "commits", ids::SEARCH_COMMITS),
 ];
 
 fn insert_repo(input: &mut Map<String, Value>, matches: &ArgMatches) -> Result<(), ProviderError> {
@@ -666,6 +762,55 @@ mod tests {
 
     use super::{DISPATCH_TABLE, tree};
     use crate::{Gh, error::ProviderError};
+
+    #[test]
+    fn search_requires_one_structural_scope_and_closed_qualifiers() {
+        for (words, id) in [
+            (
+                &[
+                    "search", "prs", "fix", "-R", "o/r", "--state", "closed", "--author", "dev",
+                ][..],
+                "gh.search.prs",
+            ),
+            (
+                &["search", "issues", "fix", "--owner", "o"][..],
+                "gh.search.issues",
+            ),
+            (
+                &["search", "repos", "fix", "--owner", "o"][..],
+                "gh.search.repos",
+            ),
+            (
+                &["search", "code", "fix", "-R", "o/r"][..],
+                "gh.search.code",
+            ),
+            (
+                &["search", "commits", "fix", "-R", "o/r", "--author", "dev"][..],
+                "gh.search.commits",
+            ),
+        ] {
+            assert_eq!(dispatch(words).0, id);
+        }
+        for words in [
+            &["search", "prs", "fix"][..],
+            &["search", "prs", "fix", "-R", "o/r", "--owner", "o"][..],
+            &["search", "prs", "repo:other/r", "-R", "o/r"][..],
+            &["search", "code", "fix", "-R", "o/r", "--author", "dev"][..],
+            &["search", "repos", "fix", "-R", "o/r"][..],
+            &[
+                "search", "issues", "fix", "--owner", "o", "--state", "merged",
+            ][..],
+        ] {
+            match run(
+                &words.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
+                None,
+            ) {
+                Ok(CommandRun::Rendered { status: 2, .. }) => {}
+                Err(error) => assert_eq!(error.code(), "usage"),
+                other => panic!("expected refusal: {other:?}"),
+            }
+        }
+    }
 
     #[test]
     fn repo_list_and_bounded_limits_propose_their_own_grants() {

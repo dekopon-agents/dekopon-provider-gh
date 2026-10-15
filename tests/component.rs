@@ -167,6 +167,87 @@ fn retained_reads_succeed_only_with_their_own_http_grant() -> Result<(), Box<dyn
 }
 
 #[test]
+fn component_search_scope_and_grant_are_independent() -> Result<(), Box<dyn std::error::Error>> {
+    for (verb, id, scope, path) in [
+        (
+            "prs",
+            "gh.search.prs",
+            &["-R", "octo/hello"][..],
+            "/search/issues?q=fix%20repo%3Aocto%2Fhello%20is%3Apr&page=1&per_page=100",
+        ),
+        (
+            "issues",
+            "gh.search.issues",
+            &["-R", "octo/hello"][..],
+            "/search/issues?q=fix%20repo%3Aocto%2Fhello%20is%3Aissue&page=1&per_page=100",
+        ),
+        (
+            "repos",
+            "gh.search.repos",
+            &["--owner", "octo"][..],
+            "/search/repositories?q=fix%20user%3Aocto&page=1&per_page=100",
+        ),
+        (
+            "code",
+            "gh.search.code",
+            &["-R", "octo/hello"][..],
+            "/search/code?q=fix%20repo%3Aocto%2Fhello&page=1&per_page=100",
+        ),
+        (
+            "commits",
+            "gh.search.commits",
+            &["-R", "octo/hello"][..],
+            "/search/commits?q=fix%20repo%3Aocto%2Fhello&page=1&per_page=100",
+        ),
+    ] {
+        let mut words = vec!["search", verb, "fix"];
+        words.extend_from_slice(scope);
+        words.extend_from_slice(&["--json", "url"]);
+        let CommandRunOutcome::Proposed {
+            capability, input, ..
+        } = provider::command::<Gh>(
+            &words.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
+            false,
+        )
+        else {
+            panic!("search must propose")
+        };
+        assert_eq!(capability.as_str(), id);
+        match Harness::<Gh>::get(component()).call(id, input.clone()) {
+            Err(HarnessError::Invocation(failure)) => assert!(failure.http_calls.is_empty()),
+            other => panic!("search grant must be independent: {other:?}"),
+        }
+        let output = scripted_component_get(Response {status: 200, headers: vec![], body: json!({"total_count":1,"incomplete_results":false,"items":[{"id":1,"url":"https://example.invalid/result"}]}).to_string().into_bytes()}, id, input, path)?;
+        assert_eq!(output.status, 0, "{}", output.stderr);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stdout)?,
+            json!([{"url":"https://example.invalid/result"}])
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn component_search_incomplete_refuses_without_success_array()
+-> Result<(), Box<dyn std::error::Error>> {
+    let output = scripted_component_get(
+        Response {
+            status: 200,
+            headers: vec![],
+            body: json!({"total_count":1,"incomplete_results":true,"items":[{"id":1}]})
+                .to_string()
+                .into_bytes(),
+        },
+        "gh.search.code",
+        json!({"owner":"octo","repo":"hello","query":"fix","_cliLimit":30,"_cliOutput":"sha"}),
+        "/search/code?q=fix%20repo%3Aocto%2Fhello&page=1&per_page=100",
+    )?;
+    assert_ne!(output.status, 0);
+    assert!(output.stdout.is_empty());
+    Ok(())
+}
+
+#[test]
 fn component_repo_list_requires_its_own_grant_and_renders_a_short_array()
 -> Result<(), Box<dyn std::error::Error>> {
     let words = [

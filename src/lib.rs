@@ -43,6 +43,7 @@ mod output;
 mod pulls;
 mod repos;
 mod reviews;
+mod search;
 pub mod typed;
 
 const GITHUB_API: Base = Base::from_static("https://api.github.com");
@@ -119,6 +120,11 @@ pub(crate) mod ids {
     pub(crate) const PR_MERGE: &str = "gh.pull-request.merge";
     pub(crate) const REPO_READ: &str = "gh.repo.read";
     pub(crate) const REPO_LIST: &str = "gh.repo.list";
+    pub(crate) const SEARCH_PRS: &str = "gh.search.prs";
+    pub(crate) const SEARCH_ISSUES: &str = "gh.search.issues";
+    pub(crate) const SEARCH_REPOS: &str = "gh.search.repos";
+    pub(crate) const SEARCH_CODE: &str = "gh.search.code";
+    pub(crate) const SEARCH_COMMITS: &str = "gh.search.commits";
     pub(crate) const BRANCH_READ: &str = "gh.branch.read";
     pub(crate) const COMMIT_READ: &str = "gh.commit.read";
     pub(crate) const USER_READ: &str = "gh.user.read";
@@ -146,6 +152,11 @@ impl Provider for Gh {
         typed::PrStatus,
         typed::RepoRead,
         typed::RepoList,
+        typed::SearchPrs,
+        typed::SearchIssues,
+        typed::SearchRepos,
+        typed::SearchCode,
+        typed::SearchCommits,
         typed::BranchRead,
         typed::CommitRead,
         typed::IssueRead,
@@ -194,6 +205,11 @@ where
         ids::PR_MERGE => reviews::merge(input, base, send),
         ids::REPO_READ => repos::repo(input, base, send),
         ids::REPO_LIST => repos::list(input, base, send),
+        ids::SEARCH_PRS
+        | ids::SEARCH_ISSUES
+        | ids::SEARCH_REPOS
+        | ids::SEARCH_CODE
+        | ids::SEARCH_COMMITS => search::run(capability.as_str(), input, base, send),
         ids::BRANCH_READ => repos::branch(input, base, send),
         ids::COMMIT_READ => repos::commit(input, base, send),
         ids::USER_READ => repos::user(input, base, send),
@@ -328,6 +344,32 @@ fn capabilities() -> Vec<ProviderCapability> {
                 &["owner"],
             ),
         ),
+        // Search scopes are required properties, but exactly one is checked by the handler.
+        read(
+            ids::SEARCH_PRS,
+            "Search scoped pull requests",
+            search_schema(true, true),
+        ),
+        read(
+            ids::SEARCH_ISSUES,
+            "Search scoped issues",
+            search_schema(true, true),
+        ),
+        read(
+            ids::SEARCH_REPOS,
+            "Search repositories of one owner",
+            search_schema(false, false),
+        ),
+        read(
+            ids::SEARCH_CODE,
+            "Search scoped code",
+            search_schema(true, false),
+        ),
+        read(
+            ids::SEARCH_COMMITS,
+            "Search scoped commits",
+            search_schema(true, true),
+        ),
         read(
             ids::BRANCH_READ,
             "Reads one branch's bounded GitHub API response",
@@ -394,6 +436,25 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
     ]
+}
+
+fn search_schema(repo_scope: bool, qualifiers: bool) -> Value {
+    let mut properties = json!({
+        "query": {"type": "string", "minLength": 1, "maxLength": 512},
+        "owner": {"type": "string", "maxLength": MAX_OWNER_BYTES},
+        "_cliLimit": {"type": "integer", "minimum": 1, "maximum": 100},
+        "_cliOutput": {"type": "string", "maxLength": 512}
+    });
+    if repo_scope {
+        properties["repo"] = json!({"type": "string", "maxLength": MAX_REPO_BYTES});
+    }
+    if qualifiers {
+        properties["author"] = json!({"type": "string", "maxLength": MAX_OWNER_BYTES});
+        if repo_scope {
+            properties["state"] = json!({"type": "string", "enum": ["open", "closed"]});
+        }
+    }
+    object_schema(properties, &["query", "owner"])
 }
 
 /// Builds an object schema whose properties always include `owner` and `repo`.
@@ -762,6 +823,24 @@ fn collect_pages(
     base: &Base,
     path: &str,
     limit: usize,
+    project: impl FnMut(Value) -> Result<Option<Value>, ProviderError>,
+) -> Result<Vec<Value>, ProviderError> {
+    collect_pages_with(
+        send,
+        base,
+        path,
+        limit,
+        |body| decode::<Vec<Value>>(body),
+        project,
+    )
+}
+
+fn collect_pages_with(
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+    base: &Base,
+    path: &str,
+    limit: usize,
+    mut extract: impl FnMut(&[u8]) -> Result<Vec<Value>, ProviderError>,
     mut project: impl FnMut(Value) -> Result<Option<Value>, ProviderError>,
 ) -> Result<Vec<Value>, ProviderError> {
     if !(1..=MAX_CLI_LIMIT).contains(&limit) {
@@ -772,7 +851,7 @@ fn collect_pages(
     for page in 1..=MAX_LIST_REQUESTS {
         let uri = url(base, &format!("{path}&page={page}&per_page=100"))?;
         let response = send_get(send, uri, ACCEPT_JSON)?;
-        let items = decode::<Vec<Value>>(&response.body)?;
+        let items = extract(&response.body)?;
         if items.len() > 100 {
             return Err(invalid_response());
         }

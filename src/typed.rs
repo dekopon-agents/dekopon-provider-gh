@@ -35,9 +35,9 @@ macro_rules! capability {
                     .find(|c| c.id.as_str() == $id)
                     .expect("declared gh capability")
                     .input_schema;
-                if matches!($id, "gh.pull-request.list" | "gh.pull-request.read" | "gh.issue.list" | "gh.issue.read" | "gh.repo.read" | "gh.repo.list" | "gh.content.read") {
+                if matches!($id, "gh.pull-request.list" | "gh.pull-request.read" | "gh.issue.list" | "gh.issue.read" | "gh.repo.read" | "gh.repo.list" | "gh.content.read" | "gh.search.prs" | "gh.search.issues" | "gh.search.repos" | "gh.search.code" | "gh.search.commits") {
                     schema["properties"]["_cliOutput"] = serde_json::json!({"type": "string", "maxLength": 512});
-                    if matches!($id, "gh.pull-request.list" | "gh.issue.list" | "gh.repo.list") {
+                    if matches!($id, "gh.pull-request.list" | "gh.issue.list" | "gh.repo.list" | "gh.search.prs" | "gh.search.issues" | "gh.search.repos" | "gh.search.code" | "gh.search.commits") {
                         schema["properties"]["_cliLimit"] = serde_json::json!({"type": "integer", "minimum": 1, "maximum": 100});
                     }
                     if $id == "gh.content.read" {
@@ -105,6 +105,8 @@ macro_rules! capability {
                 if let Some(Value::String(fields)) = selection.as_ref() {
                     if matches!($id, "gh.repo.read" | "gh.content.read") {
                         input["_cli"] = Value::Bool(true);
+                    } else if $id.starts_with("gh.search.") {
+                        input["_cliOutput"] = Value::String(fields.clone());
                     } else {
                         input["_cli"] = Value::String(fields.clone());
                     }
@@ -263,6 +265,56 @@ capability!(
     RiskLevel::Low
 );
 capability!(
+    SearchPrs,
+    SearchPrsInput,
+    crate::ids::SEARCH_PRS,
+    "search.prs",
+    "Search scoped pull requests",
+    crate::search::prs,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
+    SearchIssues,
+    SearchIssuesInput,
+    crate::ids::SEARCH_ISSUES,
+    "search.issues",
+    "Search scoped issues",
+    crate::search::issues,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
+    SearchRepos,
+    SearchReposInput,
+    crate::ids::SEARCH_REPOS,
+    "search.repos",
+    "Search repositories for an owner",
+    crate::search::repos,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
+    SearchCode,
+    SearchCodeInput,
+    crate::ids::SEARCH_CODE,
+    "search.code",
+    "Search scoped code",
+    crate::search::code,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
+    SearchCommits,
+    SearchCommitsInput,
+    crate::ids::SEARCH_COMMITS,
+    "search.commits",
+    "Search scoped commits",
+    crate::search::commits,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
     BranchRead,
     BranchReadInput,
     "gh.branch.read",
@@ -339,6 +391,11 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
         "gh.pull-request.merge" => Proposal::to::<PrMerge>(PrMergeInput(input)),
         "gh.repo.read" => Proposal::to::<RepoRead>(RepoReadInput(input)),
         crate::ids::REPO_LIST => Proposal::to::<RepoList>(RepoListInput(input)),
+        crate::ids::SEARCH_PRS => Proposal::to::<SearchPrs>(SearchPrsInput(input)),
+        crate::ids::SEARCH_ISSUES => Proposal::to::<SearchIssues>(SearchIssuesInput(input)),
+        crate::ids::SEARCH_REPOS => Proposal::to::<SearchRepos>(SearchReposInput(input)),
+        crate::ids::SEARCH_CODE => Proposal::to::<SearchCode>(SearchCodeInput(input)),
+        crate::ids::SEARCH_COMMITS => Proposal::to::<SearchCommits>(SearchCommitsInput(input)),
         "gh.branch.read" => Proposal::to::<BranchRead>(BranchReadInput(input)),
         "gh.commit.read" => Proposal::to::<CommitRead>(CommitReadInput(input)),
         "gh.user.read" => Proposal::to::<UserRead>(UserReadInput(input)),

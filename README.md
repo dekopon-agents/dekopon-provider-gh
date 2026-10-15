@@ -62,6 +62,7 @@ write to stderr with a nonzero status. Filter stdout with the shell's
 | `gh.repo.read` / `gh.repo.list` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` | read-only |
 | `gh.issue.read` / `.list` | read-only |
 | `gh.issue.comment` | external-write |
+| `gh.search.prs` / `.issues` / `.repos` / `.code` / `.commits` | read-only |
 
 `gh.pull-request.status` reads the pull request's head, then lists GitHub Actions workflow runs and
 legacy commit statuses at that SHA. This deliberately avoids the Checks REST API: GitHub documents
@@ -71,6 +72,8 @@ Read-only** permissions, stays entirely on bounded GET requests, and reports the
 separately rather than pretending workflow runs are check runs. Checks-only third-party integrations
 remain outside this capability. The constraint set must allow three GETs (pull metadata, Actions,
 then commit statuses); a two-request constraint from v0.1.0 fails closed before the final read.
+
+Scoped search requires exactly one `--owner OWNER` or `-R OWNER/REPO` (`search repos` requires `--owner`). Searches are bounded to ten REST requests and at most 100 matches. A shorter response can reflect GitHub's indexing delay; incomplete results and an inconsistent index count fail rather than being presented as a complete array. GitHub exposes at most the first 1,000 indexed matches. Query terms cannot set a repository or owner scope.
 
 ## Using it
 

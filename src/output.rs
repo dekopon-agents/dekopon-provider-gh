@@ -65,6 +65,11 @@ pub(crate) fn validate_selection(
         ("gh.pull-request.list", None) => ("pr", "list"),
         ("gh.issue.read", None) => ("issue", "view"),
         ("gh.issue.list", None) => ("issue", "list"),
+        ("gh.search.prs", None) => ("search", "prs"),
+        ("gh.search.issues", None) => ("search", "issues"),
+        ("gh.search.repos", None) => ("search", "repos"),
+        ("gh.search.code", None) => ("search", "code"),
+        ("gh.search.commits", None) => ("search", "commits"),
         _ => return Err(crate::invalid_input()),
     };
     let allowed = fields(area, verb).expect("CLI fields exist");
@@ -124,7 +129,14 @@ pub(crate) fn render(
 ) -> Result<String, ProviderError> {
     let list = matches!(
         id,
-        "gh.pull-request.list" | "gh.issue.list" | "gh.repo.list"
+        "gh.pull-request.list"
+            | "gh.issue.list"
+            | "gh.repo.list"
+            | "gh.search.prs"
+            | "gh.search.issues"
+            | "gh.search.repos"
+            | "gh.search.code"
+            | "gh.search.commits"
     ) || (id == "gh.content.read" && input.get("_cliKind") == Some(&json!("read-dir")));
     if id == "gh.content.read" {
         let expected = if list { "dir" } else { "file" };
@@ -167,6 +179,10 @@ pub(crate) fn render(
             "gh.pull-request.list" => &["number", "title", "headRefName", "createdAt"],
             "gh.issue.list" => &["number", "title", "labels", "updatedAt"],
             "gh.repo.read" | "gh.repo.list" => &["nameWithOwner", "description"],
+            "gh.search.prs" | "gh.search.issues" => &["number", "title", "repository", "state"],
+            "gh.search.repos" => &["fullName", "description"],
+            "gh.search.code" => &["path", "repository", "sha"],
+            "gh.search.commits" => &["sha", "commit", "repository"],
             "gh.pull-request.read" => &["title", "body"],
             "gh.issue.read" => &["title", "body"],
             "gh.content.read" => &["name", "type", "size"],
