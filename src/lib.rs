@@ -825,7 +825,15 @@ fn collect_pages(
     limit: usize,
     project: impl FnMut(Value) -> Result<Option<Value>, ProviderError>,
 ) -> Result<Vec<Value>, ProviderError> {
-    collect_pages_with(send, base, path, limit, decode::<Vec<Value>>, project)
+    collect_pages_with(
+        send,
+        base,
+        path,
+        limit,
+        decode::<Vec<Value>>,
+        list_key,
+        project,
+    )
 }
 
 fn collect_pages_with(
@@ -834,6 +842,7 @@ fn collect_pages_with(
     path: &str,
     limit: usize,
     mut extract: impl FnMut(&[u8]) -> Result<Vec<Value>, ProviderError>,
+    mut identity: impl FnMut(&Value) -> Option<String>,
     mut project: impl FnMut(Value) -> Result<Option<Value>, ProviderError>,
 ) -> Result<Vec<Value>, ProviderError> {
     if !(1..=MAX_CLI_LIMIT).contains(&limit) {
@@ -849,21 +858,7 @@ fn collect_pages_with(
             return Err(invalid_response());
         }
         for item in items {
-            let key = item
-                .get("id")
-                .and_then(Value::as_u64)
-                .map(|id| id.to_string())
-                .or_else(|| {
-                    item.get("full_name")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
-                })
-                .or_else(|| {
-                    item.get("number")
-                        .and_then(Value::as_u64)
-                        .map(|n| n.to_string())
-                })
-                .ok_or_else(invalid_response)?;
+            let key = identity(&item).ok_or_else(invalid_response)?;
             if seen.insert(key)
                 && let Some(row) = project(item)?
             {
@@ -926,6 +921,22 @@ fn collect_pages_with(
         "request-ceiling",
         "list exceeded ten requests",
     ))
+}
+
+fn list_key(item: &Value) -> Option<String> {
+    item.get("id")
+        .and_then(Value::as_u64)
+        .map(|id| id.to_string())
+        .or_else(|| {
+            item.get("full_name")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .or_else(|| {
+            item.get("number")
+                .and_then(Value::as_u64)
+                .map(|n| n.to_string())
+        })
 }
 
 // ---------------------------------------------------------------------------

@@ -217,11 +217,85 @@ fn component_search_scope_and_grant_are_independent() -> Result<(), Box<dyn std:
             Err(HarnessError::Invocation(failure)) => assert!(failure.http_calls.is_empty()),
             other => panic!("search grant must be independent: {other:?}"),
         }
-        let output = scripted_component_get(Response {status: 200, headers: vec![], body: json!({"total_count":1,"incomplete_results":false,"items":[{"id":1,"url":"https://example.invalid/result"}]}).to_string().into_bytes()}, id, input, path)?;
+        let item = match verb {
+            "prs" | "issues" => {
+                json!({"repository_url":"https://api.github.com/repos/octo/hello","number":1,"url":"https://example.invalid/result"})
+            }
+            "repos" => json!({"full_name":"octo/hello","url":"https://example.invalid/result"}),
+            "code" => {
+                json!({"repository":{"full_name":"octo/hello"},"path":"src/main.rs","sha":"abc","url":"https://example.invalid/result"})
+            }
+            "commits" => {
+                json!({"sha":"abc","repository":{"full_name":"octo/hello"},"url":"https://example.invalid/result"})
+            }
+            _ => unreachable!(),
+        };
+        let output = scripted_component_get(
+            Response {
+                status: 200,
+                headers: vec![],
+                body: json!({"total_count":1,"incomplete_results":false,"items":[item]})
+                    .to_string()
+                    .into_bytes(),
+            },
+            id,
+            input,
+            path,
+        )?;
         assert_eq!(output.status, 0, "{}", output.stderr);
         assert_eq!(
             serde_json::from_slice::<Value>(&output.stdout)?,
             json!([{"url":"https://example.invalid/result"}])
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn component_owner_scope_and_login_only_assignees_are_projected()
+-> Result<(), Box<dyn std::error::Error>> {
+    for owner in ["octo", "dekopon-agents"] {
+        let words = [
+            "search",
+            "issues",
+            "fix",
+            "--owner",
+            owner,
+            "--json",
+            "assignees",
+        ];
+        let CommandRunOutcome::Proposed {
+            capability, input, ..
+        } = provider::command::<Gh>(&words.map(str::to_owned), false)
+        else {
+            panic!("owner-scoped issues propose")
+        };
+        assert_eq!(capability.as_str(), "gh.search.issues");
+        match Harness::<Gh>::get(component()).call(capability.as_str(), input.clone()) {
+            Err(HarnessError::Invocation(failure)) => assert!(failure.http_calls.is_empty()),
+            other => panic!("ungranted search must refuse before HTTP: {other:?}"),
+        }
+        let output = scripted_component_get(
+            Response {
+                status: 200,
+                headers: vec![],
+                body: json!({
+                    "total_count":1,"incomplete_results":false,"items":[{
+                        "repository_url":"https://api.github.com/repos/octo/hello","number":1,
+                        "assignees":[{"login":"alice","id":55,"email":"private@example.invalid"}]
+                    }]
+                })
+                .to_string()
+                .into_bytes(),
+            },
+            capability.as_str(),
+            input,
+            &format!("/search/issues?q=fix%20user%3A{owner}%20is%3Aissue&page=1&per_page=100"),
+        )?;
+        assert_eq!(output.status, 0, "{}", output.stderr);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stdout)?,
+            json!([{"assignees":[{"login":"alice"}]}])
         );
     }
     Ok(())
@@ -234,7 +308,7 @@ fn component_search_incomplete_refuses_without_success_array()
         Response {
             status: 200,
             headers: vec![],
-            body: json!({"total_count":1,"incomplete_results":true,"items":[{"id":1}]})
+            body: json!({"total_count":1,"incomplete_results":true,"items":[{"repository":{"full_name":"octo/hello"},"path":"src/main.rs","sha":"abc"}]})
                 .to_string()
                 .into_bytes(),
         },

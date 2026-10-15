@@ -90,10 +90,8 @@ pub(crate) fn run(
     }
     let scope = if let Some(repo) = &input.repo {
         format!("repo:{}/{}", input.owner, repo)
-    } else if id == crate::ids::SEARCH_REPOS {
-        format!("user:{}", input.owner)
     } else {
-        format!("org:{}", input.owner)
+        format!("user:{}", input.owner)
     };
     let mut q = format!("{} {}", input.query, scope);
     if id == crate::ids::SEARCH_PRS {
@@ -132,6 +130,7 @@ pub(crate) fn run(
             received += items.len() as u64;
             Ok(items)
         },
+        |item| result_key(id, item),
         |item| {
             let mut row = serde_json::Map::new();
             for field in fields.split(',') {
@@ -151,14 +150,37 @@ pub(crate) fn run(
                 };
                 let value = item.get(upstream).cloned().unwrap_or(Value::Null);
                 let value = if matches!(field, "author" | "owner") {
-                    json!({"login": value.get("login").and_then(Value::as_str)})
+                    if value.is_null() {
+                        Value::Null
+                    } else {
+                        json!({"login": value.get("login").and_then(Value::as_str)})
+                    }
+                } else if field == "assignees" {
+                    if let Some(users) = value.as_array() {
+                        Value::Array(
+                            users
+                                .iter()
+                                .take(100)
+                                .map(|user| json!({"login": user["login"]}))
+                                .collect(),
+                        )
+                    } else {
+                        Value::Null
+                    }
                 } else {
                     bounded(value, 0)
                 };
                 row.insert(field.to_owned(), value);
             }
             if id == crate::ids::SEARCH_PRS || id == crate::ids::SEARCH_ISSUES {
-                row.insert("author".into(), json!({"login": item["user"]["login"]}));
+                row.insert(
+                    "author".into(),
+                    if item["user"].is_null() {
+                        Value::Null
+                    } else {
+                        json!({"login": item["user"]["login"]})
+                    },
+                );
             }
             Ok(Some(Value::Object(row)))
         },
@@ -170,6 +192,34 @@ pub(crate) fn run(
         ));
     }
     Ok(Value::Array(rows))
+}
+
+fn result_key(id: &str, item: &Value) -> Option<String> {
+    fn text(value: &Value) -> Option<&str> {
+        value.as_str().filter(|text| !text.is_empty())
+    }
+    match id {
+        crate::ids::SEARCH_REPOS => text(&item["full_name"]).map(str::to_owned),
+        crate::ids::SEARCH_PRS | crate::ids::SEARCH_ISSUES => {
+            if let (Some(repo), Some(number)) =
+                (text(&item["repository_url"]), item["number"].as_u64())
+            {
+                Some(json!([repo, number]).to_string())
+            } else {
+                item["id"].as_u64().map(|id| id.to_string())
+            }
+        }
+        crate::ids::SEARCH_CODE => Some(
+            json!([
+                text(&item["repository"]["full_name"])?,
+                text(&item["path"])?,
+                text(&item["sha"])?
+            ])
+            .to_string(),
+        ),
+        crate::ids::SEARCH_COMMITS => text(&item["sha"]).map(str::to_owned),
+        _ => None,
+    }
 }
 
 fn bounded(value: Value, depth: usize) -> Value {
@@ -222,14 +272,14 @@ mod tests {
                 response_with_headers(
                     200,
                     &[("link", &link)],
-                    &json!({"total_count":2,"incomplete_results":false,"items":[{"id":1,"sha":"a"}]}),
+                    &json!({"total_count":2,"incomplete_results":false,"items":[{"repository":{"full_name":"octo/hello"},"path":"src/a.rs","sha":"a"}]}),
                 ),
             ),
             step(
                 move |req| assert_eq!(req.uri, second),
                 json_response(
                     200,
-                    &json!({"total_count":2,"incomplete_results":false,"items":[{"id":2,"sha":"b"}]}),
+                    &json!({"total_count":2,"incomplete_results":false,"items":[{"repository":{"full_name":"octo/hello"},"path":"src/b.rs","sha":"b"}]}),
                 ),
             ),
         ]);
@@ -240,11 +290,37 @@ mod tests {
             move |req| assert_eq!(req.uri, first),
             json_response(
                 200,
-                &json!({"total_count":1001,"incomplete_results":false,"items":[{"id":1,"sha":"a"}]}),
+                &json!({"total_count":1001,"incomplete_results":false,"items":[{"repository":{"full_name":"octo/hello"},"path":"src/a.rs","sha":"a"}]}),
             ),
         )]);
         let error = super::run(ids::SEARCH_CODE, input, &GITHUB_API, &mut send)
             .expect_err("index not exhausted");
         assert_eq!(error.code(), "index-ceiling");
+    }
+
+    #[test]
+    fn native_commit_search_deduplicates_sha_without_numeric_id() {
+        let uri = "https://api.github.com/search/commits?q=fix%20user%3Adekopon-agents&page=1&per_page=100";
+        let mut send = scripted(vec![step(
+            move |request| assert_eq!(request.uri, uri),
+            json_response(
+                200,
+                &json!({"total_count":2,"incomplete_results":false,"items":[
+                    {"sha":"abc","repository":{"full_name":"dekopon-agents/dekopon"}},
+                    {"sha":"abc","repository":{"full_name":"dekopon-agents/dekopon"}}
+                ]}),
+            ),
+        )]);
+        let rows = super::run(
+            ids::SEARCH_COMMITS,
+            json!({"owner":"dekopon-agents","query":"fix","_cliOutput":"sha"}),
+            &GITHUB_API,
+            &mut send,
+        )
+        .expect("commit result without id");
+        assert_eq!(
+            rows,
+            json!([{"sha":"abc","author":null,"commit":null,"committer":null,"parents":null,"repository":{"full_name":"dekopon-agents/dekopon"},"url":null}])
+        );
     }
 }

@@ -73,7 +73,7 @@ separately rather than pretending workflow runs are check runs. Checks-only thir
 remain outside this capability. The constraint set must allow three GETs (pull metadata, Actions,
 then commit statuses); a two-request constraint from v0.1.0 fails closed before the final read.
 
-Scoped search requires exactly one `--owner OWNER` or `-R OWNER/REPO` (`search repos` requires `--owner`). Searches are bounded to ten REST requests and at most 100 matches. A shorter response can reflect GitHub's indexing delay; incomplete results and an inconsistent index count fail rather than being presented as a complete array. GitHub exposes at most the first 1,000 indexed matches. Query terms cannot set a repository or owner scope.
+Scoped search requires exactly one `--owner OWNER` or `-R OWNER/REPO` (`search repos` requires `--owner`). `--owner` matches personal and organization owners. Searches are bounded to ten REST requests and at most 100 matches. A shorter response can reflect GitHub's indexing delay; incomplete results and an inconsistent index count fail rather than being presented as a complete array. GitHub exposes at most the first 1,000 indexed matches. Query terms cannot set a repository or owner scope.
 
 ## Using it
 
