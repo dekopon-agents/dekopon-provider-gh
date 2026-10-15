@@ -94,7 +94,21 @@ fn manifest_keeps_read_and_write_grants_independent() {
 }
 
 #[test]
-fn component_read_grant_does_not_authorize_any_write() {
+fn component_one_get_allows_a_read_but_no_write_reaches_http() {
+    let pull = json!({"number":7,"title":"Review","state":"open","draft":false,"merged":false,"user":{"login":"octo"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","html_url":"https://github.com/octo/hello/pull/7","head":{"ref":"feature","sha":"a".repeat(40)},"base":{"ref":"main","sha":"b".repeat(40)}});
+    let response = Response {
+        status: 200,
+        headers: vec![],
+        body: pull.to_string().into_bytes(),
+    };
+    let read = scripted_component_get(
+        response.clone(),
+        "gh.pull-request.read",
+        json!({"owner":"octo","repo":"hello","number":7}),
+        "/repos/octo/hello/pulls/7",
+    )
+    .expect("GET read with GET-only constraint");
+    assert_eq!(read.status, 0, "{}", read.stderr);
     for (id, input) in [
         (
             "gh.pull-request.approve",
@@ -117,11 +131,23 @@ fn component_read_grant_does_not_authorize_any_write() {
             json!({"owner":"octo","repo":"hello","number":7,"body":"comment"}),
         ),
     ] {
-        match Harness::<Gh>::get(component()).call(id, input) {
+        let harness = Harness::<Gh>::get(component()).http(HttpScript::new(
+            "localhost",
+            "GET",
+            response.clone(),
+        ));
+        let base = format!("{}/gh", harness.origin().expect("script origin"));
+        let result = harness.settings(json!({"baseUrl": base})).call(id, input);
+        match result {
             Err(HarnessError::Invocation(failure)) => {
-                assert!(failure.http_calls.is_empty(), "{id} denial sent HTTP");
+                let expected_reads = usize::from(id != "gh.issue.comment");
+                assert_eq!(failure.http_calls.len(), expected_reads, "{id}");
+                for call in &failure.http_calls {
+                    assert_eq!(call.method, "GET", "{id} wrote through a GET-only fixture");
+                    assert_eq!(call.status, Some(200), "{id} pre-read failed");
+                }
             }
-            other => panic!("{id} with read-only HTTP grant: {other:?}"),
+            other => panic!("{id} wrote with one GET-only request: {other:?}"),
         }
     }
 }
