@@ -98,7 +98,7 @@ fn retained_reads_succeed_only_with_their_own_http_grant() -> Result<(), Box<dyn
             "gh.branch.read",
             "/repos/octo/hello/branches/main",
             json!({"name":"main","commit":{"sha":"a".repeat(40)},"protected":false}),
-            "headSha",
+            "commit",
         ),
         (
             &["api", "repos/octo/hello/commits/main"],
@@ -146,10 +146,14 @@ fn retained_reads_succeed_only_with_their_own_http_grant() -> Result<(), Box<dyn
             path,
         )?;
         assert_eq!(output.status, 0, "{id}: {}", output.stderr);
-        assert!(
-            !serde_json::from_slice::<Value>(&output.stdout)?[*field].is_null(),
-            "{id} was not executed"
-        );
+        let value: Value = serde_json::from_slice(&output.stdout)?;
+        assert!(!value[*field].is_null(), "{id} was not executed");
+        if *id != "gh.content.read" {
+            assert_eq!(
+                value, *body,
+                "{id} must return the bounded upstream API shape"
+            );
+        }
     }
     Ok(())
 }

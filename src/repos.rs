@@ -7,10 +7,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    ACCEPT_JSON, MAX_DESCRIPTION_OUT_BYTES, MAX_LIST_ITEMS, MAX_MESSAGE_OUT_BYTES, RawUser,
-    bounded_optional, decode, encode_path, invalid_input, invalid_response, is_sha, login_out,
-    percent_encode, send_get, timestamp, truncate_text, url, validate_login, validate_ref,
-    validate_repo,
+    ACCEPT_JSON, MAX_DESCRIPTION_OUT_BYTES, RawUser, bounded_optional, decode, encode_path,
+    invalid_input, invalid_response, is_sha, login_out, percent_encode, send_get, timestamp, url,
+    validate_login, validate_ref, validate_repo,
 };
 
 #[derive(Debug, Deserialize)]
@@ -60,75 +59,6 @@ struct RawRepo {
     #[serde(default)]
     pushed_at: Option<String>,
     updated_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawBranch {
-    name: String,
-    commit: RawBranchCommit,
-    #[serde(default)]
-    protected: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawBranchCommit {
-    sha: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawCommit {
-    sha: String,
-    commit: RawCommitDetail,
-    #[serde(default)]
-    author: Option<RawUser>,
-    #[serde(default)]
-    stats: Option<RawStats>,
-    #[serde(default)]
-    files: Vec<RawCommitFile>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawCommitDetail {
-    message: String,
-    #[serde(default)]
-    author: Option<RawCommitAuthor>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawCommitAuthor {
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    date: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawStats {
-    additions: u64,
-    deletions: u64,
-    total: u64,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawCommitFile {
-    filename: String,
-    status: String,
-    additions: u64,
-    deletions: u64,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawProfile {
-    login: String,
-    #[serde(rename = "type")]
-    kind: String,
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    public_repos: Option<u64>,
-    #[serde(default)]
-    followers: Option<u64>,
-    created_at: String,
 }
 
 pub(crate) fn repo(
@@ -193,16 +123,13 @@ pub(crate) fn branch(
         ),
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let branch = decode::<RawBranch>(&response.body)?;
-    if branch.name != input.branch || !is_sha(&branch.commit.sha) {
+    let body = decode::<Value>(&response.body)?;
+    if body["name"].as_str() != Some(&input.branch)
+        || !body["commit"]["sha"].as_str().is_some_and(is_sha)
+    {
         return Err(invalid_response());
     }
-
-    Ok(json!({
-        "name": branch.name,
-        "headSha": branch.commit.sha,
-        "protected": branch.protected,
-    }))
+    Ok(body)
 }
 
 pub(crate) fn commit(
@@ -225,42 +152,11 @@ pub(crate) fn commit(
         ),
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let commit = decode::<RawCommit>(&response.body)?;
-    if !is_sha(&commit.sha) {
+    let body = decode::<Value>(&response.body)?;
+    if !body["sha"].as_str().is_some_and(is_sha) {
         return Err(invalid_response());
     }
-
-    let (message, message_truncated) = truncate_text(&commit.commit.message, MAX_MESSAGE_OUT_BYTES);
-    let files_truncated = commit.files.len() > MAX_LIST_ITEMS;
-    let files = commit
-        .files
-        .iter()
-        .take(MAX_LIST_ITEMS)
-        .map(|file| {
-            json!({
-                "path": file.filename,
-                "status": file.status,
-                "additions": file.additions,
-                "deletions": file.deletions,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    Ok(json!({
-        "sha": commit.sha,
-        "author": login_out(commit.author.as_ref()),
-        "authorName": commit.commit.author.as_ref().and_then(|author| author.name.as_deref()),
-        "authoredAt": commit.commit.author.as_ref().and_then(|author| author.date.as_deref()),
-        "message": message,
-        "messageTruncated": message_truncated,
-        "stats": commit.stats.map(|stats| json!({
-            "additions": stats.additions,
-            "deletions": stats.deletions,
-            "total": stats.total,
-        })),
-        "files": files,
-        "filesTruncated": files_truncated,
-    }))
+    Ok(body)
 }
 
 pub(crate) fn user(
@@ -273,20 +169,14 @@ pub(crate) fn user(
 
     let uri = url(base, &format!("/users/{}", percent_encode(&input.login)))?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let profile = decode::<RawProfile>(&response.body)?;
-    if !profile.login.eq_ignore_ascii_case(&input.login) {
+    let body = decode::<Value>(&response.body)?;
+    if !body["login"]
+        .as_str()
+        .is_some_and(|login| login.eq_ignore_ascii_case(&input.login))
+    {
         return Err(invalid_response());
     }
-
-    let (name, _) = bounded_optional(profile.name.as_deref(), 256);
-    Ok(json!({
-        "login": profile.login,
-        "type": profile.kind,
-        "name": name,
-        "publicRepos": profile.public_repos,
-        "followers": profile.followers,
-        "createdAt": timestamp(&profile.created_at)?,
-    }))
+    Ok(body)
 }
 
 #[cfg(test)]
@@ -355,7 +245,7 @@ mod tests {
         )
         .expect("branch read succeeds");
 
-        assert_eq!(output["headSha"], "a".repeat(40));
+        assert_eq!(output["commit"]["sha"], "a".repeat(40));
         assert_eq!(output["protected"], true);
 
         let error = invoke_with(
@@ -374,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_read_bounds_message_and_files() {
+    fn commit_read_preserves_upstream_nested_fields() {
         let output = invoke_with(
             &capability("gh.commit.read"),
             json!({"owner": "octo", "repo": "hello", "ref": "main"}),
@@ -389,6 +279,8 @@ mod tests {
                     200,
                     &json!({
                         "sha": "c".repeat(40),
+                        "html_url": "https://github.com/octo/hello/commit/c",
+                        "committer": null,
                         "commit": {
                             "message": "fix: everything",
                             "author": {"name": "Xavier", "date": "2026-08-15T00:00:00Z"},
@@ -405,11 +297,12 @@ mod tests {
         .expect("commit read succeeds");
 
         assert_eq!(output["sha"], "c".repeat(40));
-        assert_eq!(output["author"], "xavier");
-        assert_eq!(output["authorName"], "Xavier");
+        assert_eq!(output["html_url"], "https://github.com/octo/hello/commit/c");
+        assert!(output["committer"].is_null());
+        assert_eq!(output["author"]["login"], "xavier");
+        assert_eq!(output["commit"]["author"]["name"], "Xavier");
         assert_eq!(output["stats"]["total"], 4);
-        assert_eq!(output["files"][0]["path"], "src/lib.rs");
-        assert_eq!(output["filesTruncated"], false);
+        assert_eq!(output["files"][0]["filename"], "src/lib.rs");
     }
 
     #[test]

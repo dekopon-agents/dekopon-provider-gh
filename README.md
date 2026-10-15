@@ -38,8 +38,9 @@ Nothing piped is a usage error rather than an empty comment. `gh api` accepts on
 `repos/OWNER/REPO/commits/REF`). No arbitrary route or API flag is accepted.
 
 Flags that would change what a command means — `--json`, `--jq`, `--web`, `--checkout` — are
-rejected by name rather than accepted as no-ops. Successful invocations write bounded projected
-JSON to stdout; failures write to stderr with a nonzero status. Filter stdout with the shell's
+rejected by name rather than accepted as no-ops. The three finite `gh api` reads return bounded
+upstream JSON objects; other successful invocations still write projected JSON to stdout.
+Failures write to stderr with a nonzero status. Filter stdout with the shell's
 `jq` builtin.
 
 ## Capabilities

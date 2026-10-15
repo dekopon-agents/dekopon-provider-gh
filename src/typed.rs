@@ -221,7 +221,7 @@ capability!(
     BranchReadInput,
     "gh.branch.read",
     "branch.read",
-    "Reads one branch's head SHA and protection flag",
+    "Reads one branch's bounded GitHub API response",
     crate::repos::branch,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -231,7 +231,7 @@ capability!(
     CommitReadInput,
     "gh.commit.read",
     "commit.read",
-    "Reads one commit's message, author, stats, and bounded file list",
+    "Reads one commit's bounded GitHub API response",
     crate::repos::commit,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -241,7 +241,7 @@ capability!(
     UserReadInput,
     "gh.user.read",
     "user.read",
-    "Reads one user's public profile",
+    "Reads one user's bounded GitHub API response",
     crate::repos::user,
     EffectKind::ReadOnly,
     RiskLevel::Low

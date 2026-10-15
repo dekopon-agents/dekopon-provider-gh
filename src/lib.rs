@@ -316,7 +316,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             ids::BRANCH_READ,
-            "Reads one branch's head SHA and protection flag",
+            "Reads one branch's bounded GitHub API response",
             repo_schema(
                 json!({"branch": {"type": "string", "maxLength": MAX_REF_BYTES, "description": "Branch name."}}),
                 &["branch"],
@@ -324,7 +324,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             ids::COMMIT_READ,
-            "Reads one commit's message, author, stats, and bounded file list",
+            "Reads one commit's bounded GitHub API response",
             repo_schema(json!({"ref": ref_property()}), &["ref"]),
         ),
         read(
@@ -371,7 +371,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             ids::USER_READ,
-            "Reads one user's public profile",
+            "Reads one user's bounded GitHub API response",
             object_schema(
                 json!({
                     "login": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "GitHub login."},
