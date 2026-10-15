@@ -825,14 +825,7 @@ fn collect_pages(
     limit: usize,
     project: impl FnMut(Value) -> Result<Option<Value>, ProviderError>,
 ) -> Result<Vec<Value>, ProviderError> {
-    collect_pages_with(
-        send,
-        base,
-        path,
-        limit,
-        decode::<Vec<Value>>,
-        project,
-    )
+    collect_pages_with(send, base, path, limit, decode::<Vec<Value>>, project)
 }
 
 fn collect_pages_with(
