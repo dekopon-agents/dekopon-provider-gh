@@ -2,7 +2,7 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Twenty narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
+Seventeen narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
 output projections, and SHA-pinned review/merge writes. There is deliberately no `gh.api.*`
 passthrough: a path-level escape hatch would collapse per-capability policy into "everything the
 credential can reach".
@@ -34,9 +34,8 @@ denial, not an escalation.
 
 `--body-file -` is the one argument whose value is piped into the word. Proposal records only a
 marker; the authorized invocation reads at most 4 KiB of UTF-8 from stdin before any HTTP call.
-Nothing piped is a usage error rather than an empty comment. There is no `gh api`, so nothing pipes into a passthrough —
-a path-level escape hatch would collapse per-capability policy into "everything the credential can
-reach", and typing it says so.
+Nothing piped is a usage error rather than an empty comment. `gh api` accepts only three named GET routes (`users/LOGIN`, `repos/OWNER/REPO/branches/BRANCH`,
+`repos/OWNER/REPO/commits/REF`). No arbitrary route or API flag is accepted.
 
 Flags that would change what a command means — `--json`, `--jq`, `--web`, `--checkout` — are
 rejected by name rather than accepted as no-ops. Successful invocations write bounded projected
@@ -49,10 +48,10 @@ JSON to stdout; failures write to stderr with a nonzero status. Filter stdout wi
 |---|---|
 | `gh.auth.status` | read-only |
 | `gh.content.read` | read-only |
-| `gh.pull-request.list` / `.read` / `.files` / `.diff` / `.reviews` / `.status` | read-only |
+| `gh.pull-request.list` / `.read` / `.diff` / `.status` | read-only |
 | `gh.pull-request.approve` / `.comment` / `.request-changes` / `.merge` | external-write |
 | `gh.repo.read` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` | read-only |
-| `gh.issue.read` / `.list` / `gh.issue-comments.read` | read-only |
+| `gh.issue.read` / `.list` | read-only |
 | `gh.issue.comment` | external-write |
 
 `gh.pull-request.status` reads the pull request's head, then lists GitHub Actions workflow runs and
@@ -119,11 +118,11 @@ capabilities you enable (Read unless marked Write):
 | `gh.auth.status`, `gh.user.read` | None (public endpoint / rate limit) |
 | `gh.repo.read` | Metadata: Read |
 | `gh.content.read`, `gh.branch.read`, `gh.commit.read` | Contents: Read |
-| `gh.pull-request.list`, `.read`, `.files`, `.diff`, `.reviews` | Pull requests: Read |
+| `gh.pull-request.list`, `.read`, `.diff` | Pull requests: Read |
 | `gh.pull-request.status` | Pull requests: Read; Actions: Read; Commit statuses: Read |
 | `gh.pull-request.approve`, `.comment`, `.request-changes` | Pull requests: Write |
 | `gh.pull-request.merge` | Pull requests: Write; Contents: Write |
-| `gh.issue.read`, `.list`, `gh.issue-comments.read` | Issues: Read |
+| `gh.issue.read`, `.list` | Issues: Read |
 | `gh.issue.comment` | Issues: Write |
 
 | Error code | Message | What to do |

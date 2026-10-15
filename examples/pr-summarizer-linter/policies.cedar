@@ -26,7 +26,6 @@ when { context has via && context.via == "dekopon-gatewayd" };
 permit(principal == Dekopon::Principal::"maintainer",
        action in [Dekopon::Action::"gh.content.read",
                   Dekopon::Action::"gh.pull-request.read",
-                  Dekopon::Action::"gh.pull-request.files",
                   Dekopon::Action::"gh.pull-request.diff",
                   Dekopon::Action::"gh.pull-request.status",
                   Dekopon::Action::"gh.pull-request.comment"],

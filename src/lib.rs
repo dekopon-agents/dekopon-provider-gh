@@ -108,9 +108,7 @@ pub(crate) mod ids {
     pub(crate) const CONTENT_READ: &str = "gh.content.read";
     pub(crate) const PR_LIST: &str = "gh.pull-request.list";
     pub(crate) const PR_READ: &str = "gh.pull-request.read";
-    pub(crate) const PR_FILES: &str = "gh.pull-request.files";
     pub(crate) const PR_DIFF: &str = "gh.pull-request.diff";
-    pub(crate) const PR_REVIEWS: &str = "gh.pull-request.reviews";
     pub(crate) const PR_STATUS: &str = "gh.pull-request.status";
     pub(crate) const PR_APPROVE: &str = "gh.pull-request.approve";
     pub(crate) const PR_COMMENT: &str = "gh.pull-request.comment";
@@ -122,7 +120,6 @@ pub(crate) mod ids {
     pub(crate) const USER_READ: &str = "gh.user.read";
     pub(crate) const ISSUE_READ: &str = "gh.issue.read";
     pub(crate) const ISSUE_LIST: &str = "gh.issue.list";
-    pub(crate) const ISSUE_COMMENTS_READ: &str = "gh.issue-comments.read";
     pub(crate) const ISSUE_COMMENT: &str = "gh.issue.comment";
 }
 
@@ -138,9 +135,7 @@ impl Provider for Gh {
         typed::ContentRead,
         typed::PrList,
         typed::PrRead,
-        typed::PrFiles,
         typed::PrApprove,
-        typed::PrReviews,
         typed::PrComment,
         typed::PrRequestChanges,
         typed::PrDiff,
@@ -150,7 +145,6 @@ impl Provider for Gh {
         typed::CommitRead,
         typed::IssueRead,
         typed::IssueList,
-        typed::IssueCommentsRead,
         typed::IssueComment,
         typed::PrMerge,
         typed::UserRead,
@@ -187,9 +181,7 @@ where
         ids::CONTENT_READ => content::read(input, base, send),
         ids::PR_LIST => pulls::list(input, base, send),
         ids::PR_READ => pulls::read(input, base, send),
-        ids::PR_FILES => pulls::files(input, base, send),
         ids::PR_DIFF => pulls::diff(input, base, send),
-        ids::PR_REVIEWS => pulls::reviews(input, base, send),
         ids::PR_STATUS => pulls::status(input, base, send),
         ids::PR_APPROVE => reviews::approve(input, base, send),
         ids::PR_COMMENT => reviews::comment(input, base, send),
@@ -202,7 +194,6 @@ where
         ids::AUTH_STATUS => auth::status(input, base, send),
         ids::ISSUE_READ => issues::read(input, base, send),
         ids::ISSUE_LIST => issues::list(input, base, send),
-        ids::ISSUE_COMMENTS_READ => issues::comments(input, base, send),
         ids::ISSUE_COMMENT => issues::comment(input, base, send),
         _ => Err(ProviderError::new(
             "unknown-capability",
@@ -267,19 +258,6 @@ fn capabilities() -> Vec<ProviderCapability> {
             "Reads one pull request's metadata, state, and head/base",
             repo_schema(json!({"number": number_property()}), &["number"]),
         ),
-        read(
-            ids::PR_FILES,
-            "Lists one pull request's changed files with bounded patches",
-            repo_schema(
-                json!({
-                    "number": number_property(),
-                    "page": page_property(),
-                    "perPage": per_page_property(30),
-                    "includePatch": {"type": "boolean", "description": "Include a bounded unified patch per file; defaults to true."},
-                }),
-                &["number"],
-            ),
-        ),
         write(
             ids::PR_APPROVE,
             "Submits an APPROVE review pinned to the verified head SHA",
@@ -294,18 +272,6 @@ fn capabilities() -> Vec<ProviderCapability> {
             ),
         ),
         // Tier 2 — review completeness.
-        read(
-            ids::PR_REVIEWS,
-            "Lists existing reviews on one pull request",
-            repo_schema(
-                json!({
-                    "number": number_property(),
-                    "page": page_property(),
-                    "perPage": per_page_property(20),
-                }),
-                &["number"],
-            ),
-        ),
         write(
             ids::PR_COMMENT,
             "Submits a COMMENT review pinned to the verified head SHA",
@@ -376,18 +342,6 @@ fn capabilities() -> Vec<ProviderCapability> {
                     "perPage": per_page_property(20),
                 }),
                 &[],
-            ),
-        ),
-        read(
-            ids::ISSUE_COMMENTS_READ,
-            "Lists comments on one issue or pull request",
-            repo_schema(
-                json!({
-                    "number": number_property(),
-                    "page": page_property(),
-                    "perPage": per_page_property(20),
-                }),
-                &["number"],
             ),
         ),
         write(
@@ -973,7 +927,7 @@ mod tests {
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 20);
+        assert_eq!(manifest.capabilities.len(), 17);
 
         let external_writes = manifest
             .capabilities
@@ -1032,7 +986,7 @@ mod tests {
                 .capabilities
                 .iter()
                 .find(|capability| capability.id == previous.id)
-                .expect("every prior capability remains declared");
+                .expect("every current capability is declared");
             assert_eq!(current.description, previous.description, "{}", previous.id);
             assert_ne!(current.description, previous.id.as_str());
         }
@@ -1114,7 +1068,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 20);
+        assert_eq!(manifest.capabilities.len(), 17);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()

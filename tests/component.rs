@@ -13,7 +13,19 @@ fn component() -> std::path::PathBuf {
 #[test]
 fn manifest_keeps_read_and_write_grants_independent() {
     let manifest = provider::manifest::<Gh>().expect("closed manifest");
-    assert_eq!(manifest.capabilities.len(), 20);
+    assert_eq!(manifest.capabilities.len(), 17);
+    for removed in [
+        "gh.pull-request.files",
+        "gh.pull-request.reviews",
+        "gh.issue-comments.read",
+    ] {
+        assert!(
+            !manifest
+                .capabilities
+                .iter()
+                .any(|cap| cap.id.as_str() == removed)
+        );
+    }
     for cap in &manifest.capabilities {
         assert_eq!(cap.input_schema["additionalProperties"], false);
         assert!(cap.id.as_str().starts_with("gh."));
@@ -51,6 +63,61 @@ fn manifest_keeps_read_and_write_grants_independent() {
             assert!(marker.is_none(), "{} cannot read piped body", capability.id);
         }
     }
+}
+
+#[test]
+fn removed_ids_cannot_run_and_existing_api_reads_require_their_own_grants() {
+    for removed in [
+        "gh.pull-request.files",
+        "gh.pull-request.reviews",
+        "gh.issue-comments.read",
+    ] {
+        let native = Native::<Gh>::new();
+        let result = native.call(
+            removed,
+            &json!({"owner":"octo","repo":"hello","number":7}).to_string(),
+        );
+        assert_ne!(result.status, 0, "{removed}");
+        assert!(native.requests().is_empty(), "{removed}");
+    }
+    for (id, input) in [
+        ("gh.user.read", json!({"login":"octo"})),
+        (
+            "gh.branch.read",
+            json!({"owner":"octo","repo":"hello","branch":"main"}),
+        ),
+        (
+            "gh.commit.read",
+            json!({"owner":"octo","repo":"hello","ref":"main"}),
+        ),
+        (
+            "gh.content.read",
+            json!({"owner":"octo","repo":"hello","path":"README.md"}),
+        ),
+    ] {
+        let denied = Harness::<Gh>::get(component()).call(id, input);
+        assert!(denied.is_err(), "{id} must have its own HTTP grant");
+    }
+}
+
+#[test]
+fn api_user_read_uses_only_the_existing_user_grant() -> Result<(), Box<dyn std::error::Error>> {
+    let args = ["api", "users/octo"].map(str::to_owned);
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = provider::command::<Gh>(&args, false)
+    else {
+        panic!("finite route must propose")
+    };
+    assert_eq!(capability.as_str(), "gh.user.read");
+    let output = scripted_component_get(
+        Response { status: 200, headers: vec![], body: br#"{"login":"octo","type":"User","public_repos":1,"followers":2,"created_at":"2026-01-01T00:00:00Z"}"#.to_vec() },
+        capability.as_str(),
+        input,
+        "/users/octo",
+    )?;
+    assert_eq!(output.status, 0, "{}", output.stderr);
+    Ok(())
 }
 
 #[test]

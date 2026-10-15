@@ -95,21 +95,6 @@ constraintSets:
         maxRequestBytes: 16384
         maxResponseBytes: 262144
         allowPlaintextLoopback: false
-  gh.pull-request.files:
-    provider: gh
-    effect: read-only
-    risk: Low
-    credential: github-pat
-    constraints:
-      timeoutMs: 10000
-      maxOutputBytes: 131072
-      http:
-        allowedHosts: [api.github.com]
-        allowedMethods: [GET]
-        maxRequests: 1
-        maxRequestBytes: 16384
-        maxResponseBytes: 1048576
-        allowPlaintextLoopback: false
   gh.pull-request.diff:
     provider: gh
     effect: read-only

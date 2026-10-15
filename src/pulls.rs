@@ -237,7 +237,6 @@ pub(crate) fn list(
 }
 
 // ---------------------------------------------------------------------------
-// gh.pull-request.files
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -264,6 +263,7 @@ struct RawFile {
     patch: Option<String>,
 }
 
+#[expect(dead_code, reason = "file selection moves into pr view in S2")]
 pub(crate) fn files(
     input: Value,
     base: &Base,
@@ -355,7 +355,6 @@ pub(crate) fn diff(
 }
 
 // ---------------------------------------------------------------------------
-// gh.pull-request.reviews
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -384,6 +383,7 @@ struct RawReviewItem {
     body: Option<String>,
 }
 
+#[expect(dead_code, reason = "review selection moves into pr view in S2")]
 pub(crate) fn reviews(
     input: Value,
     base: &Base,
@@ -761,60 +761,6 @@ mod tests {
     }
 
     #[test]
-    fn files_bounds_patches_with_an_exact_flag() {
-        let long_patch = "x".repeat(crate::MAX_PATCH_OUT_BYTES + 1);
-        let output = invoke_with(
-            &capability("gh.pull-request.files"),
-            json!({"owner": "octo", "repo": "hello", "number": 7}),
-            scripted(vec![step(
-                |request| {
-                    assert_eq!(
-                        request.uri,
-                        "https://api.github.com/repos/octo/hello/pulls/7/files?page=1&per_page=30"
-                    );
-                },
-                json_response(
-                    200,
-                    &json!([
-                        {"filename": "src/lib.rs", "status": "modified", "additions": 5, "deletions": 1, "patch": "@@ -1 +1 @@"},
-                        {"filename": "big.rs", "status": "added", "additions": 100, "deletions": 0, "patch": long_patch},
-                    ]),
-                ),
-            )]),
-        )
-        .expect("files succeeds");
-
-        let files = output["files"].as_array().expect("files");
-        assert_eq!(files[0]["patch"], "@@ -1 +1 @@");
-        assert_eq!(files[0]["patchTruncated"], false);
-        assert_eq!(files[1]["patchTruncated"], true);
-        assert_eq!(
-            files[1]["patch"].as_str().expect("patch").len(),
-            crate::MAX_PATCH_OUT_BYTES
-        );
-    }
-
-    #[test]
-    fn files_omits_patches_when_asked() {
-        let output = invoke_with(
-            &capability("gh.pull-request.files"),
-            json!({"owner": "octo", "repo": "hello", "number": 7, "includePatch": false}),
-            scripted(vec![step(
-                |_| {},
-                json_response(
-                    200,
-                    &json!([
-                        {"filename": "src/lib.rs", "status": "modified", "additions": 5, "deletions": 1, "patch": "@@ -1 +1 @@"},
-                    ]),
-                ),
-            )]),
-        )
-        .expect("files succeeds");
-
-        assert!(output["files"][0].get("patch").is_none());
-    }
-
-    #[test]
     fn diff_requests_the_diff_media_type() {
         let output = invoke_with(
             &capability("gh.pull-request.diff"),
@@ -838,33 +784,6 @@ mod tests {
 
         assert_eq!(output["diff"], "diff --git a/x b/x\n");
         assert_eq!(output["diffTruncated"], false);
-    }
-
-    #[test]
-    fn reviews_projects_bounded_items() {
-        let output = invoke_with(
-            &capability("gh.pull-request.reviews"),
-            json!({"owner": "octo", "repo": "hello", "number": 7}),
-            scripted(vec![step(
-                |request| {
-                    assert_eq!(
-                        request.uri,
-                        "https://api.github.com/repos/octo/hello/pulls/7/reviews?page=1&per_page=20"
-                    );
-                },
-                json_response(
-                    200,
-                    &json!([
-                        {"id": 900, "state": "APPROVED", "user": {"login": "boss"}, "commit_id": "c".repeat(40), "submitted_at": "2026-08-10T00:00:00Z", "body": "lgtm"},
-                    ]),
-                ),
-            )]),
-        )
-        .expect("reviews succeeds");
-
-        assert_eq!(output["reviews"][0]["reviewId"], 900);
-        assert_eq!(output["reviews"][0]["author"], "boss");
-        assert_eq!(output["reviews"][0]["state"], "APPROVED");
     }
 
     #[test]

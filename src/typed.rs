@@ -147,32 +147,12 @@ capability!(
     RiskLevel::Low
 );
 capability!(
-    PrFiles,
-    PrFilesInput,
-    "gh.pull-request.files",
-    "pull-request.files",
-    "Lists one pull request's changed files with bounded patches",
-    crate::pulls::files,
-    EffectKind::ReadOnly,
-    RiskLevel::Low
-);
-capability!(
     PrDiff,
     PrDiffInput,
     "gh.pull-request.diff",
     "pull-request.diff",
     "Reads one pull request's unified diff, truncated with a marker",
     crate::pulls::diff,
-    EffectKind::ReadOnly,
-    RiskLevel::Low
-);
-capability!(
-    PrReviews,
-    PrReviewsInput,
-    "gh.pull-request.reviews",
-    "pull-request.reviews",
-    "Lists existing reviews on one pull request",
-    crate::pulls::reviews,
     EffectKind::ReadOnly,
     RiskLevel::Low
 );
@@ -287,16 +267,6 @@ capability!(
     RiskLevel::Low
 );
 capability!(
-    IssueCommentsRead,
-    IssueCommentsReadInput,
-    "gh.issue-comments.read",
-    "issue-comments.read",
-    "Lists comments on one issue or pull request",
-    crate::issues::comments,
-    EffectKind::ReadOnly,
-    RiskLevel::Low
-);
-capability!(
     IssueComment,
     IssueCommentInput,
     "gh.issue.comment",
@@ -313,9 +283,7 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
         "gh.content.read" => Proposal::to::<ContentRead>(ContentReadInput(input)),
         "gh.pull-request.list" => Proposal::to::<PrList>(PrListInput(input)),
         "gh.pull-request.read" => Proposal::to::<PrRead>(PrReadInput(input)),
-        "gh.pull-request.files" => Proposal::to::<PrFiles>(PrFilesInput(input)),
         "gh.pull-request.diff" => Proposal::to::<PrDiff>(PrDiffInput(input)),
-        "gh.pull-request.reviews" => Proposal::to::<PrReviews>(PrReviewsInput(input)),
         "gh.pull-request.status" => Proposal::to::<PrStatus>(PrStatusInput(input)),
         "gh.pull-request.approve" => Proposal::to::<PrApprove>(PrApproveInput(input)),
         "gh.pull-request.comment" => Proposal::to::<PrComment>(PrCommentInput(input)),
@@ -329,9 +297,6 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
         "gh.user.read" => Proposal::to::<UserRead>(UserReadInput(input)),
         "gh.issue.read" => Proposal::to::<IssueRead>(IssueReadInput(input)),
         "gh.issue.list" => Proposal::to::<IssueList>(IssueListInput(input)),
-        "gh.issue-comments.read" => {
-            Proposal::to::<IssueCommentsRead>(IssueCommentsReadInput(input))
-        }
         "gh.issue.comment" => Proposal::to::<IssueComment>(IssueCommentInput(input)),
         _ => unreachable!("the command dispatch uses only declared IDs"),
     }

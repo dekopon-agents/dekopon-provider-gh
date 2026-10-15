@@ -196,6 +196,7 @@ pub(crate) fn list(
     }))
 }
 
+#[expect(dead_code, reason = "comment selection moves into issue view in S2")]
 pub(crate) fn comments(
     input: Value,
     base: &Base,
@@ -351,32 +352,6 @@ mod tests {
         let items = output["issues"].as_array().expect("items");
         assert_eq!(items[0]["isPullRequest"], false);
         assert_eq!(items[1]["isPullRequest"], true);
-    }
-
-    #[test]
-    fn comments_are_bounded_projections() {
-        let output = invoke_with(
-            &capability("gh.issue-comments.read"),
-            json!({"owner": "octo", "repo": "hello", "number": 5, "perPage": 2}),
-            scripted(vec![step(
-                |request| {
-                    assert_eq!(
-                        request.uri,
-                        "https://api.github.com/repos/octo/hello/issues/5/comments?page=1&per_page=2"
-                    );
-                },
-                json_response(
-                    200,
-                    &json!([
-                        {"id": 11, "user": {"login": "a"}, "body": "first", "created_at": "2026-08-01T00:00:00Z"},
-                    ]),
-                ),
-            )]),
-        )
-        .expect("comments succeed");
-
-        assert_eq!(output["comments"][0]["commentId"], 11);
-        assert_eq!(output["comments"][0]["body"], "first");
     }
 
     #[test]
