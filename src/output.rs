@@ -42,6 +42,44 @@ pub(crate) fn fields(area: &str, verb: &str) -> Option<String> {
     Some(result)
 }
 
+pub(crate) fn validate_selection(
+    id: &str,
+    selection: Option<&Value>,
+    kind: Option<&Value>,
+) -> Result<(), ProviderError> {
+    if selection.is_none() && kind.is_some() {
+        return Err(crate::invalid_input());
+    }
+    let Some(selection) = selection else {
+        return Ok(());
+    };
+    let Value::String(selection) = selection else {
+        return Err(crate::invalid_input());
+    };
+    let (area, verb) = match (id, kind.and_then(Value::as_str)) {
+        ("gh.repo.read", None) => ("repo", "view"),
+        ("gh.content.read", Some("read-file")) => ("repo", "read-file"),
+        ("gh.content.read", Some("read-dir")) => ("repo", "read-dir"),
+        ("gh.pull-request.read", None) => ("pr", "view"),
+        ("gh.pull-request.list", None) => ("pr", "list"),
+        ("gh.issue.read", None) => ("issue", "view"),
+        ("gh.issue.list", None) => ("issue", "list"),
+        _ => return Err(crate::invalid_input()),
+    };
+    let allowed = fields(area, verb).expect("CLI fields exist");
+    if selection.len() > 512
+        || (!selection.is_empty() && {
+            let mut seen = std::collections::HashSet::new();
+            selection
+                .split(',')
+                .any(|field| !allowed.split(',').any(|entry| field == entry) || !seen.insert(field))
+        })
+    {
+        return Err(crate::invalid_input());
+    }
+    Ok(())
+}
+
 pub(crate) fn select(value: &Value, fields: &str, list: bool) -> Value {
     let select_one = |item: &Value| {
         let mut selected = Map::new();
@@ -77,6 +115,18 @@ pub(crate) fn select(value: &Value, fields: &str, list: bool) -> Value {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    #[test]
+    fn native_invalid_selection_has_typed_invalid_input_code() {
+        let error = super::validate_selection("gh.repo.read", Some(&json!("unknown")), None)
+            .expect_err("unknown field must fail before HTTP");
+        assert_eq!(error.code(), "invalid-input");
+    }
+}
+
 pub(crate) fn render(
     id: &str,
     input: &Value,
@@ -85,12 +135,21 @@ pub(crate) fn render(
 ) -> Result<String, ProviderError> {
     let list = matches!(id, "gh.pull-request.list" | "gh.issue.list")
         || (id == "gh.content.read" && input.get("_cliKind") == Some(&json!("read-dir")));
+    if id == "gh.content.read" {
+        let expected = if list { "dir" } else { "file" };
+        if value["type"] != expected {
+            return Err(crate::invalid_response());
+        }
+    }
     let source = match id {
         "gh.pull-request.list" => &value["pullRequests"],
         "gh.issue.list" => &value["issues"],
         "gh.content.read" if list => &value["entries"],
         _ => value,
     };
+    if list && !source.is_array() {
+        return Err(crate::invalid_response());
+    }
     if !selection.is_empty() {
         return serde_json::to_string(&select(source, selection, list))
             .map(|text| format!("{text}\n"))

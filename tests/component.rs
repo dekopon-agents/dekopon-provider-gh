@@ -321,13 +321,87 @@ fn component_list_json_is_an_array_with_nested_logins_and_nulls()
 }
 
 #[test]
+fn component_content_kind_mismatch_never_renders_success() -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut results = Vec::new();
+    for (words, body) in [
+        (
+            &[
+                "repo",
+                "read-dir",
+                "README.md",
+                "-R",
+                "octo/hello",
+                "--json",
+                "name",
+            ][..],
+            json!({"type":"file","path":"README.md","sha":"abc","size":3,"encoding":"base64","content":"eWVz"}),
+        ),
+        (
+            &[
+                "repo",
+                "read-file",
+                "README.md",
+                "-R",
+                "octo/hello",
+                "--json",
+                "content",
+            ][..],
+            json!([{"name":"entry","type":"file","sha":"abc","size":3}]),
+        ),
+    ] {
+        let CommandRunOutcome::Proposed {
+            capability, input, ..
+        } = provider::command::<Gh>(
+            &words
+                .iter()
+                .map(|word| (*word).to_owned())
+                .collect::<Vec<_>>(),
+            false,
+        )
+        else {
+            panic!("must propose {words:?}")
+        };
+        assert_eq!(capability.as_str(), "gh.content.read");
+        let output = scripted_component_get(
+            Response {
+                status: 200,
+                headers: vec![],
+                body: body.to_string().into_bytes(),
+            },
+            capability.as_str(),
+            input,
+            "/repos/octo/hello/contents/README.md",
+        )?;
+        results.push((words[1], output.status, output.stdout));
+    }
+    assert_eq!(
+        results
+            .iter()
+            .map(|(_, status, stdout)| *status != 0 && stdout.is_empty())
+            .collect::<Vec<_>>(),
+        vec![true, true],
+        "read-dir on file and read-file on directory must both fail: {results:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn native_invalid_cli_selection_never_sends_http() {
-    let native = Native::<Gh>::new();
+    let native = Native::<Gh>::new().http(HttpScript::new(
+        "api.github.com",
+        "GET",
+        Response {
+            status: 200,
+            headers: vec![],
+            body: br#"{"name":"hello"}"#.to_vec(),
+        },
+    ));
     let result = native.call(
         "gh.repo.read",
         &json!({"owner":"octo","repo":"hello","_cliOutput":"unknown"}).to_string(),
     );
-    assert_ne!(result.status, 0);
+    assert_eq!(result.status, 2);
     assert!(native.requests().is_empty());
 }
 

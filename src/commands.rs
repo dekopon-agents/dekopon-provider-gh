@@ -1107,11 +1107,12 @@ mod tests {
                 let outcome =
                     dekopon_provider_sdk::provider::command::<crate::Gh>(&argv(&words), false);
                 assert!(
-                    matches!(
-                        outcome,
-                        dekopon_provider_sdk::CommandRunOutcome::Failed { .. }
-                    ),
+                    matches!(outcome, dekopon_provider_sdk::CommandRunOutcome::Failed { error } if error.code == "usage"),
                     "{words:?}"
+                );
+                assert_eq!(
+                    dekopon_provider_sdk::provider::Code::USAGE.status().get(),
+                    2
                 );
             }
         }

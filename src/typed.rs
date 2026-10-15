@@ -86,27 +86,7 @@ macro_rules! capability {
                 }
                 let selection = input.as_object_mut().and_then(|object| object.remove("_cliOutput"));
                 let kind = input.as_object_mut().and_then(|object| object.remove("_cliKind"));
-                if selection.is_none() && kind.is_some() {
-                    return Err(crate::invalid_input());
-                }
-                if let Some(selection) = selection.as_ref() {
-                    let Value::String(selection) = selection else { return Err(crate::invalid_input()); };
-                    let (area, verb) = match ($id, kind.as_ref().and_then(Value::as_str)) {
-                        ("gh.repo.read", None) => ("repo", "view"),
-                        ("gh.content.read", Some("read-file")) => ("repo", "read-file"),
-                        ("gh.content.read", Some("read-dir")) => ("repo", "read-dir"),
-                        ("gh.pull-request.read", None) => ("pr", "view"),
-                        ("gh.pull-request.list", None) => ("pr", "list"),
-                        ("gh.issue.read", None) => ("issue", "view"),
-                        ("gh.issue.list", None) => ("issue", "list"),
-                        _ => return Err(crate::invalid_input()),
-                    };
-                    let allowed = crate::output::fields(area, verb).expect("CLI fields exist");
-                    if selection.len() > 512 || (!selection.is_empty() && {
-                        let mut seen = std::collections::HashSet::new();
-                        selection.split(',').any(|field| !allowed.split(',').any(|entry| field == entry) || !seen.insert(field))
-                    }) { return Err(crate::invalid_input()); }
-                }
+                crate::output::validate_selection($id, selection.as_ref(), kind.as_ref())?;
                 let mut render_input = input.clone();
                 if let Some(kind) = kind { render_input["_cliKind"] = kind; }
                 if selection.is_some() && matches!($id, "gh.repo.read" | "gh.content.read") {
