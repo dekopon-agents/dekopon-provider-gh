@@ -137,6 +137,10 @@ fn component_one_get_allows_a_read_but_no_write_reaches_http() {
             response.clone(),
         ));
         let base = format!("{}/gh", harness.origin().expect("script origin"));
+        let authority = base
+            .strip_prefix("https://")
+            .and_then(|value| value.strip_suffix("/gh"))
+            .expect("HTTPS script authority");
         let result = harness.settings(json!({"baseUrl": base})).call(id, input);
         match result {
             Err(HarnessError::Invocation(failure)) => {
@@ -145,10 +149,62 @@ fn component_one_get_allows_a_read_but_no_write_reaches_http() {
                 for call in &failure.http_calls {
                     assert_eq!(call.method, "GET", "{id} wrote through a GET-only fixture");
                     assert_eq!(call.status, Some(200), "{id} pre-read failed");
+                    assert_eq!(call.authority, authority, "{id} pre-read authority");
                 }
             }
             other => panic!("{id} wrote with one GET-only request: {other:?}"),
         }
+    }
+}
+
+#[test]
+fn native_pr_write_pre_reads_use_the_scoped_uri_without_guest_authorization() {
+    let pull = json!({"number":7,"title":"Review","state":"open","draft":false,"merged":false,"user":{"login":"octo"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","head":{"ref":"feature","sha":"a".repeat(40)},"base":{"ref":"main","sha":"b".repeat(40)}});
+    for (id, input) in [
+        (
+            "gh.pull-request.approve",
+            json!({"owner":"octo","repo":"hello","number":7}),
+        ),
+        (
+            "gh.pull-request.comment",
+            json!({"owner":"octo","repo":"hello","number":7,"body":"review"}),
+        ),
+        (
+            "gh.pull-request.request-changes",
+            json!({"owner":"octo","repo":"hello","number":7,"body":"review"}),
+        ),
+        (
+            "gh.pull-request.merge",
+            json!({"owner":"octo","repo":"hello","number":7,"mergeMethod":"merge"}),
+        ),
+    ] {
+        let native = Native::<Gh>::new()
+            .settings(json!({"baseUrl":"https://api.github.com/gh"}))
+            .http(HttpScript::new(
+                "api.github.com",
+                "GET",
+                Response {
+                    status: 200,
+                    headers: vec![],
+                    body: pull.to_string().into_bytes(),
+                },
+            ));
+        let _output = native.call(id, &input.to_string());
+        let requests = native.requests();
+        assert_eq!(requests.len(), 2, "{id} must pre-read before submission");
+        let read = &requests[0];
+        assert_eq!(read.method, "GET", "{id}");
+        assert_eq!(
+            read.uri, "https://api.github.com/gh/repos/octo/hello/pulls/7",
+            "{id}"
+        );
+        assert!(
+            !read
+                .headers
+                .iter()
+                .any(|header| header.name.eq_ignore_ascii_case("authorization")),
+            "{id} guest sent authorization"
+        );
     }
 }
 
