@@ -419,10 +419,10 @@ fn capabilities() -> Vec<ProviderCapability> {
             repo_schema(
                 json!({
                     "number": number_property(),
-                    "mergeMethod": {"type": "string", "enum": ["merge", "squash", "rebase"], "description": "Merge strategy; defaults to merge."},
+                    "mergeMethod": {"type": "string", "enum": ["merge", "squash", "rebase"], "description": "Required merge strategy."},
                     "expectedHeadSha": sha_property(),
                 }),
-                &["number"],
+                &["number", "mergeMethod"],
             ),
         ),
         read(

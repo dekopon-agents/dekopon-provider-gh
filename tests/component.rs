@@ -36,13 +36,35 @@ fn manifest_keeps_read_and_write_grants_independent() {
         assert_eq!(cap.input_schema["additionalProperties"], false);
         assert!(cap.id.as_str().starts_with("gh."));
     }
-    assert_eq!(
-        manifest
-            .capabilities
-            .iter()
-            .filter(|c| c.effect == EffectKind::ExternalWrite)
-            .count(),
-        5
+    let writes = [
+        "gh.pull-request.approve",
+        "gh.pull-request.comment",
+        "gh.pull-request.request-changes",
+        "gh.pull-request.merge",
+        "gh.issue.comment",
+    ];
+    let actual: std::collections::BTreeSet<_> = manifest
+        .capabilities
+        .iter()
+        .filter(|c| c.effect == EffectKind::ExternalWrite)
+        .map(|c| c.id.as_str())
+        .collect();
+    assert_eq!(actual, writes.into_iter().collect());
+    let merge = manifest
+        .capabilities
+        .iter()
+        .find(|c| c.id.as_str() == "gh.pull-request.merge")
+        .expect("merge capability");
+    assert!(
+        merge.input_schema["required"]
+            .as_array()
+            .expect("required fields")
+            .contains(&json!("mergeMethod"))
+    );
+    assert!(
+        merge.input_schema["properties"]["mergeMethod"]
+            .get("default")
+            .is_none()
     );
     assert_eq!(
         manifest
@@ -67,6 +89,39 @@ fn manifest_keeps_read_and_write_grants_independent() {
             assert_eq!(marker.expect("piped body marker")["const"], true);
         } else {
             assert!(marker.is_none(), "{} cannot read piped body", capability.id);
+        }
+    }
+}
+
+#[test]
+fn component_read_grant_does_not_authorize_any_write() {
+    for (id, input) in [
+        (
+            "gh.pull-request.approve",
+            json!({"owner":"octo","repo":"hello","number":7}),
+        ),
+        (
+            "gh.pull-request.comment",
+            json!({"owner":"octo","repo":"hello","number":7,"body":"review"}),
+        ),
+        (
+            "gh.pull-request.request-changes",
+            json!({"owner":"octo","repo":"hello","number":7,"body":"review"}),
+        ),
+        (
+            "gh.pull-request.merge",
+            json!({"owner":"octo","repo":"hello","number":7,"mergeMethod":"merge"}),
+        ),
+        (
+            "gh.issue.comment",
+            json!({"owner":"octo","repo":"hello","number":7,"body":"comment"}),
+        ),
+    ] {
+        match Harness::<Gh>::get(component()).call(id, input) {
+            Err(HarnessError::Invocation(failure)) => {
+                assert!(failure.http_calls.is_empty(), "{id} denial sent HTTP");
+            }
+            other => panic!("{id} with read-only HTTP grant: {other:?}"),
         }
     }
 }

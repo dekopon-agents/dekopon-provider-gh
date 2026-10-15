@@ -270,7 +270,11 @@ fn pull_requests() -> Command {
                 .arg(event_flag("merge", "Merge with a merge commit"))
                 .arg(event_flag("squash", "Squash and merge"))
                 .arg(event_flag("rebase", "Rebase and merge"))
-                .group(ArgGroup::new("method").args(["merge", "squash", "rebase"]))
+                .group(
+                    ArgGroup::new("method")
+                        .args(["merge", "squash", "rebase"])
+                        .required(true),
+                )
                 .arg(match_head_commit()),
         )
 }
@@ -1197,6 +1201,71 @@ mod tests {
             stderr.starts_with("error: unexpected argument '--approve'"),
             "{stderr:?}"
         );
+    }
+
+    #[test]
+    fn proposed_homelab_prompt_lines_parse_with_only_placeholders_replaced() {
+        let lines = [
+            ("gh pr view N -R owner/repo", "gh.pull-request.read"),
+            ("gh pr diff N -R owner/repo", "gh.pull-request.diff"),
+            (
+                "gh pr view N -R owner/repo --json files",
+                "gh.pull-request.read",
+            ),
+            (
+                "gh repo read-file PATH -R owner/repo --ref SHA",
+                "gh.content.read",
+            ),
+            (
+                "gh pr review N -R owner/repo --approve",
+                "gh.pull-request.approve",
+            ),
+            (
+                "gh pr view N -R owner/repo --json headRefOid",
+                "gh.pull-request.read",
+            ),
+            ("gh api users/LOGIN", "gh.user.read"),
+        ];
+        assert_eq!(lines.len(), 7);
+        for (literal, expected) in lines {
+            let concrete = literal
+                .replace("users/LOGIN", "users/octo")
+                .replace(" PATH ", " README.md ")
+                .replace(" SHA", " main")
+                .replace(" N ", " 7 ");
+            let words = concrete
+                .strip_prefix("gh ")
+                .expect("literal gh line")
+                .split_whitespace()
+                .collect::<Vec<_>>();
+            let (id, _) = dispatch(&words);
+            assert_eq!(id, expected, "{literal}");
+        }
+        let help = "gh <area> <verb> --help";
+        let concrete = help.replace("<area>", "pr").replace("<verb>", "view");
+        let words = concrete
+            .strip_prefix("gh ")
+            .expect("literal help line")
+            .split_whitespace()
+            .collect::<Vec<_>>();
+        let (stdout, stderr, status) = rendered(&words);
+        assert_eq!(status, 0, "{help}: {stderr}");
+        assert!(stdout.contains("Usage: gh pr view"));
+    }
+
+    #[test]
+    fn merge_requires_exactly_one_method_before_proposal() {
+        for words in [
+            &["pr", "merge", "7", "-R", "o/r"][..],
+            &["pr", "merge", "7", "-R", "o/r", "--merge", "--squash"],
+        ] {
+            let (stdout, _, status) = rendered(words);
+            assert_eq!(status, 2, "{words:?}");
+            assert!(stdout.is_empty());
+        }
+        let (id, input) = dispatch(&["pr", "merge", "7", "-R", "o/r", "--rebase"]);
+        assert_eq!(id, "gh.pull-request.merge");
+        assert_eq!(input["mergeMethod"], "rebase");
     }
 
     #[test]

@@ -117,7 +117,12 @@ the authority in the owner's `baseUrl`; the guest receives no token. See the
 [broker constraints](examples/pr-summarizer-linter/broker.yaml). Never put a token in capability
 input, model text, or provider settings.
 
-Grant each capability separately; the [reviewer example](examples/pr-summarizer-linter/README.md)
+Grant each capability separately. `gh pr merge N -R owner/repo` requires exactly one of
+`--merge`, `--squash`, or `--rebase`; the typed merge input requires `mergeMethod`.
+Review submission pins the head observed by the provider but cannot prevent a push between
+its pre-read and submission. `--match-head-commit SHA` on merge refuses a head that moved
+before the pre-read; GitHub's merge SHA guard also checks the subsequent write.
+The [reviewer example](examples/pr-summarizer-linter/README.md)
 shows the broker grant steps. `gh.auth.status` is read-only, Low risk, and needs one allowed GET.
 It reports quota and available credential-header metadata, not repository visibility or credential
 kind.
