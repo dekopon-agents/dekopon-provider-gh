@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-16
+
+### Changed
+
+- gh now refuses removed CLI words and routes finite API reads and numbered checks through existing capabilities.
+- Finite read commands support closed `--json` selections and non-TTY text output.
+- Pull request and issue reads print upstream-shaped selected JSON or command-specific text, with bounded view details.
+- Repository content commands refuse mismatched file and directory responses.
+- `gh pr list` and `gh issue list` collect up to 100 matching rows across bounded pages without partial output.
+- `gh repo list OWNER` enumerates public repositories through a separate read grant.
+- `gh search prs`, `issues`, `repos`, `code` and `commits` accept explicit owner or repository scope with bounded results.
+- `gh pr checks` now reports third-party checks and exits 8 while pending, 1 on failure or no checks, and 3 on provider-observed errors.
+- `gh api user` returns the authenticated GitHub identity under its own read grant.
+- Pull request merge requires an explicit merge method.
+- Three redundant read grants are no longer declared.
+
+### Fixed
+
+- Finite `gh api` user, branch and commit reads now return upstream-shaped JSON.
+- Build with patched rustls 0.23.46 and Wasmtime 49.0.3.
+
 ## [0.9.0] - 2026-10-12
 
 ### Added
