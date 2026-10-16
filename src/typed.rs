@@ -11,9 +11,21 @@ use crate::{Gh, GhSettings, error::ProviderError};
 // has its own schema and keeps the existing native validation at the HTTP boundary.
 macro_rules! capability {
     ($name:ident, $input:ident, $id:expr, $short:expr, $description:expr, $handler:path, $effect:expr, $risk:expr) => {
-        #[derive(Deserialize, Serialize)]
+        #[derive(Serialize)]
         #[serde(transparent)]
         pub struct $input(Value);
+        impl<'de> Deserialize<'de> for $input {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let input = Value::deserialize(deserializer)?;
+                if (matches!($id, crate::ids::USER_SELF_READ) && input != Value::Object(Default::default()))
+                    || input.get("_cli").is_some()
+                    || crate::output::validate_selection($id, input.get("_cliOutput"), input.get("_cliKind")).is_err()
+                {
+                    return Err(serde::de::Error::custom("invalid gh output selection"));
+                }
+                Ok(Self(input))
+            }
+        }
         impl JsonSchema for $input {
             fn schema_name() -> std::borrow::Cow<'static, str> {
                 stringify!($input).into()
@@ -24,6 +36,15 @@ macro_rules! capability {
                     .find(|c| c.id.as_str() == $id)
                     .expect("declared gh capability")
                     .input_schema;
+                if matches!($id, "gh.pull-request.list" | "gh.pull-request.read" | "gh.issue.list" | "gh.issue.read" | "gh.repo.read" | "gh.repo.list" | "gh.content.read" | "gh.search.prs" | "gh.search.issues" | "gh.search.repos" | "gh.search.code" | "gh.search.commits" | "gh.pull-request.status") {
+                    schema["properties"]["_cliOutput"] = serde_json::json!({"type": "string", "maxLength": 512});
+                    if matches!($id, "gh.pull-request.list" | "gh.issue.list" | "gh.repo.list" | "gh.search.prs" | "gh.search.issues" | "gh.search.repos" | "gh.search.code" | "gh.search.commits") {
+                        schema["properties"]["_cliLimit"] = serde_json::json!({"type": "integer", "minimum": 1, "maximum": 100});
+                    }
+                    if $id == "gh.content.read" {
+                        schema["properties"]["_cliKind"] = serde_json::json!({"type": "string", "enum": ["read-file", "read-dir"]});
+                    }
+                }
                 if has_piped_body($id) {
                     schema["properties"][STDIN_BODY_FIELD] = serde_json::json!({
                         "type": "boolean", "const": true,
@@ -34,21 +55,15 @@ macro_rules! capability {
             }
         }
         pub struct $name;
-        impl Capability for $name {
-            type Provider = Gh;
-            const NAME: &'static str = $short;
-            const DESCRIPTION: &'static str = $description;
-            const EFFECT: EffectKind = $effect;
-            const RISK: RiskLevel = $risk;
-            type Input = $input;
-            type Needs = (Settings<GhSettings>, Http);
-            type Error = ProviderError;
-            fn run(
-                input: Self::Input,
-                (settings, http): Self::Needs,
-                out: &mut Stdout,
-            ) -> Result<(), Self::Error> {
-                let base = settings.into_inner().base();
+        impl $name {
+            // The same typed runtime path as Capability::run, with its HTTP boundary injected
+            // by the existing native scripted-send fixture for multi-response tests.
+            pub(crate) fn run_with(
+                input: $input,
+                base: &crate::Base,
+                send: &mut dyn FnMut(crate::Request) -> Result<crate::Response, crate::HttpError>,
+                out: &mut dyn Write,
+            ) -> Result<(), ProviderError> {
                 let mut input = input.0;
                 if input.get(STDIN_BODY_FIELD).is_some() {
                     if !has_piped_body($id)
@@ -78,7 +93,31 @@ macro_rules! capability {
                     let body = String::from_utf8(body).map_err(|_| crate::invalid_input())?;
                     input["body"] = Value::String(body);
                 }
-                let result = $handler(input, &base, &mut |request| http.send(request))?;
+                let selection = input.as_object_mut().and_then(|object| object.remove("_cliOutput"));
+                let kind = input.as_object_mut().and_then(|object| object.remove("_cliKind"));
+                let mut render_input = input.clone();
+                if let Some(kind) = kind { render_input["_cliKind"] = kind; }
+                if let Some(Value::String(fields)) = selection.as_ref() {
+                    if matches!($id, "gh.repo.read" | "gh.content.read") {
+                        input["_cli"] = Value::Bool(true);
+                    } else if $id.starts_with("gh.search.") {
+                        input["_cliOutput"] = Value::String(fields.clone());
+                    } else {
+                        input["_cli"] = Value::String(fields.clone());
+                    }
+                }
+                let result = $handler(input, base, send)?;
+                if $id == crate::ids::PR_STATUS {
+                    crate::output::require_checks(&result)?;
+                }
+                if let Some(Value::String(selection)) = selection {
+                    let rendered = crate::output::render($id, &render_input, &result, &selection)?;
+                    out.write_all(rendered.as_bytes()).map_err(|_| crate::invalid_response())?;
+                    if $id == crate::ids::PR_STATUS && selection.is_empty() {
+                        return crate::output::checks_verdict(&result);
+                    }
+                    return Ok(());
+                }
                 serde_json::to_writer(&mut *out, &result).map_err(|_| {
                     ProviderError::new("invalid-response", "could not write output")
                 })?;
@@ -86,6 +125,24 @@ macro_rules! capability {
                     ProviderError::new("invalid-response", "could not write output")
                 })?;
                 Ok(())
+            }
+        }
+        impl Capability for $name {
+            type Provider = Gh;
+            const NAME: &'static str = $short;
+            const DESCRIPTION: &'static str = $description;
+            const EFFECT: EffectKind = $effect;
+            const RISK: RiskLevel = $risk;
+            type Input = $input;
+            type Needs = (Settings<GhSettings>, Http);
+            type Error = ProviderError;
+            fn run(
+                input: Self::Input,
+                (settings, http): Self::Needs,
+                out: &mut Stdout,
+            ) -> Result<(), Self::Error> {
+                let base = settings.into_inner().base();
+                Self::run_with(input, &base, &mut |request| http.send(request), out)
             }
         }
     };
@@ -147,16 +204,6 @@ capability!(
     RiskLevel::Low
 );
 capability!(
-    PrFiles,
-    PrFilesInput,
-    "gh.pull-request.files",
-    "pull-request.files",
-    "Lists one pull request's changed files with bounded patches",
-    crate::pulls::files,
-    EffectKind::ReadOnly,
-    RiskLevel::Low
-);
-capability!(
     PrDiff,
     PrDiffInput,
     "gh.pull-request.diff",
@@ -167,21 +214,11 @@ capability!(
     RiskLevel::Low
 );
 capability!(
-    PrReviews,
-    PrReviewsInput,
-    "gh.pull-request.reviews",
-    "pull-request.reviews",
-    "Lists existing reviews on one pull request",
-    crate::pulls::reviews,
-    EffectKind::ReadOnly,
-    RiskLevel::Low
-);
-capability!(
     PrStatus,
     PrStatusInput,
     "gh.pull-request.status",
     "pull-request.status",
-    "Reads one pull request's head Actions workflow runs and legacy commit statuses",
+    "Reads real check runs, legacy statuses, and Actions names at one pull request's head",
     crate::pulls::status,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -237,11 +274,71 @@ capability!(
     RiskLevel::Low
 );
 capability!(
+    RepoList,
+    RepoListInput,
+    crate::ids::REPO_LIST,
+    "repo.list",
+    "Lists repositories belonging to a named owner",
+    crate::repos::list,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
+    SearchPrs,
+    SearchPrsInput,
+    crate::ids::SEARCH_PRS,
+    "search.prs",
+    "Search scoped pull requests",
+    crate::search::prs,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
+    SearchIssues,
+    SearchIssuesInput,
+    crate::ids::SEARCH_ISSUES,
+    "search.issues",
+    "Search scoped issues",
+    crate::search::issues,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
+    SearchRepos,
+    SearchReposInput,
+    crate::ids::SEARCH_REPOS,
+    "search.repos",
+    "Search repositories for an owner",
+    crate::search::repos,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
+    SearchCode,
+    SearchCodeInput,
+    crate::ids::SEARCH_CODE,
+    "search.code",
+    "Search scoped code",
+    crate::search::code,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
+    SearchCommits,
+    SearchCommitsInput,
+    crate::ids::SEARCH_COMMITS,
+    "search.commits",
+    "Search scoped commits",
+    crate::search::commits,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
     BranchRead,
     BranchReadInput,
     "gh.branch.read",
     "branch.read",
-    "Reads one branch's head SHA and protection flag",
+    "Reads one branch's bounded GitHub API response",
     crate::repos::branch,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -251,8 +348,18 @@ capability!(
     CommitReadInput,
     "gh.commit.read",
     "commit.read",
-    "Reads one commit's message, author, stats, and bounded file list",
+    "Reads one commit's bounded GitHub API response",
     crate::repos::commit,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
+    UserSelfRead,
+    UserSelfReadInput,
+    crate::ids::USER_SELF_READ,
+    "user-self.read",
+    "Reads the credential's bounded GitHub user identity",
+    crate::repos::self_user,
     EffectKind::ReadOnly,
     RiskLevel::Low
 );
@@ -261,7 +368,7 @@ capability!(
     UserReadInput,
     "gh.user.read",
     "user.read",
-    "Reads one user's public profile",
+    "Reads one user's bounded GitHub API response",
     crate::repos::user,
     EffectKind::ReadOnly,
     RiskLevel::Low
@@ -287,16 +394,6 @@ capability!(
     RiskLevel::Low
 );
 capability!(
-    IssueCommentsRead,
-    IssueCommentsReadInput,
-    "gh.issue-comments.read",
-    "issue-comments.read",
-    "Lists comments on one issue or pull request",
-    crate::issues::comments,
-    EffectKind::ReadOnly,
-    RiskLevel::Low
-);
-capability!(
     IssueComment,
     IssueCommentInput,
     "gh.issue.comment",
@@ -313,9 +410,7 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
         "gh.content.read" => Proposal::to::<ContentRead>(ContentReadInput(input)),
         "gh.pull-request.list" => Proposal::to::<PrList>(PrListInput(input)),
         "gh.pull-request.read" => Proposal::to::<PrRead>(PrReadInput(input)),
-        "gh.pull-request.files" => Proposal::to::<PrFiles>(PrFilesInput(input)),
         "gh.pull-request.diff" => Proposal::to::<PrDiff>(PrDiffInput(input)),
-        "gh.pull-request.reviews" => Proposal::to::<PrReviews>(PrReviewsInput(input)),
         "gh.pull-request.status" => Proposal::to::<PrStatus>(PrStatusInput(input)),
         "gh.pull-request.approve" => Proposal::to::<PrApprove>(PrApproveInput(input)),
         "gh.pull-request.comment" => Proposal::to::<PrComment>(PrCommentInput(input)),
@@ -324,14 +419,18 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
         }
         "gh.pull-request.merge" => Proposal::to::<PrMerge>(PrMergeInput(input)),
         "gh.repo.read" => Proposal::to::<RepoRead>(RepoReadInput(input)),
+        crate::ids::REPO_LIST => Proposal::to::<RepoList>(RepoListInput(input)),
+        crate::ids::SEARCH_PRS => Proposal::to::<SearchPrs>(SearchPrsInput(input)),
+        crate::ids::SEARCH_ISSUES => Proposal::to::<SearchIssues>(SearchIssuesInput(input)),
+        crate::ids::SEARCH_REPOS => Proposal::to::<SearchRepos>(SearchReposInput(input)),
+        crate::ids::SEARCH_CODE => Proposal::to::<SearchCode>(SearchCodeInput(input)),
+        crate::ids::SEARCH_COMMITS => Proposal::to::<SearchCommits>(SearchCommitsInput(input)),
         "gh.branch.read" => Proposal::to::<BranchRead>(BranchReadInput(input)),
         "gh.commit.read" => Proposal::to::<CommitRead>(CommitReadInput(input)),
         "gh.user.read" => Proposal::to::<UserRead>(UserReadInput(input)),
+        crate::ids::USER_SELF_READ => Proposal::to::<UserSelfRead>(UserSelfReadInput(input)),
         "gh.issue.read" => Proposal::to::<IssueRead>(IssueReadInput(input)),
         "gh.issue.list" => Proposal::to::<IssueList>(IssueListInput(input)),
-        "gh.issue-comments.read" => {
-            Proposal::to::<IssueCommentsRead>(IssueCommentsReadInput(input))
-        }
         "gh.issue.comment" => Proposal::to::<IssueComment>(IssueCommentInput(input)),
         _ => unreachable!("the command dispatch uses only declared IDs"),
     }

@@ -7,10 +7,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    ACCEPT_JSON, MAX_DESCRIPTION_OUT_BYTES, MAX_LIST_ITEMS, MAX_MESSAGE_OUT_BYTES, RawUser,
-    bounded_optional, decode, encode_path, invalid_input, invalid_response, is_sha, login_out,
-    percent_encode, send_get, timestamp, truncate_text, url, validate_login, validate_ref,
-    validate_repo,
+    ACCEPT_JSON, MAX_DESCRIPTION_OUT_BYTES, RawUser, bounded_optional, decode, encode_path,
+    invalid_input, invalid_response, is_sha, login_out, marked_optional, percent_encode, send_get,
+    timestamp, url, validate_login, validate_ref, validate_repo,
 };
 
 #[derive(Debug, Deserialize)]
@@ -18,6 +17,18 @@ use crate::{
 struct RepoInput {
     owner: String,
     repo: String,
+    #[serde(default, rename = "_cli")]
+    cli: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RepoListInput {
+    owner: String,
+    #[serde(default, rename = "_cli")]
+    cli: Option<String>,
+    #[serde(default, rename = "_cliLimit")]
+    cli_limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,75 +73,6 @@ struct RawRepo {
     updated_at: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct RawBranch {
-    name: String,
-    commit: RawBranchCommit,
-    #[serde(default)]
-    protected: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawBranchCommit {
-    sha: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawCommit {
-    sha: String,
-    commit: RawCommitDetail,
-    #[serde(default)]
-    author: Option<RawUser>,
-    #[serde(default)]
-    stats: Option<RawStats>,
-    #[serde(default)]
-    files: Vec<RawCommitFile>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawCommitDetail {
-    message: String,
-    #[serde(default)]
-    author: Option<RawCommitAuthor>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawCommitAuthor {
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    date: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawStats {
-    additions: u64,
-    deletions: u64,
-    total: u64,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawCommitFile {
-    filename: String,
-    status: String,
-    additions: u64,
-    deletions: u64,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawProfile {
-    login: String,
-    #[serde(rename = "type")]
-    kind: String,
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    public_repos: Option<u64>,
-    #[serde(default)]
-    followers: Option<u64>,
-    created_at: String,
-}
-
 pub(crate) fn repo(
     input: Value,
     base: &Base,
@@ -149,7 +91,8 @@ pub(crate) fn repo(
         ),
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let repo = decode::<RawRepo>(&response.body)?;
+    let raw = decode::<Value>(&response.body)?;
+    let repo = serde_json::from_value::<RawRepo>(raw.clone()).map_err(|_| invalid_response())?;
     // The name echo binds the response to the request without being case-brittle: GitHub
     // canonicalizes repository casing.
     if !repo.name.eq_ignore_ascii_case(&input.repo) {
@@ -158,19 +101,87 @@ pub(crate) fn repo(
 
     let (description, description_truncated) =
         bounded_optional(repo.description.as_deref(), MAX_DESCRIPTION_OUT_BYTES);
+    if !input.cli {
+        return Ok(json!({
+            "name": repo.name,
+            "owner": login_out(repo.owner.as_ref()),
+            "private": repo.private,
+            "visibility": repo.visibility,
+            "defaultBranch": repo.default_branch,
+            "fork": repo.fork,
+            "archived": repo.archived,
+            "description": description,
+            "descriptionTruncated": description_truncated,
+            "pushedAt": repo.pushed_at,
+            "updatedAt": timestamp(&repo.updated_at)?,
+        }));
+    }
+    let owner = login_out(repo.owner.as_ref());
+    let full_name = raw["full_name"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("{}/{}", owner.as_str().unwrap_or(&input.owner), repo.name));
     Ok(json!({
         "name": repo.name,
-        "owner": login_out(repo.owner.as_ref()),
+        "owner": owner,
+        "nameWithOwner": full_name,
+        "url": raw["html_url"],
+        "createdAt": raw["created_at"],
+        "isPrivate": repo.private,
+        "isFork": repo.fork,
+        "isArchived": repo.archived,
+        "defaultBranchRef": {"name": repo.default_branch},
         "private": repo.private,
         "visibility": repo.visibility,
-        "defaultBranch": repo.default_branch,
         "fork": repo.fork,
         "archived": repo.archived,
-        "description": description,
+        "defaultBranch": repo.default_branch,
+        "description": marked_optional(repo.description.as_deref(), MAX_DESCRIPTION_OUT_BYTES),
         "descriptionTruncated": description_truncated,
         "pushedAt": repo.pushed_at,
         "updatedAt": timestamp(&repo.updated_at)?,
     }))
+}
+
+pub(crate) fn list(
+    input: Value,
+    base: &Base,
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+) -> Result<Value, ProviderError> {
+    let input = serde_json::from_value::<RepoListInput>(input).map_err(|_| invalid_input())?;
+    validate_login(&input.owner)?;
+    if input.cli.is_none() && input.cli_limit.is_some() {
+        return Err(invalid_input());
+    }
+    let path = format!("/users/{}/repos?type=owner", percent_encode(&input.owner));
+    let rows = crate::collect_pages(send, base, &path, input.cli_limit.unwrap_or(30), |raw| {
+        let repo =
+            serde_json::from_value::<RawRepo>(raw.clone()).map_err(|_| invalid_response())?;
+        validate_repo(&repo.name).map_err(|_| invalid_response())?;
+        if !raw["owner"]["login"]
+            .as_str()
+            .is_some_and(|login| login.eq_ignore_ascii_case(&input.owner))
+            || !raw["full_name"].as_str().is_some_and(|name| {
+                name.split_once('/').is_some_and(|(owner, name)| {
+                    owner.eq_ignore_ascii_case(&input.owner)
+                        && name.eq_ignore_ascii_case(&repo.name)
+                })
+            })
+        {
+            return Err(invalid_response());
+        }
+        Ok(Some(json!({
+            "name": repo.name, "owner": raw["owner"]["login"],
+            "nameWithOwner": raw["full_name"], "url": raw["html_url"],
+            "createdAt": raw["created_at"], "isPrivate": repo.private,
+            "isFork": repo.fork, "isArchived": repo.archived,
+            "defaultBranchRef": {"name": repo.default_branch},
+            "description": marked_optional(repo.description.as_deref(), MAX_DESCRIPTION_OUT_BYTES),
+            "pushedAt": repo.pushed_at, "updatedAt": timestamp(&repo.updated_at)?,
+            "visibility": repo.visibility,
+        })))
+    })?;
+    Ok(json!({"repositories": rows}))
 }
 
 pub(crate) fn branch(
@@ -193,16 +204,13 @@ pub(crate) fn branch(
         ),
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let branch = decode::<RawBranch>(&response.body)?;
-    if branch.name != input.branch || !is_sha(&branch.commit.sha) {
+    let body = decode::<Value>(&response.body)?;
+    if body["name"].as_str() != Some(&input.branch)
+        || !body["commit"]["sha"].as_str().is_some_and(is_sha)
+    {
         return Err(invalid_response());
     }
-
-    Ok(json!({
-        "name": branch.name,
-        "headSha": branch.commit.sha,
-        "protected": branch.protected,
-    }))
+    Ok(body)
 }
 
 pub(crate) fn commit(
@@ -225,42 +233,27 @@ pub(crate) fn commit(
         ),
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let commit = decode::<RawCommit>(&response.body)?;
-    if !is_sha(&commit.sha) {
+    let body = decode::<Value>(&response.body)?;
+    if !body["sha"].as_str().is_some_and(is_sha) {
         return Err(invalid_response());
     }
+    Ok(body)
+}
 
-    let (message, message_truncated) = truncate_text(&commit.commit.message, MAX_MESSAGE_OUT_BYTES);
-    let files_truncated = commit.files.len() > MAX_LIST_ITEMS;
-    let files = commit
-        .files
-        .iter()
-        .take(MAX_LIST_ITEMS)
-        .map(|file| {
-            json!({
-                "path": file.filename,
-                "status": file.status,
-                "additions": file.additions,
-                "deletions": file.deletions,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    Ok(json!({
-        "sha": commit.sha,
-        "author": login_out(commit.author.as_ref()),
-        "authorName": commit.commit.author.as_ref().and_then(|author| author.name.as_deref()),
-        "authoredAt": commit.commit.author.as_ref().and_then(|author| author.date.as_deref()),
-        "message": message,
-        "messageTruncated": message_truncated,
-        "stats": commit.stats.map(|stats| json!({
-            "additions": stats.additions,
-            "deletions": stats.deletions,
-            "total": stats.total,
-        })),
-        "files": files,
-        "filesTruncated": files_truncated,
-    }))
+pub(crate) fn self_user(
+    _input: Value,
+    base: &Base,
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+) -> Result<Value, ProviderError> {
+    let response = send_get(send, url(base, "/user")?, ACCEPT_JSON)?;
+    let body = decode::<Value>(&response.body)?;
+    if !body["login"]
+        .as_str()
+        .is_some_and(|login| !login.is_empty())
+    {
+        return Err(invalid_response());
+    }
+    Ok(body)
 }
 
 pub(crate) fn user(
@@ -273,20 +266,14 @@ pub(crate) fn user(
 
     let uri = url(base, &format!("/users/{}", percent_encode(&input.login)))?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let profile = decode::<RawProfile>(&response.body)?;
-    if !profile.login.eq_ignore_ascii_case(&input.login) {
+    let body = decode::<Value>(&response.body)?;
+    if !body["login"]
+        .as_str()
+        .is_some_and(|login| login.eq_ignore_ascii_case(&input.login))
+    {
         return Err(invalid_response());
     }
-
-    let (name, _) = bounded_optional(profile.name.as_deref(), 256);
-    Ok(json!({
-        "login": profile.login,
-        "type": profile.kind,
-        "name": name,
-        "publicRepos": profile.public_repos,
-        "followers": profile.followers,
-        "createdAt": timestamp(&profile.created_at)?,
-    }))
+    Ok(body)
 }
 
 #[cfg(test)]
@@ -355,7 +342,7 @@ mod tests {
         )
         .expect("branch read succeeds");
 
-        assert_eq!(output["headSha"], "a".repeat(40));
+        assert_eq!(output["commit"]["sha"], "a".repeat(40));
         assert_eq!(output["protected"], true);
 
         let error = invoke_with(
@@ -374,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_read_bounds_message_and_files() {
+    fn native_commit_read_preserves_upstream_nested_fields() {
         let output = invoke_with(
             &capability("gh.commit.read"),
             json!({"owner": "octo", "repo": "hello", "ref": "main"}),
@@ -389,6 +376,8 @@ mod tests {
                     200,
                     &json!({
                         "sha": "c".repeat(40),
+                        "html_url": "https://github.com/octo/hello/commit/c",
+                        "committer": null,
                         "commit": {
                             "message": "fix: everything",
                             "author": {"name": "Xavier", "date": "2026-08-15T00:00:00Z"},
@@ -405,11 +394,12 @@ mod tests {
         .expect("commit read succeeds");
 
         assert_eq!(output["sha"], "c".repeat(40));
-        assert_eq!(output["author"], "xavier");
-        assert_eq!(output["authorName"], "Xavier");
+        assert_eq!(output["html_url"], "https://github.com/octo/hello/commit/c");
+        assert!(output["committer"].is_null());
+        assert_eq!(output["author"]["login"], "xavier");
+        assert_eq!(output["commit"]["author"]["name"], "Xavier");
         assert_eq!(output["stats"]["total"], 4);
-        assert_eq!(output["files"][0]["path"], "src/lib.rs");
-        assert_eq!(output["filesTruncated"], false);
+        assert_eq!(output["files"][0]["filename"], "src/lib.rs");
     }
 
     #[test]

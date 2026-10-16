@@ -95,21 +95,6 @@ constraintSets:
         maxRequestBytes: 16384
         maxResponseBytes: 262144
         allowPlaintextLoopback: false
-  gh.pull-request.files:
-    provider: gh
-    effect: read-only
-    risk: Low
-    credential: github-pat
-    constraints:
-      timeoutMs: 10000
-      maxOutputBytes: 131072
-      http:
-        allowedHosts: [api.github.com]
-        allowedMethods: [GET]
-        maxRequests: 1
-        maxRequestBytes: 16384
-        maxResponseBytes: 1048576
-        allowPlaintextLoopback: false
   gh.pull-request.diff:
     provider: gh
     effect: read-only
@@ -131,15 +116,12 @@ constraintSets:
     risk: Low
     credential: github-pat
     constraints:
-      timeoutMs: 10000
+      timeoutMs: 30000
       maxOutputBytes: 131072
       http:
         allowedHosts: [api.github.com]
-        # Three bounded GETs: pull metadata for the head SHA, Actions workflow runs at that head,
-        # then legacy commit statuses. Fine-grained PATs expose both read permissions but not the
-        # Checks permission required by the check-runs endpoint.
         allowedMethods: [GET]
-        maxRequests: 3
+        maxRequests: 10
         maxRequestBytes: 16384
         maxResponseBytes: 4194304
         allowPlaintextLoopback: false

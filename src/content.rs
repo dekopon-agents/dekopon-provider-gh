@@ -21,6 +21,8 @@ struct Input {
     path: String,
     #[serde(default, rename = "ref")]
     reference: Option<String>,
+    #[serde(default, rename = "_cli")]
+    cli: bool,
 }
 
 /// One entry of a directory listing response.
@@ -85,13 +87,24 @@ pub(crate) fn read(
     // rather than sniffing bytes.
     let value = decode::<Value>(&response.body)?;
     if value.is_array() {
-        return project_directory(&input.path, value);
+        return project_directory(&input.path, value, input.cli);
     }
-    let content = serde_json::from_value::<RawContent>(value).map_err(|_| invalid_response())?;
-    project_content(&input.path, content)
+    let content =
+        serde_json::from_value::<RawContent>(value.clone()).map_err(|_| invalid_response())?;
+    let mut projected = project_content(&input.path, content, input.cli)?;
+    if input.cli && projected["type"] == "file" {
+        let name = input.path.rsplit('/').next().unwrap_or_default();
+        projected["name"] = json!(name);
+        projected["gitSHA"] = projected["sha"].clone();
+        projected["url"] = value["url"].clone();
+        projected["htmlUrl"] = value["html_url"].clone();
+        projected["gitUrl"] = value["git_url"].clone();
+        projected["downloadUrl"] = value["download_url"].clone();
+    }
+    Ok(projected)
 }
 
-fn project_directory(path: &str, value: Value) -> Result<Value, ProviderError> {
+fn project_directory(path: &str, value: Value, cli: bool) -> Result<Value, ProviderError> {
     let raw = serde_json::from_value::<Vec<RawEntry>>(value).map_err(|_| invalid_response())?;
     let truncated = raw.len() > MAX_DIR_ENTRIES;
     let entries = raw
@@ -101,12 +114,21 @@ fn project_directory(path: &str, value: Value) -> Result<Value, ProviderError> {
             if entry.name.is_empty() || entry.name.len() > 512 || entry.sha.len() > 64 {
                 return Err(invalid_response());
             }
-            Ok(json!({
+            let mut row = json!({
                 "name": entry.name,
                 "type": entry.kind,
                 "size": entry.size,
                 "sha": entry.sha,
-            }))
+            });
+            if cli {
+                row["path"] = json!(if path.is_empty() {
+                    entry.name.clone()
+                } else {
+                    format!("{path}/{}", entry.name)
+                });
+                row["gitSHA"] = row["sha"].clone();
+            }
+            Ok(row)
         })
         .collect::<Result<Vec<_>, ProviderError>>()?;
     Ok(json!({
@@ -117,13 +139,17 @@ fn project_directory(path: &str, value: Value) -> Result<Value, ProviderError> {
     }))
 }
 
-fn project_content(requested_path: &str, content: RawContent) -> Result<Value, ProviderError> {
+fn project_content(
+    requested_path: &str,
+    content: RawContent,
+    cli: bool,
+) -> Result<Value, ProviderError> {
     // The path echo binds the response to the request; a mismatch is a broken or hostile reply.
     if content.path != requested_path {
         return Err(invalid_response());
     }
     match content.kind.as_str() {
-        "file" => project_file(content),
+        "file" => project_file(content, cli),
         "symlink" | "submodule" => {
             let target = content
                 .target
@@ -140,7 +166,7 @@ fn project_content(requested_path: &str, content: RawContent) -> Result<Value, P
 }
 
 /// Decodes a file body and re-projects it bounded: UTF-8 text when valid, base64 otherwise.
-fn project_file(content: RawContent) -> Result<Value, ProviderError> {
+fn project_file(content: RawContent, cli: bool) -> Result<Value, ProviderError> {
     if content.encoding.as_deref() != Some("base64") {
         return Err(invalid_response());
     }
@@ -152,20 +178,30 @@ fn project_file(content: RawContent) -> Result<Value, ProviderError> {
         .collect::<Vec<u8>>();
     let bytes = STANDARD.decode(&compact).map_err(|_| invalid_response())?;
 
-    let (encoding, text, truncated) = match core::str::from_utf8(&bytes) {
+    let (encoding, mut text, kept) = match core::str::from_utf8(&bytes) {
         Ok(text) => {
-            let (bounded, truncated) = truncate_text(text, MAX_CONTENT_OUT_BYTES);
-            ("utf-8", bounded, truncated)
+            let (bounded, _) = truncate_text(text, MAX_CONTENT_OUT_BYTES);
+            let kept = bounded.len();
+            ("utf-8", bounded, kept)
         }
         Err(_) => {
+            if cli && bytes.len() > MAX_CONTENT_OUT_BYTES {
+                return Err(ProviderError::new(
+                    "invalid-response",
+                    format!(
+                        "gh: file is {} bytes, over the {MAX_CONTENT_OUT_BYTES}-byte read bound; binary content is not truncated",
+                        bytes.len()
+                    ),
+                ));
+            }
             let bounded = &bytes[..bytes.len().min(MAX_CONTENT_OUT_BYTES)];
-            (
-                "base64",
-                STANDARD.encode(bounded),
-                bounded.len() < bytes.len(),
-            )
+            ("base64", STANDARD.encode(bounded), bounded.len())
         }
     };
+    let truncated = kept < bytes.len();
+    if cli && encoding == "utf-8" && truncated {
+        text.push_str(&crate::truncation_marker(kept, bytes.len()));
+    }
 
     Ok(json!({
         "type": "file",
@@ -297,6 +333,92 @@ mod tests {
             output["content"].as_str().expect("string").len(),
             crate::MAX_CONTENT_OUT_BYTES
         );
+    }
+
+    #[test]
+    fn native_oversized_binary_cli_refuses_without_corrupting_base64_or_typed_reads() {
+        use std::{cell::Cell, rc::Rc};
+        let bound = crate::MAX_CONTENT_OUT_BYTES;
+        let read = |bytes: &[u8], cli: bool| {
+            let seen = Rc::new(Cell::new(0));
+            let checked = Rc::clone(&seen);
+            let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+            let output = invoke_with(
+                &capability("gh.content.read"),
+                json!({"owner":"octo","repo":"hello","path":"logo.bin","_cli":cli}),
+                scripted(vec![step(
+                    move |request| {
+                        assert_eq!(request.method, "GET");
+                        assert_eq!(
+                            request.uri,
+                            "https://api.github.com/repos/octo/hello/contents/logo.bin"
+                        );
+                        checked.set(checked.get() + 1);
+                    },
+                    json_response(
+                        200,
+                        &json!({"type":"file","path":"logo.bin","sha":"abc","size":bytes.len(),"encoding":"base64","content":encoded}),
+                    ),
+                )]),
+            );
+            assert_eq!(seen.get(), 1);
+            output
+        };
+        let big = vec![0xff; bound + 1];
+        let error = read(&big, true).expect_err("CLI binary cannot return partial base64");
+        assert_eq!(error.code(), "invalid-response");
+        assert_eq!(
+            error.message(),
+            format!(
+                "gh: file is {} bytes, over the {bound}-byte read bound; binary content is not truncated",
+                big.len()
+            )
+        );
+        let typed = read(&big, false).expect("direct typed envelope keeps truncation metadata");
+        assert_eq!(typed["contentTruncated"], true);
+        assert_eq!(typed["encoding"], "base64");
+        let decoded = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            typed["content"].as_str().expect("base64 string"),
+        )
+        .expect("typed base64 remains valid");
+        assert_eq!(decoded, &big[..bound]);
+        let at_bound = read(&big[..bound], true).expect("binary at bound is complete");
+        assert_eq!(at_bound["encoding"], "base64");
+        assert_eq!(at_bound["contentTruncated"], false);
+        assert_eq!(at_bound["content"], typed["content"]);
+
+        let small = [0xff, 0x00, 0xfe];
+        let cli = read(&small, true).expect("small CLI binary is unchanged");
+        assert_eq!(cli["encoding"], "base64");
+        assert_eq!(cli["contentTruncated"], false);
+        assert_eq!(
+            cli["content"],
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, small)
+        );
+
+        let text = "é".repeat(bound / 2 + 1);
+        let text_cli = read(text.as_bytes(), true).expect("large UTF-8 file succeeds");
+        assert_eq!(text_cli["encoding"], "utf-8");
+        assert_eq!(text_cli["contentTruncated"], true);
+        let rendered = text_cli["content"].as_str().expect("UTF-8 string");
+        assert_eq!(
+            rendered,
+            format!(
+                "{}\n[dekopon: truncated to {bound} bytes of {}]",
+                "é".repeat(bound / 2),
+                text.len()
+            )
+        );
+        let selection_input = json!({"_cliKind":"read-file"});
+        let plain = crate::output::render("gh.content.read", &selection_input, &text_cli, "")
+            .expect("text read-file renders");
+        assert_eq!(plain, rendered);
+        let selected =
+            crate::output::render("gh.content.read", &selection_input, &text_cli, "content")
+                .expect("selected text content renders");
+        let selected: serde_json::Value = serde_json::from_str(&selected).expect("JSON");
+        assert_eq!(selected["content"], rendered);
     }
 
     #[test]

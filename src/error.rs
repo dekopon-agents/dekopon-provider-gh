@@ -32,15 +32,14 @@ impl Failure for ProviderError {
         match self.code {
             "invalid-input" => Code::INVALID_INPUT,
             "usage" => Code::USAGE,
-            "unauthorized" => Code::new("unauthorized"),
-            "forbidden" => Code::new("forbidden"),
-            "not-found" => Code::new("not-found"),
-            "unprocessable" => Code::new("unprocessable"),
-            "rate-limited" => Code::new("rate-limited"),
-            "unexpected-status" => Code::new("unexpected-status"),
-            "invalid-response" => Code::new("invalid-response"),
-            "http-failed" => Code::new("http-failed"),
-            "invalid-request" => Code::new("invalid-request"),
+            "checks-pending" => Code::new("checks-pending").exiting(8),
+            "checks-failed" => Code::new("checks-failed").exiting(1),
+            "checks-empty" => Code::new("checks-empty").exiting(1),
+            "unauthorized" | "forbidden" | "not-found" | "unprocessable" | "rate-limited"
+            | "unexpected-status" | "invalid-response" | "http-failed" | "invalid-request"
+            | "request-ceiling" | "incomplete-results" | "index-ceiling" => {
+                Code::new(self.code).exiting(3)
+            }
             "unknown-capability" => Code::UNKNOWN_CAPABILITY,
             "merge-conflict" => Code::new("merge-conflict"),
             "pr-closed" => Code::new("pr-closed"),

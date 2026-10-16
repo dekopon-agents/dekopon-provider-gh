@@ -2,8 +2,8 @@
 //!
 //! Every write pre-reads its pull request and pins the observed head SHA into the write body.
 //! The pre-read is what makes these `conditional` rather than `non-idempotent`: a retry against
-//! an unchanged head converges on the same review or merge state, and a moved head is refused
-//! with `head-changed` instead of silently blessing commits the caller never saw.
+//! an unchanged head converges on the same review or merge state. A caller-supplied expected
+//! head is checked at pre-read; a push between that read and review submission is not prevented.
 
 use crate::error::ProviderError;
 use dekopon_provider_sdk::provider::endpoint::Base;
@@ -36,8 +36,7 @@ struct MergeInput {
     owner: String,
     repo: String,
     number: u32,
-    #[serde(default)]
-    merge_method: Option<MergeMethod>,
+    merge_method: MergeMethod,
     #[serde(default)]
     expected_head_sha: Option<String>,
 }
@@ -214,8 +213,6 @@ pub(crate) fn merge(
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
     validate_expected_sha(input.expected_head_sha.as_deref())?;
-    let merge_method = input.merge_method.unwrap_or(MergeMethod::Merge);
-
     let pull = fetch_pull(send, base, &input.owner, &input.repo, input.number)?;
     require_open(&pull)?;
     require_expected_head(&pull, input.expected_head_sha.as_deref())?;
@@ -231,7 +228,7 @@ pub(crate) fn merge(
     )?;
     let body = json!({
         "sha": pull.head.sha,
-        "merge_method": merge_method.as_str(),
+        "merge_method": input.merge_method.as_str(),
     });
     let response =
         send(github_json_request(method::PUT, uri, &body)?).map_err(|_| http_failed())?;
@@ -489,6 +486,17 @@ mod tests {
     }
 
     #[test]
+    fn merge_without_a_method_refuses_before_http() {
+        let error = invoke_with(
+            &capability("gh.pull-request.merge"),
+            json!({"owner": "octo", "repo": "hello", "number": 7}),
+            |_| unreachable!("missing merge method cannot call HTTP"),
+        )
+        .expect_err("method required");
+        assert_eq!(error.code(), "invalid-input");
+    }
+
+    #[test]
     fn merge_pins_the_sha_and_maps_conflicts() {
         let output = invoke_with(
             &capability("gh.pull-request.merge"),
@@ -521,7 +529,7 @@ mod tests {
         for conflict_status in [405_u16, 409] {
             let error = invoke_with(
                 &capability("gh.pull-request.merge"),
-                json!({"owner": "octo", "repo": "hello", "number": 7}),
+                json!({"owner": "octo", "repo": "hello", "number": 7, "mergeMethod": "merge"}),
                 scripted(vec![
                     step(|_| {}, json_response(200, &pull("open", false, false))),
                     step(|_| {}, json_response(conflict_status, &json!({}))),
@@ -536,7 +544,7 @@ mod tests {
     fn merge_refuses_closed_and_moved_heads_before_any_write() {
         let error = invoke_with(
             &capability("gh.pull-request.merge"),
-            json!({"owner": "octo", "repo": "hello", "number": 7}),
+            json!({"owner": "octo", "repo": "hello", "number": 7, "mergeMethod": "merge"}),
             scripted(vec![step(
                 |_| {},
                 json_response(200, &pull("closed", false, false)),
@@ -552,6 +560,7 @@ mod tests {
                 "repo": "hello",
                 "number": 7,
                 "expectedHeadSha": "f".repeat(40),
+                "mergeMethod": "merge",
             }),
             scripted(vec![step(
                 |_| {},

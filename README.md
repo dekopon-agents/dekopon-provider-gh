@@ -2,10 +2,10 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Twenty narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
-output projections, and SHA-pinned review/merge writes. There is deliberately no `gh.api.*`
-passthrough: a path-level escape hatch would collapse per-capability policy into "everything the
-credential can reach".
+Twenty-four narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
+output projections, and SHA-pinned review/merge writes. There is deliberately no arbitrary
+`gh api` passthrough: a path-level escape hatch would collapse per-capability policy into
+"everything the credential can reach".
 
 The component never sets `authorization`. The broker injects a destination-bound credential at the
 native HTTP boundary, where no guest can observe it.
@@ -34,13 +34,23 @@ denial, not an escalation.
 
 `--body-file -` is the one argument whose value is piped into the word. Proposal records only a
 marker; the authorized invocation reads at most 4 KiB of UTF-8 from stdin before any HTTP call.
-Nothing piped is a usage error rather than an empty comment. There is no `gh api`, so nothing pipes into a passthrough —
-a path-level escape hatch would collapse per-capability policy into "everything the credential can
-reach", and typing it says so.
+Nothing piped is a usage error rather than an empty comment. `gh api` accepts only four named GET routes (`user`, `users/LOGIN`, `repos/OWNER/REPO/branches/BRANCH`,
+`repos/OWNER/REPO/commits/REF`). `gh api user` requires the separate `gh.user-self.read` grant;
+`gh api users/LOGIN` requires `gh.user.read`. No arbitrary route or API flag is accepted.
 
-Flags that would change what a command means — `--json`, `--jq`, `--web`, `--checkout` — are
-rejected by name rather than accepted as no-ops. Successful invocations write bounded projected
-JSON to stdout; failures write to stderr with a nonzero status. Filter stdout with the shell's
+Supported `gh pr list/view`, `gh issue list/view`, `gh repo view/list/read-file/read-dir` commands
+accept closed, comma-separated `--json FIELDS`; bare, unknown and repeated fields refuse as usage.
+Without `--json`, these commands print tab-separated rows (files print decoded content).
+`gh pr list` also accepts `--state merged`, filtering closed pulls to merged results.
+`gh pr list`, `gh issue list`, and `gh repo list OWNER` collect up to 100 matching rows
+(default 30) across at most ten REST pages; an exhausted list may return fewer rows.
+`repo list` uses GitHub's public `/users/OWNER/repos` endpoint and cannot enumerate
+private repositories inaccessible there. An interrupted collection prints no partial rows.
+A text field cut at its byte bound ends, in JSON and text alike, with the line
+`[dekopon: truncated to N bytes of M]`.
+`--jq`, `--template`, `--web` and `--checkout` still refuse. The four finite `gh api` reads
+return bounded upstream JSON objects. Direct typed invocation retains JSON output; failures
+write to stderr with a nonzero status. Filter stdout with the shell's
 `jq` builtin.
 
 ## Capabilities
@@ -49,20 +59,21 @@ JSON to stdout; failures write to stderr with a nonzero status. Filter stdout wi
 |---|---|
 | `gh.auth.status` | read-only |
 | `gh.content.read` | read-only |
-| `gh.pull-request.list` / `.read` / `.files` / `.diff` / `.reviews` / `.status` | read-only |
+| `gh.pull-request.list` / `.read` / `.diff` / `.status` | read-only |
 | `gh.pull-request.approve` / `.comment` / `.request-changes` / `.merge` | external-write |
-| `gh.repo.read` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` | read-only |
-| `gh.issue.read` / `.list` / `gh.issue-comments.read` | read-only |
+| `gh.repo.read` / `gh.repo.list` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` / `gh.user-self.read` | read-only |
+| `gh.issue.read` / `.list` | read-only |
 | `gh.issue.comment` | external-write |
+| `gh.search.prs` / `.issues` / `.repos` / `.code` / `.commits` | read-only |
 
-`gh.pull-request.status` reads the pull request's head, then lists GitHub Actions workflow runs and
-legacy commit statuses at that SHA. This deliberately avoids the Checks REST API: GitHub documents
-`checks:read` for fine-grained personal access tokens but does not expose that permission in the
-token editor. The replacement uses the available **Actions: Read-only** and **Commit statuses:
-Read-only** permissions, stays entirely on bounded GET requests, and reports the two sources
-separately rather than pretending workflow runs are check runs. Checks-only third-party integrations
-remain outside this capability. The constraint set must allow three GETs (pull metadata, Actions,
-then commit statuses); a two-request constraint from v0.1.0 fails closed before the final read.
+`gh.pull-request.status` backs numbered `gh pr checks` with real check runs (including third-party
+integrations), legacy commit statuses, and Actions workflow names at the pull's head SHA. The
+credential must be able to read all three endpoints; a refusal is an error, not a passing check.
+The read grant needs up to ten GET requests for bounded pagination. Text checks exit 8 while
+pending, 1 for failed or empty checks, and 3 for upstream, broker HTTP or ceiling failures;
+selected `--json` checks exit 0 and expose the verdict in `bucket`.
+
+Scoped search requires exactly one `--owner OWNER` or `-R OWNER/REPO` (`search repos` requires `--owner`). `--owner` matches personal and organization owners. Searches are bounded to ten REST requests and at most 100 matches. A shorter response can reflect GitHub's indexing delay; incomplete results and an inconsistent index count fail rather than being presented as a complete array. GitHub exposes at most the first 1,000 indexed matches. Query terms cannot set a repository or owner scope.
 
 ## Using it
 
@@ -106,7 +117,12 @@ the authority in the owner's `baseUrl`; the guest receives no token. See the
 [broker constraints](examples/pr-summarizer-linter/broker.yaml). Never put a token in capability
 input, model text, or provider settings.
 
-Grant each capability separately; the [reviewer example](examples/pr-summarizer-linter/README.md)
+Grant each capability separately. `gh pr merge N -R owner/repo` requires exactly one of
+`--merge`, `--squash`, or `--rebase`; the typed merge input requires `mergeMethod`.
+Review submission pins the head observed by the provider but cannot prevent a push between
+its pre-read and submission. `--match-head-commit SHA` on merge refuses a head that moved
+before the pre-read; GitHub's merge SHA guard also checks the subsequent write.
+The [reviewer example](examples/pr-summarizer-linter/README.md)
 shows the broker grant steps. `gh.auth.status` is read-only, Low risk, and needs one allowed GET.
 It reports quota and available credential-header metadata, not repository visibility or credential
 kind.
@@ -116,14 +132,14 @@ capabilities you enable (Read unless marked Write):
 
 | Capability | Fine-grained permission |
 |---|---|
-| `gh.auth.status`, `gh.user.read` | None (public endpoint / rate limit) |
-| `gh.repo.read` | Metadata: Read |
+| `gh.auth.status`, `gh.user.read`, `gh.user-self.read` | None (public endpoint / rate limit) |
+| `gh.repo.read`, `gh.repo.list` | Metadata: Read |
 | `gh.content.read`, `gh.branch.read`, `gh.commit.read` | Contents: Read |
-| `gh.pull-request.list`, `.read`, `.files`, `.diff`, `.reviews` | Pull requests: Read |
-| `gh.pull-request.status` | Pull requests: Read; Actions: Read; Commit statuses: Read |
+| `gh.pull-request.list`, `.read`, `.diff` | Pull requests: Read |
+| `gh.pull-request.status` | Pull requests: Read; Checks: Read; Actions: Read; Commit statuses: Read |
 | `gh.pull-request.approve`, `.comment`, `.request-changes` | Pull requests: Write |
 | `gh.pull-request.merge` | Pull requests: Write; Contents: Write |
-| `gh.issue.read`, `.list`, `gh.issue-comments.read` | Issues: Read |
+| `gh.issue.read`, `.list` | Issues: Read |
 | `gh.issue.comment` | Issues: Write |
 
 | Error code | Message | What to do |

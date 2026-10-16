@@ -31,7 +31,7 @@ example came here with the component, and nothing in dekopon exercises it any mo
 ## What “lint” means here
 
 The agent reviews bounded GitHub data: pull-request metadata, changed-file patches, a unified diff,
-head Actions workflow runs, legacy commit statuses, and selected files at the observed head SHA. It
+real check runs (including third-party integrations), legacy commit statuses, Actions workflow names, and selected files at the observed head SHA. It
 can identify likely correctness,
 security, reliability, maintainability, and test-coverage problems. It cannot check out the branch,
 run repository commands, or claim that a compiler or project linter passed. Its standing orders
@@ -56,13 +56,12 @@ Create a fine-grained personal access token scoped to only the repositories this
 
 - **Contents: Read-only** — `gh.content.read`
 - **Pull requests: Read and write** — pull-request reads and one `COMMENT` review
-- **Actions: Read-only** — Actions workflow runs returned by `gh.pull-request.status`
+- **Checks: Read-only** — check runs returned by `gh.pull-request.status`
+- **Actions: Read-only** — workflow names and events for Actions check runs
 - **Commit statuses: Read-only** — legacy statuses returned by `gh.pull-request.status`
 
-GitHub's fine-grained token editor does not expose the `Checks: Read-only` permission required by
-the check-runs REST endpoint, even though its endpoint documentation names that permission. The
-status capability therefore uses the two read permissions the editor does expose. It reports
-workflow runs and legacy statuses separately and cannot see checks-only third-party integrations.
+Verify the chosen credential can read the check-runs endpoint for these repositories. A 403 or
+broker refusal is an error, not evidence that checks passed; checks-only integrations are included.
 
 GitHub has no comment-only pull-request permission. Dekopon narrows that provider permission by
 exposing comment, approval, request-changes, and merge as separate capabilities. This deployment
@@ -71,7 +70,7 @@ provider input paths and therefore cannot restrict `owner/repo` itself.
 
 Classic PAT and GitHub App installation-token setup, plus the credential error messages, are
 covered in the [provider authentication guide](../../README.md#credentials-and-authentication-status).
-`gh auth status` is the separate read-only `gh.auth.status` capability. This six-capability reviewer
+`gh auth status` is the separate read-only `gh.auth.status` capability. This five-capability reviewer
 does not grant it: to enable it, an owner must add it to the catalog and policy and give it its own
 Low-risk, read-only constraint set with the same credential and one GET request. A successful
 quota check does not establish access to a particular repository.
@@ -147,7 +146,8 @@ dekopon-gatewayd --config gatewayd.yaml
 
 `capability.count: 0` is intentional. The startup probe asks what the gateway’s own direct identity
 may do; both Cedar statements require an attested sender and agent. The gateway reaches the six
-capabilities only while vouching for an allowed Slack subject.
+capabilities only while vouching for an allowed Slack subject. `gh repo list OWNER` is a separate
+`gh.repo.list` read grant; this example does not grant it.
 
 ## 6. Summarize and lint a pull request
 
@@ -156,37 +156,35 @@ capabilities only while vouching for an allowed Slack subject.
 A session typically proposes commands like these through the sandboxed `gh` builtin:
 
 ```console
-$ gh pr view 7 -R owner/repo
-{"number":7,"title":"Cache the provider registry between invocations","state":"open",
- "draft":false,"headSha":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26","baseRef":"main",...}
-
-$ gh pr files 7 -R owner/repo
-{"files":[{"path":"crates/dekopon-broker-host/src/lib.rs",...}],"truncated":false}
+$ gh pr view 7 -R owner/repo --json number,title,state,headRefOid,baseRefName,url
+{"number":7,"title":"Cache the provider registry between invocations","state":"OPEN",
+ "headRefOid":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26","baseRefName":"main","url":"https://github.com/owner/repo/pull/7"}
 
 $ gh pr diff 7 -R owner/repo
-{"diff":"diff --git a/...","truncated":false}
+diff --git a/... b/...
 
-$ gh pr status 7 -R owner/repo
-{"headSha":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26",
- "workflowRuns":[...],"commitStatuses":[...]}
+$ gh pr checks 7 -R owner/repo --json name,bucket,workflow
+[{"bucket":"pass","name":"ci / validate","workflow":"Validate"}]
+# Without --json, checks print TSV; failed checks exit 1 and pending checks exit 8.
 
-$ gh content view crates/dekopon-broker-host/src/lib.rs -R owner/repo \
+$ gh repo read-file crates/dekopon-broker-host/src/lib.rs -R owner/repo \
     --ref 4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26
-{"path":"crates/dekopon-broker-host/src/lib.rs","encoding":"utf-8","content":"..."}
+...decoded file content...
 
 $ gh pr review 7 -R owner/repo --comment \
-    --body "## Summary ...\n\n## Lint findings ...\n\n## Checks ..." \
-    --expected-head-sha 4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26
+    --body "## Summary ...\n\n## Lint findings ...\n\n## Checks ..."
 {"reviewId":2418809931,"state":"COMMENTED","pullNumber":7,
  "headSha":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26","author":"review-bot",...}
 ```
 
 Each `gh` command is one capability proposal, not an operating-system process. There is no real
-`gh` executable, checkout, filesystem, or `gh api`. The raw passthrough is refused because a generic
+`gh` executable, checkout, or filesystem. Arbitrary `gh api` routes are refused because a generic
 GET would collapse separately authorized capabilities into everything the token can read.
+The finite `gh api user` route requires its own `gh.user-self.read` grant, which this reviewer
+example does not request.
 
-The comment capability pre-reads the pull request and compares the supplied expected head SHA. If
-new commits arrived after inspection, it returns `head-changed` before the POST. The agent’s orders
+The comment capability pre-reads the pull request and pins the head it observed in its POST.
+A push between that read and the submission is not prevented. The agent’s orders
 say not to retry: the new revision needs a new review. Drafts may receive comments, but closed or
 merged pull requests are refused.
 
@@ -275,7 +273,7 @@ execution, and audit — not from trusting the summary.
 ## Related
 
 - [dekopon's Slack example](https://github.com/dekopon-agents/dekopon/blob/main/examples/slack/README.md) — app manifest, tokens, and Slack identifiers.
-- [the provider](../../README.md) — all twenty capabilities and no raw passthrough.
+- [the provider](../../README.md) — the narrow capabilities and no raw passthrough.
 - [`gatewayd.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/gatewayd.md) — routing, sessions, and conversation bounds.
 - [`dekopon-brokerd`](https://github.com/dekopon-agents/dekopon/blob/main/crates/dekopon-brokerd/README.md) — broker configuration and recovery.
 - [`security-model.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/security-model.md) — trust boundaries and limitations.

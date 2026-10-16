@@ -7,9 +7,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_LABELS, MAX_LIST_ITEMS, MAX_PR_BODY_OUT_BYTES,
-    MAX_TITLE_OUT_BYTES, RawUser, bounded_optional, decode, github_json_request, has_next_link,
-    http_failed, invalid_input, invalid_response, login_out, percent_encode, send_get,
+    ACCEPT_JSON, MAX_LABELS, MAX_LIST_ITEMS, MAX_PR_BODY_OUT_BYTES, MAX_TITLE_OUT_BYTES, RawUser,
+    bounded_optional, decode, github_json_request, has_next_link, http_failed, invalid_input,
+    invalid_response, login_out, marked_optional, marked_text, percent_encode, send_get,
     status_error, timestamp, truncate_text, url, validate_body, validate_login, validate_number,
     validate_page, validate_repo,
 };
@@ -20,6 +20,8 @@ struct ReadInput {
     owner: String,
     repo: String,
     number: u32,
+    #[serde(default, rename = "_cli")]
+    cli: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,18 +35,10 @@ struct ListInput {
     page: Option<u32>,
     #[serde(default)]
     per_page: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct PagedInput {
-    owner: String,
-    repo: String,
-    number: u32,
-    #[serde(default)]
-    page: Option<u32>,
-    #[serde(default)]
-    per_page: Option<u32>,
+    #[serde(default, rename = "_cli")]
+    cli: Option<String>,
+    #[serde(default, rename = "_cliLimit")]
+    cli_limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,8 +79,6 @@ struct RawComment {
     id: u64,
     #[serde(default)]
     user: Option<RawUser>,
-    #[serde(default)]
-    body: Option<String>,
     created_at: String,
 }
 
@@ -119,9 +111,24 @@ pub(crate) fn read(
         ),
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
-    let issue = decode::<RawIssue>(&response.body)?;
+    let raw = decode::<Value>(&response.body)?;
+    let issue = serde_json::from_value::<RawIssue>(raw.clone()).map_err(|_| invalid_response())?;
     if issue.number != input.number {
         return Err(invalid_response());
+    }
+    if let Some(fields) = input.cli.as_deref() {
+        let mut projected = cli_issue(&issue, &raw, fields)?;
+        if fields.split(',').any(|field| field == "comments") {
+            let path = format!(
+                "/repos/{}/{}/issues/{}/comments?per_page=100",
+                percent_encode(&input.owner),
+                percent_encode(&input.repo),
+                input.number
+            );
+            projected["comments"] = json!(crate::view_items(send, base, &path, &["created_at"])?
+                .into_iter().map(|comment| json!({"author": comment["user"]["login"].as_str().map(|login| json!({"login": login})), "body": comment["body"], "createdAt": comment["created_at"]})).collect::<Vec<_>>());
+        }
+        return Ok(projected);
     }
 
     let (title, _) = truncate_text(&issue.title, MAX_TITLE_OUT_BYTES);
@@ -147,6 +154,33 @@ pub(crate) fn read(
     }))
 }
 
+fn cli_issue(issue: &RawIssue, raw: &Value, fields: &str) -> Result<Value, ProviderError> {
+    let title = marked_text(&issue.title, MAX_TITLE_OUT_BYTES);
+    let body = marked_optional(issue.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
+    if (fields.split(',').any(|field| field == "assignees")
+        && raw["assignees"]
+            .as_array()
+            .is_some_and(|items| items.len() > MAX_LIST_ITEMS))
+        || ((fields.is_empty() || fields.split(',').any(|field| field == "labels"))
+            && raw["labels"]
+                .as_array()
+                .is_some_and(|items| items.len() > MAX_LABELS))
+    {
+        return Err(invalid_response());
+    }
+    Ok(json!({
+        "number": issue.number, "title": title, "body": body,
+        "state": if issue.state == "closed" { "CLOSED" } else { "OPEN" },
+        "author": raw["user"]["login"].as_str().map(|login| json!({"login": login})),
+        "assignees": raw["assignees"].as_array().map(|users| users.iter()
+            .filter_map(|user| user["login"].as_str().map(|login| json!({"login": login})))
+            .collect::<Vec<_>>()).unwrap_or_default(),
+        "labels": raw["labels"].as_array().cloned().unwrap_or_default(),
+        "closedAt": raw["closed_at"], "createdAt": timestamp(&issue.created_at)?,
+        "updatedAt": timestamp(&issue.updated_at)?, "url": raw["html_url"],
+    }))
+}
+
 pub(crate) fn list(
     input: Value,
     base: &Base,
@@ -156,6 +190,30 @@ pub(crate) fn list(
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     let state = validate_state(input.state.as_deref())?;
+    if input.cli.is_some() {
+        if input.page.is_some() || input.per_page.is_some() {
+            return Err(invalid_input());
+        }
+        let path = format!(
+            "/repos/{}/{}/issues?state={state}",
+            percent_encode(&input.owner),
+            percent_encode(&input.repo)
+        );
+        let fields = input.cli.as_deref().unwrap_or_default();
+        let items =
+            crate::collect_pages(send, base, &path, input.cli_limit.unwrap_or(30), |raw| {
+                let issue = serde_json::from_value::<RawIssue>(raw.clone())
+                    .map_err(|_| invalid_response())?;
+                if issue.pull_request.is_some() {
+                    return Ok(None);
+                }
+                cli_issue(&issue, &raw, fields).map(Some)
+            })?;
+        return Ok(json!({"issues": items}));
+    }
+    if input.cli_limit.is_some() {
+        return Err(invalid_input());
+    }
     let (page, per_page) = validate_page(input.page, input.per_page)?;
     let per_page = per_page.unwrap_or(20);
 
@@ -169,12 +227,17 @@ pub(crate) fn list(
     )?;
     let response = send_get(send, uri, ACCEPT_JSON)?;
     let has_more = has_next_link(&response);
-    let issues = decode::<Vec<RawIssue>>(&response.body)?;
+    let issues = decode::<Vec<Value>>(&response.body)?;
 
     let items = issues
         .into_iter()
         .take(MAX_LIST_ITEMS)
-        .map(|issue| {
+        .map(|raw| {
+            let issue =
+                serde_json::from_value::<RawIssue>(raw.clone()).map_err(|_| invalid_response())?;
+            if let Some(fields) = input.cli.as_deref() {
+                return cli_issue(&issue, &raw, fields);
+            }
             let (title, _) = truncate_text(&issue.title, MAX_TITLE_OUT_BYTES);
             Ok(json!({
                 "number": issue.number,
@@ -191,54 +254,6 @@ pub(crate) fn list(
 
     Ok(json!({
         "issues": items,
-        "page": page,
-        "hasMore": has_more,
-    }))
-}
-
-pub(crate) fn comments(
-    input: Value,
-    base: &Base,
-    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
-) -> Result<Value, ProviderError> {
-    let input = serde_json::from_value::<PagedInput>(input).map_err(|_| invalid_input())?;
-    validate_login(&input.owner)?;
-    validate_repo(&input.repo)?;
-    validate_number(input.number)?;
-    let (page, per_page) = validate_page(input.page, input.per_page)?;
-    let per_page = per_page.unwrap_or(20);
-
-    let uri = url(
-        base,
-        &format!(
-            "/repos/{}/{}/issues/{}/comments?page={page}&per_page={per_page}",
-            percent_encode(&input.owner),
-            percent_encode(&input.repo),
-            input.number,
-        ),
-    )?;
-    let response = send_get(send, uri, ACCEPT_JSON)?;
-    let has_more = has_next_link(&response);
-    let comments = decode::<Vec<RawComment>>(&response.body)?;
-
-    let items = comments
-        .into_iter()
-        .take(MAX_LIST_ITEMS)
-        .map(|comment| {
-            let (body, body_truncated) =
-                bounded_optional(comment.body.as_deref(), MAX_COMMENT_OUT_BYTES);
-            Ok(json!({
-                "commentId": comment.id,
-                "author": login_out(comment.user.as_ref()),
-                "body": body,
-                "bodyTruncated": body_truncated,
-                "createdAt": timestamp(&comment.created_at)?.to_owned(),
-            }))
-        })
-        .collect::<Result<Vec<_>, ProviderError>>()?;
-
-    Ok(json!({
-        "comments": items,
         "page": page,
         "hasMore": has_more,
     }))
@@ -309,6 +324,51 @@ mod tests {
     }
 
     #[test]
+    fn native_issue_view_comments_complete_or_refuse_the_same_read() {
+        let issue = issue(5, false);
+        let id = capability("gh.issue.read");
+        let input = json!({"owner":"octo","repo":"hello","number":5,"_cli":"comments"});
+        for status in [200, 500] {
+            let result = invoke_with(
+                &id,
+                input.clone(),
+                scripted(vec![
+                    step(
+                        |request| {
+                            assert_eq!(
+                                request.uri,
+                                "https://api.github.com/repos/octo/hello/issues/5"
+                            )
+                        },
+                        json_response(200, &issue),
+                    ),
+                    step(
+                        |request| {
+                            assert_eq!(
+                                request.uri,
+                                "https://api.github.com/repos/octo/hello/issues/5/comments?per_page=100"
+                            )
+                        },
+                        json_response(
+                            status,
+                            &json!([{"user":{"login":"dev"},"body":"done","created_at":"2026-01-03T00:00:00Z"}]),
+                        ),
+                    ),
+                ]),
+            );
+            if status == 200 {
+                let output = result.expect("comments complete");
+                assert_eq!(output["comments"][0]["author"]["login"], "dev");
+            } else {
+                assert_eq!(
+                    result.expect_err("late error must not succeed").code(),
+                    "unexpected-status"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn read_projects_labels_and_the_pull_flag() {
         let output = invoke_with(
             &capability("gh.issue.read"),
@@ -332,6 +392,18 @@ mod tests {
     }
 
     #[test]
+    fn native_cli_issue_list_excludes_pull_requests_and_succeeds_on_short_exhaustion() {
+        let result = invoke_with(&capability("gh.issue.list"),
+            json!({"owner":"octo","repo":"hello","_cli":"number","_cliLimit":100}),
+            scripted(vec![step(|request| assert_eq!(request.uri,
+                "https://api.github.com/repos/octo/hello/issues?state=open&page=1&per_page=100"),
+                json_response(200, &json!([issue(1,true), issue(2,false)])))]))
+            .expect("genuine exhaustion is success");
+        assert_eq!(result["issues"].as_array().expect("issues").len(), 1);
+        assert_eq!(result["issues"][0]["number"], 2);
+    }
+
+    #[test]
     fn list_flags_pull_requests_hiding_among_issues() {
         let output = invoke_with(
             &capability("gh.issue.list"),
@@ -351,32 +423,6 @@ mod tests {
         let items = output["issues"].as_array().expect("items");
         assert_eq!(items[0]["isPullRequest"], false);
         assert_eq!(items[1]["isPullRequest"], true);
-    }
-
-    #[test]
-    fn comments_are_bounded_projections() {
-        let output = invoke_with(
-            &capability("gh.issue-comments.read"),
-            json!({"owner": "octo", "repo": "hello", "number": 5, "perPage": 2}),
-            scripted(vec![step(
-                |request| {
-                    assert_eq!(
-                        request.uri,
-                        "https://api.github.com/repos/octo/hello/issues/5/comments?page=1&per_page=2"
-                    );
-                },
-                json_response(
-                    200,
-                    &json!([
-                        {"id": 11, "user": {"login": "a"}, "body": "first", "created_at": "2026-08-01T00:00:00Z"},
-                    ]),
-                ),
-            )]),
-        )
-        .expect("comments succeed");
-
-        assert_eq!(output["comments"][0]["commentId"], 11);
-        assert_eq!(output["comments"][0]["body"], "first");
     }
 
     #[test]
