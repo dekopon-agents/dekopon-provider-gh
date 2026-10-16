@@ -17,7 +17,8 @@ macro_rules! capability {
         impl<'de> Deserialize<'de> for $input {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 let input = Value::deserialize(deserializer)?;
-                if input.get("_cli").is_some()
+                if (matches!($id, crate::ids::USER_SELF_READ) && input != Value::Object(Default::default()))
+                    || input.get("_cli").is_some()
                     || crate::output::validate_selection($id, input.get("_cliOutput"), input.get("_cliKind")).is_err()
                 {
                     return Err(serde::de::Error::custom("invalid gh output selection"));
