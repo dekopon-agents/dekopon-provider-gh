@@ -64,14 +64,12 @@ write to stderr with a nonzero status. Filter stdout with the shell's
 | `gh.issue.comment` | external-write |
 | `gh.search.prs` / `.issues` / `.repos` / `.code` / `.commits` | read-only |
 
-`gh.pull-request.status` reads the pull request's head, then lists GitHub Actions workflow runs and
-legacy commit statuses at that SHA. This deliberately avoids the Checks REST API: GitHub documents
-`checks:read` for fine-grained personal access tokens but does not expose that permission in the
-token editor. The replacement uses the available **Actions: Read-only** and **Commit statuses:
-Read-only** permissions, stays entirely on bounded GET requests, and reports the two sources
-separately rather than pretending workflow runs are check runs. Checks-only third-party integrations
-remain outside this capability. The constraint set must allow three GETs (pull metadata, Actions,
-then commit statuses); a two-request constraint from v0.1.0 fails closed before the final read.
+`gh.pull-request.status` backs numbered `gh pr checks` with real check runs (including third-party
+integrations), legacy commit statuses, and Actions workflow names at the pull's head SHA. The
+credential must be able to read all three endpoints; a refusal is an error, not a passing check.
+The read grant needs up to ten GET requests for bounded pagination. Text checks exit 8 while
+pending, 1 for failed or empty checks, and 3 for upstream, broker HTTP or ceiling failures;
+selected `--json` checks exit 0 and expose the verdict in `bucket`.
 
 Scoped search requires exactly one `--owner OWNER` or `-R OWNER/REPO` (`search repos` requires `--owner`). `--owner` matches personal and organization owners. Searches are bounded to ten REST requests and at most 100 matches. A shorter response can reflect GitHub's indexing delay; incomplete results and an inconsistent index count fail rather than being presented as a complete array. GitHub exposes at most the first 1,000 indexed matches. Query terms cannot set a repository or owner scope.
 
@@ -136,7 +134,7 @@ capabilities you enable (Read unless marked Write):
 | `gh.repo.read`, `gh.repo.list` | Metadata: Read |
 | `gh.content.read`, `gh.branch.read`, `gh.commit.read` | Contents: Read |
 | `gh.pull-request.list`, `.read`, `.diff` | Pull requests: Read |
-| `gh.pull-request.status` | Pull requests: Read; Actions: Read; Commit statuses: Read |
+| `gh.pull-request.status` | Pull requests: Read; Checks: Read; Actions: Read; Commit statuses: Read |
 | `gh.pull-request.approve`, `.comment`, `.request-changes` | Pull requests: Write |
 | `gh.pull-request.merge` | Pull requests: Write; Contents: Write |
 | `gh.issue.read`, `.list` | Issues: Read |

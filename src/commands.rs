@@ -240,7 +240,7 @@ fn pull_requests() -> Command {
         )
         .subcommand(
             Command::new("checks")
-                .about("Read the head's Actions workflow runs and legacy commit statuses")
+                .about("Read real check runs and statuses at the pull's head")
                 .arg(number_arg("Pull-request number"))
                 .arg(repo_arg(true)),
         )

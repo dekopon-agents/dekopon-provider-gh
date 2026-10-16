@@ -1375,6 +1375,95 @@ fn real_component_conforms_and_reaches_only_the_owner_base_url()
     Ok(())
 }
 
+#[test]
+fn component_checks_http_host_refusal_is_not_a_verdict() -> Result<(), Box<dyn std::error::Error>> {
+    let words = ["pr", "checks", "7", "-R", "octo/hello"];
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = provider::command::<Gh>(&words.map(str::to_owned), false)
+    else {
+        panic!("checks must propose")
+    };
+    assert_eq!(capability.as_str(), "gh.pull-request.status");
+    let pull = json!({"number":7,"title":"Ship","state":"open",
+        "head":{"ref":"topic","sha":"a".repeat(40)},
+        "base":{"ref":"main","sha":"b".repeat(40)},
+        "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"});
+    let response = Response {
+        status: 200,
+        headers: vec![],
+        body: pull.to_string().into_bytes(),
+    };
+    let harness =
+        Harness::<Gh>::get(component()).http(HttpScript::new("localhost", "GET", response.clone()));
+    let base = format!("{}/gh", harness.origin().expect("script origin"));
+    match harness
+        .settings(json!({"baseUrl":base}))
+        .call(capability.as_str(), input.clone())
+    {
+        Err(HarnessError::Invocation(failure)) => {
+            assert!(matches!(
+                *failure.error,
+                dekopon_broker_host::BrokerHostError::HostCallRejected {
+                    reason: "host-call-limit",
+                    ..
+                }
+            ));
+            assert_eq!(
+                failure.http_calls.len(),
+                1,
+                "no further HTTP request is sent"
+            );
+            assert_eq!(failure.http_calls[0].method, "GET");
+            assert_eq!(failure.http_calls[0].status, Some(200));
+        }
+        other => panic!("HTTP-host refusal must be terminal: {other:?}"),
+    }
+    let native = Native::<Gh>::new().http(HttpScript::new("api.github.com", "GET", response));
+    let output = native.call(capability.as_str(), &input.to_string());
+    assert_eq!(
+        output.status, 3,
+        "native second reply is not a check-runs object"
+    );
+    let requests = native.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0].uri,
+        "https://api.github.com/repos/octo/hello/pulls/7"
+    );
+    assert_eq!(
+        requests[1].uri,
+        format!(
+            "https://api.github.com/repos/octo/hello/commits/{}/check-runs?filter=all&page=1&per_page=100",
+            "a".repeat(40)
+        )
+    );
+    assert!(requests.iter().all(|request| {
+        request
+            .headers
+            .iter()
+            .all(|header| !header.name.eq_ignore_ascii_case("authorization"))
+    }));
+    Ok(())
+}
+
+#[test]
+fn component_checks_upstream_refusal_exits_three() -> Result<(), Box<dyn std::error::Error>> {
+    let result = scripted_component_get(
+        Response {
+            status: 403,
+            headers: vec![],
+            body: vec![],
+        },
+        "gh.pull-request.status",
+        json!({"owner":"octo","repo":"hello","number":7,"_cliOutput":""}),
+        "/repos/octo/hello/pulls/7",
+    )?;
+    assert_eq!(result.status, 3);
+    assert!(result.stdout.is_empty());
+    Ok(())
+}
+
 fn scripted_component_get(
     response: Response,
     capability: &str,

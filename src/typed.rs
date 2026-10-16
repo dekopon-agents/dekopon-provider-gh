@@ -36,7 +36,7 @@ macro_rules! capability {
                     .find(|c| c.id.as_str() == $id)
                     .expect("declared gh capability")
                     .input_schema;
-                if matches!($id, "gh.pull-request.list" | "gh.pull-request.read" | "gh.issue.list" | "gh.issue.read" | "gh.repo.read" | "gh.repo.list" | "gh.content.read" | "gh.search.prs" | "gh.search.issues" | "gh.search.repos" | "gh.search.code" | "gh.search.commits") {
+                if matches!($id, "gh.pull-request.list" | "gh.pull-request.read" | "gh.issue.list" | "gh.issue.read" | "gh.repo.read" | "gh.repo.list" | "gh.content.read" | "gh.search.prs" | "gh.search.issues" | "gh.search.repos" | "gh.search.code" | "gh.search.commits" | "gh.pull-request.status") {
                     schema["properties"]["_cliOutput"] = serde_json::json!({"type": "string", "maxLength": 512});
                     if matches!($id, "gh.pull-request.list" | "gh.issue.list" | "gh.repo.list" | "gh.search.prs" | "gh.search.issues" | "gh.search.repos" | "gh.search.code" | "gh.search.commits") {
                         schema["properties"]["_cliLimit"] = serde_json::json!({"type": "integer", "minimum": 1, "maximum": 100});
@@ -113,9 +113,15 @@ macro_rules! capability {
                     }
                 }
                 let result = $handler(input, &base, &mut |request| http.send(request))?;
+                if $id == crate::ids::PR_STATUS {
+                    crate::output::require_checks(&result)?;
+                }
                 if let Some(Value::String(selection)) = selection {
                     let rendered = crate::output::render($id, &render_input, &result, &selection)?;
                     out.write_all(rendered.as_bytes()).map_err(|_| crate::invalid_response())?;
+                    if $id == crate::ids::PR_STATUS && selection.is_empty() {
+                        return crate::output::checks_verdict(&result);
+                    }
                     return Ok(());
                 }
                 serde_json::to_writer(&mut *out, &result).map_err(|_| {
@@ -200,7 +206,7 @@ capability!(
     PrStatusInput,
     "gh.pull-request.status",
     "pull-request.status",
-    "Reads one pull request's head Actions workflow runs and legacy commit statuses",
+    "Reads real check runs, legacy statuses, and Actions names at one pull request's head",
     crate::pulls::status,
     EffectKind::ReadOnly,
     RiskLevel::Low

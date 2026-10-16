@@ -182,8 +182,8 @@ mod export {
 ///
 /// The send function is injected so native tests script exact request/response exchanges without
 /// any network. It is `FnMut` rather than `FnOnce` because the write capabilities perform a
-/// pre-read before their write, and `gh.pull-request.status` reads the pull, Actions workflow runs,
-/// and legacy commit statuses.
+/// pre-read before their write, and `gh.pull-request.status` reads the pull, real check runs,
+/// commit statuses, and Actions workflow names.
 #[cfg(test)]
 fn invoke_with<F>(
     capability: &CapabilityId,
@@ -330,7 +330,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             ids::PR_STATUS,
-            "Reads one pull request's head Actions workflow runs and legacy commit statuses",
+            "Reads real check runs, legacy statuses, and Actions names at one pull request's head",
             repo_schema(json!({"number": number_property()}), &["number"]),
         ),
         // Tier 3 — broader read surface plus the two remaining writes.
@@ -853,7 +853,7 @@ fn collect_pages_with(
     mut identity: impl FnMut(&Value) -> Option<String>,
     mut project: impl FnMut(Value) -> Result<Option<Value>, ProviderError>,
 ) -> Result<Vec<Value>, ProviderError> {
-    if !(1..=MAX_CLI_LIMIT).contains(&limit) {
+    if !(1..=MAX_CLI_LIMIT * MAX_LIST_REQUESTS).contains(&limit) {
         return Err(invalid_input());
     }
     let mut rows = Vec::new();

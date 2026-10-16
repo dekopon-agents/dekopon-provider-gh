@@ -62,6 +62,7 @@ pub(crate) fn validate_selection(
         ("gh.content.read", Some("read-file")) => ("repo", "read-file"),
         ("gh.content.read", Some("read-dir")) => ("repo", "read-dir"),
         ("gh.pull-request.read", None) => ("pr", "view"),
+        ("gh.pull-request.status", None) => ("pr", "checks"),
         ("gh.pull-request.list", None) => ("pr", "list"),
         ("gh.issue.read", None) => ("issue", "view"),
         ("gh.issue.list", None) => ("issue", "list"),
@@ -127,6 +128,34 @@ pub(crate) fn render(
     value: &Value,
     selection: &str,
 ) -> Result<String, ProviderError> {
+    if id == crate::ids::PR_STATUS {
+        let checks = value["checks"]
+            .as_array()
+            .ok_or_else(crate::invalid_response)?;
+        if !selection.is_empty() {
+            return serde_json::to_string(&select(&Value::Array(checks.clone()), selection, true))
+                .map(|text| format!("{text}\n"))
+                .map_err(|_| crate::invalid_response());
+        }
+        let mut text = String::new();
+        for check in checks {
+            let bucket = check["bucket"]
+                .as_str()
+                .ok_or_else(crate::invalid_response)?;
+            let printed_bucket = if bucket == "cancel" { "fail" } else { bucket };
+            text.push_str(&format!(
+                "{}\t{}\t{}\t{}\t{}\n",
+                check["name"].as_str().ok_or_else(crate::invalid_response)?,
+                printed_bucket,
+                check_duration(check)?,
+                check["link"].as_str().ok_or_else(crate::invalid_response)?,
+                check["description"]
+                    .as_str()
+                    .ok_or_else(crate::invalid_response)?
+            ));
+        }
+        return Ok(text);
+    }
     let list = matches!(
         id,
         "gh.pull-request.list"
@@ -215,9 +244,162 @@ pub(crate) fn render(
     Ok(output)
 }
 
+fn check_duration(row: &Value) -> Result<String, ProviderError> {
+    use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+    let started = row["startedAt"]
+        .as_str()
+        .ok_or_else(crate::invalid_response)?;
+    let completed = row["completedAt"]
+        .as_str()
+        .ok_or_else(crate::invalid_response)?;
+    if started == "0001-01-01T00:00:00Z" || completed == "0001-01-01T00:00:00Z" {
+        return Ok("0".to_owned());
+    }
+    let start = OffsetDateTime::parse(started, &Rfc3339).map_err(|_| crate::invalid_response())?;
+    let end = OffsetDateTime::parse(completed, &Rfc3339).map_err(|_| crate::invalid_response())?;
+    let elapsed = end
+        .unix_timestamp_nanos()
+        .saturating_sub(start.unix_timestamp_nanos());
+    if elapsed <= 0 {
+        return Ok("0".to_owned());
+    }
+    let seconds = elapsed / 1_000_000_000;
+    let fraction = elapsed % 1_000_000_000;
+    let hours = seconds / 3600;
+    let minutes = (seconds / 60) % 60;
+    let remainder = seconds % 60;
+    if seconds > 0 {
+        let suffix = if fraction == 0 {
+            String::new()
+        } else {
+            format!(".{fraction:09}").trim_end_matches('0').to_owned()
+        };
+        if hours > 0 {
+            Ok(format!("{hours}h{minutes}m{remainder}{suffix}s"))
+        } else if minutes > 0 {
+            Ok(format!("{minutes}m{remainder}{suffix}s"))
+        } else {
+            Ok(format!("{remainder}{suffix}s"))
+        }
+    } else {
+        let (unit, factor, digits) = if elapsed >= 1_000_000 {
+            ("ms", 1_000_000, 6)
+        } else if elapsed >= 1_000 {
+            ("µs", 1_000, 3)
+        } else {
+            ("ns", 1, 0)
+        };
+        let whole = elapsed / factor;
+        let decimal = if digits == 0 || elapsed % factor == 0 {
+            String::new()
+        } else {
+            format!(".{:0digits$}", elapsed % factor)
+                .trim_end_matches('0')
+                .to_owned()
+        };
+        Ok(format!("{whole}{decimal}{unit}"))
+    }
+}
+
+pub(crate) fn require_checks(value: &Value) -> Result<(), ProviderError> {
+    let checks = value["checks"]
+        .as_array()
+        .ok_or_else(crate::invalid_response)?;
+    if checks.is_empty() {
+        return Err(ProviderError::new(
+            "checks-empty",
+            format!(
+                "no checks reported on the '{}' branch",
+                value["headRefName"]
+                    .as_str()
+                    .ok_or_else(crate::invalid_response)?
+            ),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn checks_verdict(value: &Value) -> Result<(), ProviderError> {
+    let checks = value["checks"]
+        .as_array()
+        .ok_or_else(crate::invalid_response)?;
+    if checks.iter().any(|row| row["bucket"] == "fail") {
+        return Err(ProviderError::new(
+            "checks-failed",
+            "one or more checks failed",
+        ));
+    }
+    if checks.iter().any(|row| row["bucket"] == "pending") {
+        return Err(ProviderError::new("checks-pending", "checks are pending"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+
+    #[test]
+    fn checks_render_bucket_duration_and_json_selection_without_losing_verdict() {
+        use dekopon_provider_sdk::provider::Failure;
+        let input = json!({"checks":[{"name":"third-party","bucket":"fail","state":"FAILURE",
+            "startedAt":"2026-08-10T00:00:00Z","completedAt":"2026-08-10T00:02:05Z",
+            "link":"https://example.test/check","description":"broken","workflow":"","event":""}]});
+        let text = super::render("gh.pull-request.status", &json!({}), &input, "").expect("text");
+        assert_eq!(
+            text,
+            "third-party\tfail\t2m5s\thttps://example.test/check\tbroken\n"
+        );
+        let selected = super::render("gh.pull-request.status", &json!({}), &input, "name,bucket")
+            .expect("json");
+        assert_eq!(
+            selected,
+            "[{\"bucket\":\"fail\",\"name\":\"third-party\"}]\n"
+        );
+        let error = super::checks_verdict(&input).expect_err("failed check");
+        assert_eq!(error.code(), "checks-failed");
+        assert_eq!(Failure::code(&error).status().get(), 1);
+    }
+
+    #[test]
+    fn checks_verdict_and_provider_failures_have_distinct_status_codes() {
+        use dekopon_provider_sdk::provider::Failure;
+        for (bucket, code, status) in [
+            ("pending", "checks-pending", 8),
+            ("fail", "checks-failed", 1),
+        ] {
+            let error = super::checks_verdict(&json!({"checks":[{"bucket":bucket}]}))
+                .expect_err("nonpassing verdict");
+            assert_eq!(error.code(), code);
+            assert_eq!(Failure::code(&error).status().get(), status);
+        }
+        let empty = super::require_checks(&json!({"checks":[],"headRefName":"topic"}))
+            .expect_err("no checks on branch");
+        assert_eq!(empty.code(), "checks-empty");
+        assert_eq!(Failure::code(&empty).status().get(), 1);
+        assert_eq!(empty.message(), "no checks reported on the 'topic' branch");
+        for (code, status) in [
+            ("request-ceiling", 3),
+            ("invalid-response", 3),
+            ("forbidden", 3),
+            ("not-found", 3),
+            ("unprocessable", 3),
+            ("rate-limited", 3),
+            ("http-failed", 3),
+            ("usage", 2),
+        ] {
+            let error = crate::error::ProviderError::new(code, "safe failure");
+            assert_eq!(Failure::code(&error).as_str(), code);
+            assert_eq!(Failure::code(&error).status().get(), status);
+        }
+        assert!(super::checks_verdict(&json!({"checks":[{"bucket":"cancel"}]})).is_ok());
+        assert!(super::checks_verdict(&json!({"checks":[{"bucket":"skipping"}]})).is_ok());
+        let failed_wins = super::checks_verdict(&json!({"checks":[
+            {"bucket":"pending"},{"bucket":"fail"}
+        ]}))
+        .expect_err("failed check takes precedence over pending");
+        assert_eq!(failed_wins.code(), "checks-failed");
+    }
 
     #[test]
     fn native_invalid_selection_has_typed_invalid_input_code() {

@@ -31,7 +31,7 @@ example came here with the component, and nothing in dekopon exercises it any mo
 ## What “lint” means here
 
 The agent reviews bounded GitHub data: pull-request metadata, changed-file patches, a unified diff,
-head Actions workflow runs, legacy commit statuses, and selected files at the observed head SHA. It
+real check runs (including third-party integrations), legacy commit statuses, Actions workflow names, and selected files at the observed head SHA. It
 can identify likely correctness,
 security, reliability, maintainability, and test-coverage problems. It cannot check out the branch,
 run repository commands, or claim that a compiler or project linter passed. Its standing orders
@@ -56,13 +56,12 @@ Create a fine-grained personal access token scoped to only the repositories this
 
 - **Contents: Read-only** — `gh.content.read`
 - **Pull requests: Read and write** — pull-request reads and one `COMMENT` review
-- **Actions: Read-only** — Actions workflow runs returned by `gh.pull-request.status`
+- **Checks: Read-only** — check runs returned by `gh.pull-request.status`
+- **Actions: Read-only** — workflow names and events for Actions check runs
 - **Commit statuses: Read-only** — legacy statuses returned by `gh.pull-request.status`
 
-GitHub's fine-grained token editor does not expose the `Checks: Read-only` permission required by
-the check-runs REST endpoint, even though its endpoint documentation names that permission. The
-status capability therefore uses the two read permissions the editor does expose. It reports
-workflow runs and legacy statuses separately and cannot see checks-only third-party integrations.
+Verify the chosen credential can read the check-runs endpoint for these repositories. A 403 or
+broker refusal is an error, not evidence that checks passed; checks-only integrations are included.
 
 GitHub has no comment-only pull-request permission. Dekopon narrows that provider permission by
 exposing comment, approval, request-changes, and merge as separate capabilities. This deployment
