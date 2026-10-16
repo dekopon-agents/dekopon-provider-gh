@@ -1151,6 +1151,56 @@ fn component_invalid_typed_selection_refuses_before_settings_grant()
 }
 
 #[test]
+fn component_self_read_invalid_input_refuses_before_settings_grant()
+-> Result<(), Box<dyn std::error::Error>> {
+    for input in [
+        json!({"login":"other"}),
+        json!({"owner":null}),
+        json!({"_cliOutput":"login"}),
+    ] {
+        let harness = Harness::<Gh>::get(component()).http(HttpScript::new(
+            "localhost",
+            "GET",
+            Response {
+                status: 200,
+                headers: vec![],
+                body: br#"{"login":"credential-owner"}"#.to_vec(),
+            },
+        ));
+        let output = harness
+            .settings(json!({"baseUrl":5}))
+            .call("gh.user-self.read", input.clone())?;
+        assert_eq!(output.status, 2, "{input}");
+        assert_eq!(
+            output.stderr,
+            "the input does not match the capability's input schema\n"
+        );
+        assert!(output.stdout.is_empty());
+        assert!(output.http_calls.is_empty());
+        assert!(output.http_request.is_none());
+    }
+    let harness = Harness::<Gh>::get(component()).http(HttpScript::new(
+        "localhost",
+        "GET",
+        Response {
+            status: 200,
+            headers: vec![],
+            body: br#"{"login":"credential-owner"}"#.to_vec(),
+        },
+    ));
+    match harness
+        .settings(json!({"baseUrl":5}))
+        .call("gh.user-self.read", Value::Null)
+    {
+        Err(HarnessError::Invocation(failure)) => {
+            assert!(failure.http_calls.is_empty());
+        }
+        other => panic!("null must be refused by the host before provider execution: {other:?}"),
+    }
+    Ok(())
+}
+
+#[test]
 fn native_invalid_cli_selection_never_sends_http() {
     let native = Native::<Gh>::new().http(HttpScript::new(
         "api.github.com",
