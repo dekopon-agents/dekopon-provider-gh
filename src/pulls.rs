@@ -1011,52 +1011,68 @@ mod tests {
     }
 
     #[test]
-    fn scripted_checks_text_verdicts_and_json_buckets() {
-        use dekopon_provider_sdk::provider::Failure;
+    fn scripted_argv_checks_selects_runtime_output_and_exit_status() {
+        use dekopon_provider_sdk::{
+            CommandRunOutcome,
+            provider::{self, Failure},
+        };
         let head = "a".repeat(40);
-        for (status, conclusion, bucket, exit) in [
-            ("completed", "failure", "fail", 1),
-            ("in_progress", "", "pending", 8),
-            ("completed", "success", "pass", 0),
-        ] {
-            let result = invoke_with(
-                &capability("gh.pull-request.status"), checks_input(),
-                scripted(checks_steps(
+        for json_output in [false, true] {
+            for (status, conclusion, bucket, text_exit) in [
+                ("completed", "failure", "fail", 1),
+                ("in_progress", "", "pending", 8),
+                ("completed", "success", "pass", 0),
+            ] {
+                let mut argv = vec!["pr", "checks", "7", "-R", "octo/hello"];
+                if json_output {
+                    argv.extend(["--json", "name,bucket"]);
+                }
+                let CommandRunOutcome::Proposed {
+                    capability, input, ..
+                } = provider::command::<crate::Gh>(
+                    &argv.into_iter().map(str::to_owned).collect::<Vec<_>>(),
+                    false,
+                )
+                else {
+                    panic!("checks argv must propose");
+                };
+                assert_eq!(capability.as_str(), "gh.pull-request.status");
+                let typed = serde_json::from_value::<crate::typed::PrStatusInput>(input)
+                    .expect("proposed input must pass typed validation");
+                let mut stdout = Vec::new();
+                let mut send = scripted(checks_steps(
                     json!({"total_count":1,"check_runs":[{
                         "id":1,"name":"external-ci","status":status,
                         "conclusion": if conclusion.is_empty() { Value::Null } else { json!(conclusion) },
                         "details_url":"https://ci.example.invalid/1"}]}),
                     json!({"sha":head,"total_count":0,"statuses":[]}),
                     json!({"total_count":0,"workflow_runs":[]}),
-                )),
-            ).expect("all four read steps succeeded");
-            assert_eq!(result["checks"][0]["bucket"], bucket);
-            let text =
-                crate::output::render("gh.pull-request.status", &checks_input(), &result, "")
-                    .expect("TSV");
-            assert!(
-                text.starts_with(&format!("external-ci\t{bucket}\t")),
-                "{text}"
-            );
-            let verdict = crate::output::checks_verdict(&result);
-            assert_eq!(
-                verdict
+                ));
+                let result = crate::typed::PrStatus::run_with(
+                    typed,
+                    &crate::GITHUB_API,
+                    &mut send,
+                    &mut stdout,
+                );
+                let exit = result
                     .err()
                     .map(|error| Failure::code(&error).status().get())
-                    .unwrap_or(0),
-                exit
-            );
-            let selected = crate::output::render(
-                "gh.pull-request.status",
-                &checks_input(),
-                &result,
-                "name,bucket",
-            )
-            .expect("JSON selection");
-            assert_eq!(
-                serde_json::from_str::<Value>(&selected).expect("JSON"),
-                json!([{"name":"external-ci","bucket":bucket}])
-            );
+                    .unwrap_or(0);
+                let stdout = String::from_utf8(stdout).expect("UTF-8 output");
+                if json_output {
+                    assert_eq!(exit, 0, "selected JSON must not return a text verdict");
+                    assert_eq!(
+                        serde_json::from_str::<Value>(&stdout).expect("JSON output"),
+                        json!([{"name":"external-ci","bucket":bucket}])
+                    );
+                } else {
+                    assert_eq!(exit, text_exit, "{status}/{conclusion}");
+                    assert_eq!(
+                        stdout,
+                        format!("external-ci\t{bucket}\t0\thttps://ci.example.invalid/1\t\n")
+                    );
+                }
+            }
         }
     }
 

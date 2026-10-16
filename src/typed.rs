@@ -55,21 +55,15 @@ macro_rules! capability {
             }
         }
         pub struct $name;
-        impl Capability for $name {
-            type Provider = Gh;
-            const NAME: &'static str = $short;
-            const DESCRIPTION: &'static str = $description;
-            const EFFECT: EffectKind = $effect;
-            const RISK: RiskLevel = $risk;
-            type Input = $input;
-            type Needs = (Settings<GhSettings>, Http);
-            type Error = ProviderError;
-            fn run(
-                input: Self::Input,
-                (settings, http): Self::Needs,
-                out: &mut Stdout,
-            ) -> Result<(), Self::Error> {
-                let base = settings.into_inner().base();
+        impl $name {
+            // The same typed runtime path as Capability::run, with its HTTP boundary injected
+            // by the existing native scripted-send fixture for multi-response tests.
+            pub(crate) fn run_with(
+                input: $input,
+                base: &crate::Base,
+                send: &mut dyn FnMut(crate::Request) -> Result<crate::Response, crate::HttpError>,
+                out: &mut dyn Write,
+            ) -> Result<(), ProviderError> {
                 let mut input = input.0;
                 if input.get(STDIN_BODY_FIELD).is_some() {
                     if !has_piped_body($id)
@@ -112,7 +106,7 @@ macro_rules! capability {
                         input["_cli"] = Value::String(fields.clone());
                     }
                 }
-                let result = $handler(input, &base, &mut |request| http.send(request))?;
+                let result = $handler(input, base, send)?;
                 if $id == crate::ids::PR_STATUS {
                     crate::output::require_checks(&result)?;
                 }
@@ -131,6 +125,24 @@ macro_rules! capability {
                     ProviderError::new("invalid-response", "could not write output")
                 })?;
                 Ok(())
+            }
+        }
+        impl Capability for $name {
+            type Provider = Gh;
+            const NAME: &'static str = $short;
+            const DESCRIPTION: &'static str = $description;
+            const EFFECT: EffectKind = $effect;
+            const RISK: RiskLevel = $risk;
+            type Input = $input;
+            type Needs = (Settings<GhSettings>, Http);
+            type Error = ProviderError;
+            fn run(
+                input: Self::Input,
+                (settings, http): Self::Needs,
+                out: &mut Stdout,
+            ) -> Result<(), Self::Error> {
+                let base = settings.into_inner().base();
+                Self::run_with(input, &base, &mut |request| http.send(request), out)
             }
         }
     };
