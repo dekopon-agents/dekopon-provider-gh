@@ -242,7 +242,8 @@ fn pull_requests() -> Command {
             Command::new("checks")
                 .about("Read real check runs and statuses at the pull's head")
                 .arg(number_arg("Pull-request number"))
-                .arg(repo_arg(true)),
+                .arg(repo_arg(true))
+                .arg(json_arg()),
         )
         .subcommand(
             Command::new("review")
@@ -565,12 +566,12 @@ fn dispatch(
                 return Err(usage("gh search: query cannot change the structural scope"));
             }
             input.insert("query".into(), Value::String(query));
-            insert_text(
-                &mut input,
-                "state",
-                matches.try_get_one::<String>("state").ok().flatten(),
-            );
-            if let Some(author) = matches.try_get_one::<String>("author").ok().flatten() {
+            if matches!(verb, "prs" | "issues") {
+                insert_text(&mut input, "state", matches.get_one::<String>("state"));
+            }
+            if matches!(verb, "prs" | "issues" | "commits")
+                && let Some(author) = matches.get_one::<String>("author")
+            {
                 crate::validate_login(author).map_err(|_| usage("gh search: invalid author"))?;
                 insert_text(&mut input, "author", Some(author));
             }
@@ -594,9 +595,7 @@ fn dispatch(
             Value::from(matches.get_one::<u64>("limit").copied().unwrap_or(30)),
         );
     }
-    if let Some(fields) = crate::output::fields(area, verb)
-        && matches.try_get_one::<String>("json").is_ok()
-    {
+    if let Some(fields) = crate::output::fields(area, verb) {
         let selection = match matches.get_one::<String>("json") {
             Some(value) if value.is_empty() => {
                 return Err(usage(format!(

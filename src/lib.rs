@@ -876,52 +876,7 @@ fn collect_pages_with(
                 }
             }
         }
-        let links = header_values(&response, "link").collect::<Vec<_>>();
-        if links.is_empty() {
-            return Ok(rows);
-        }
-        let next = url(base, &format!("{path}&page={}&per_page=100", page + 1))?;
-        let mut next_page = false;
-        let mut previous_page = false;
-        let mut first_page = false;
-        let mut last_page = None;
-        for link in links {
-            let link = std::str::from_utf8(link).map_err(|_| invalid_response())?;
-            for part in link.split(',') {
-                let part = part.trim();
-                let (target, rel) = part.split_once(">; rel=\"").ok_or_else(invalid_response)?;
-                let target = target.strip_prefix('<').ok_or_else(invalid_response)?;
-                let rel = rel.strip_suffix('"').ok_or_else(invalid_response)?;
-                let page_value = target
-                    .strip_prefix(&url(base, &format!("{path}&page="))?)
-                    .and_then(|rest| rest.strip_suffix("&per_page=100"))
-                    .and_then(|number| number.parse::<usize>().ok())
-                    .filter(|number| *number > 0)
-                    .ok_or_else(invalid_response)?;
-                if !matches!(rel, "next" | "prev" | "first" | "last") {
-                    return Err(invalid_response());
-                }
-                match rel {
-                    "next" if !next_page && page_value == page + 1 && target == next => {
-                        next_page = true;
-                    }
-                    "prev" if !previous_page && page > 1 && page_value == page - 1 => {
-                        previous_page = true;
-                    }
-                    "first" if !first_page && page_value == 1 => {
-                        first_page = true;
-                    }
-                    "last" if last_page.is_none() && page_value >= page => {
-                        last_page = Some(page_value);
-                    }
-                    _ => return Err(invalid_response()),
-                }
-            }
-        }
-        if last_page.is_some_and(|last| (last > page) != next_page) {
-            return Err(invalid_response());
-        }
-        if !next_page {
+        if !has_next_link(&response) {
             return Ok(rows);
         }
     }
