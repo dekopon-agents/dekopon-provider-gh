@@ -2,7 +2,7 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Eighteen narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
+Twenty-four narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
 output projections, and SHA-pinned review/merge writes. There is deliberately no `gh.api.*`
 passthrough: a path-level escape hatch would collapse per-capability policy into "everything the
 credential can reach".
@@ -59,7 +59,7 @@ write to stderr with a nonzero status. Filter stdout with the shell's
 | `gh.content.read` | read-only |
 | `gh.pull-request.list` / `.read` / `.diff` / `.status` | read-only |
 | `gh.pull-request.approve` / `.comment` / `.request-changes` / `.merge` | external-write |
-| `gh.repo.read` / `gh.repo.list` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` | read-only |
+| `gh.repo.read` / `gh.repo.list` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` / `gh.user-self.read` | read-only |
 | `gh.issue.read` / `.list` | read-only |
 | `gh.issue.comment` | external-write |
 | `gh.search.prs` / `.issues` / `.repos` / `.code` / `.commits` | read-only |
@@ -132,7 +132,7 @@ capabilities you enable (Read unless marked Write):
 
 | Capability | Fine-grained permission |
 |---|---|
-| `gh.auth.status`, `gh.user.read` | None (public endpoint / rate limit) |
+| `gh.auth.status`, `gh.user.read`, `gh.user-self.read` | None (public endpoint / rate limit) |
 | `gh.repo.read`, `gh.repo.list` | Metadata: Read |
 | `gh.content.read`, `gh.branch.read`, `gh.commit.read` | Contents: Read |
 | `gh.pull-request.list`, `.read`, `.diff` | Pull requests: Read |

@@ -335,6 +335,16 @@ capability!(
     RiskLevel::Low
 );
 capability!(
+    UserSelfRead,
+    UserSelfReadInput,
+    crate::ids::USER_SELF_READ,
+    "user-self.read",
+    "Reads the credential's bounded GitHub user identity",
+    crate::repos::self_user,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
     UserRead,
     UserReadInput,
     "gh.user.read",
@@ -399,6 +409,7 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
         "gh.branch.read" => Proposal::to::<BranchRead>(BranchReadInput(input)),
         "gh.commit.read" => Proposal::to::<CommitRead>(CommitReadInput(input)),
         "gh.user.read" => Proposal::to::<UserRead>(UserReadInput(input)),
+        crate::ids::USER_SELF_READ => Proposal::to::<UserSelfRead>(UserSelfReadInput(input)),
         "gh.issue.read" => Proposal::to::<IssueRead>(IssueReadInput(input)),
         "gh.issue.list" => Proposal::to::<IssueList>(IssueListInput(input)),
         "gh.issue.comment" => Proposal::to::<IssueComment>(IssueCommentInput(input)),

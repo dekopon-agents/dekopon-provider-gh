@@ -28,7 +28,7 @@ use serde_json::{Map, Value};
 
 use crate::ids;
 
-const API_HELP: &str = "gh api accepts only users/LOGIN, repos/OWNER/REPO/branches/BRANCH, and repos/OWNER/REPO/commits/REF; no raw API passthrough";
+const API_HELP: &str = "gh api accepts only user, users/LOGIN, repos/OWNER/REPO/branches/BRANCH, and repos/OWNER/REPO/commits/REF; no raw API passthrough";
 
 /// Runs one `gh …` argv the way the upstream tool would.
 ///
@@ -122,7 +122,7 @@ fn tree() -> Command {
         }))
         .subcommand(
             Command::new("api")
-                .about("Read one of three finite GitHub REST routes")
+                .about("Read one of four finite GitHub REST routes")
                 .arg(Arg::new("route").required(true).value_name("ROUTE")),
         )
         .subcommand(
@@ -628,6 +628,7 @@ fn api_route(matches: &ArgMatches) -> Result<(&'static str, Value), ProviderErro
     let route = matches.get_one::<String>("route").expect("required route");
     let parts: Vec<_> = route.splitn(5, '/').collect();
     let (id, input) = match parts.as_slice() {
+        ["user"] => (ids::USER_SELF_READ, serde_json::json!({})),
         ["users", login] => {
             crate::validate_login(login).map_err(|_| usage("gh api: invalid login"))?;
             (ids::USER_READ, serde_json::json!({"login": login}))
@@ -1445,10 +1446,13 @@ mod tests {
 
     #[test]
     fn api_accepts_only_finite_routes_without_flags_or_queries() {
+        let (id, input) = dispatch(&["api", "user"]);
+        assert_eq!(id, "gh.user-self.read");
+        assert_eq!(input, json!({}));
         for route in [
             "repos/o/r/pulls",
             "graphql",
-            "user",
+            "user?x=1",
             "users/a?x=1",
             "users/a/b",
         ] {

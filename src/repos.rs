@@ -240,6 +240,25 @@ pub(crate) fn commit(
     Ok(body)
 }
 
+pub(crate) fn self_user(
+    input: Value,
+    base: &Base,
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+) -> Result<Value, ProviderError> {
+    if input != serde_json::json!({}) {
+        return Err(invalid_input());
+    }
+    let response = send_get(send, url(base, "/user")?, ACCEPT_JSON)?;
+    let body = decode::<Value>(&response.body)?;
+    if !body["login"]
+        .as_str()
+        .is_some_and(|login| !login.is_empty())
+    {
+        return Err(invalid_response());
+    }
+    Ok(body)
+}
+
 pub(crate) fn user(
     input: Value,
     base: &Base,
@@ -266,6 +285,17 @@ mod tests {
 
     use crate::invoke_with;
     use crate::testutil::{capability, json_response, scripted, step};
+
+    #[test]
+    fn native_self_read_refuses_identity_inputs_before_http() {
+        for input in [json!({"login":"other"}), json!({"owner":null})] {
+            let error = invoke_with(&capability("gh.user-self.read"), input, |_| {
+                panic!("invalid self-read must not send HTTP")
+            })
+            .expect_err("self read accepts only an empty object");
+            assert_eq!(error.code(), "invalid-input");
+        }
+    }
 
     #[test]
     fn repo_read_projects_metadata() {

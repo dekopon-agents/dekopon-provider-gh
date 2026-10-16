@@ -13,7 +13,7 @@ fn component() -> std::path::PathBuf {
 #[test]
 fn manifest_keeps_read_and_write_grants_independent() {
     let manifest = provider::manifest::<Gh>().expect("closed manifest");
-    assert_eq!(manifest.capabilities.len(), 23);
+    assert_eq!(manifest.capabilities.len(), 24);
     assert!(
         manifest
             .capabilities
@@ -229,6 +229,13 @@ fn native_removed_ids_cannot_run_without_http() {
 fn retained_reads_succeed_only_with_their_own_http_grant() -> Result<(), Box<dyn std::error::Error>>
 {
     let cases: &[(&[&str], &str, &str, Value, &str)] = &[
+        (
+            &["api", "user"],
+            "gh.user-self.read",
+            "/user",
+            json!({"login":"credential-owner","id":42,"type":"User"}),
+            "login",
+        ),
         (
             &["api", "users/octo"],
             "gh.user.read",

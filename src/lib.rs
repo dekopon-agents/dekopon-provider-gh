@@ -128,6 +128,7 @@ pub(crate) mod ids {
     pub(crate) const BRANCH_READ: &str = "gh.branch.read";
     pub(crate) const COMMIT_READ: &str = "gh.commit.read";
     pub(crate) const USER_READ: &str = "gh.user.read";
+    pub(crate) const USER_SELF_READ: &str = "gh.user-self.read";
     pub(crate) const ISSUE_READ: &str = "gh.issue.read";
     pub(crate) const ISSUE_LIST: &str = "gh.issue.list";
     pub(crate) const ISSUE_COMMENT: &str = "gh.issue.comment";
@@ -164,6 +165,7 @@ impl Provider for Gh {
         typed::IssueComment,
         typed::PrMerge,
         typed::UserRead,
+        typed::UserSelfRead,
         typed::AuthStatus,
     );
     fn propose(args: Self::Args, stdin_piped: bool) -> Result<Proposal<Self>, Usage> {
@@ -213,6 +215,7 @@ where
         ids::BRANCH_READ => repos::branch(input, base, send),
         ids::COMMIT_READ => repos::commit(input, base, send),
         ids::USER_READ => repos::user(input, base, send),
+        ids::USER_SELF_READ => repos::self_user(input, base, send),
         ids::AUTH_STATUS => auth::status(input, base, send),
         ids::ISSUE_READ => issues::read(input, base, send),
         ids::ISSUE_LIST => issues::list(input, base, send),
@@ -424,6 +427,11 @@ fn capabilities() -> Vec<ProviderCapability> {
                 }),
                 &["number", "mergeMethod"],
             ),
+        ),
+        read(
+            ids::USER_SELF_READ,
+            "Reads the credential's bounded GitHub user identity",
+            object_schema(json!({}), &[]),
         ),
         read(
             ids::USER_READ,
@@ -1384,7 +1392,7 @@ mod tests {
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 23);
+        assert_eq!(manifest.capabilities.len(), 24);
 
         let external_writes = manifest
             .capabilities
@@ -1525,7 +1533,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 23);
+        assert_eq!(manifest.capabilities.len(), 24);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()
