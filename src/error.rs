@@ -37,7 +37,9 @@ impl Failure for ProviderError {
             "checks-empty" => Code::new("checks-empty").exiting(1),
             "unauthorized" | "forbidden" | "not-found" | "unprocessable" | "rate-limited"
             | "unexpected-status" | "invalid-response" | "http-failed" | "invalid-request"
-            | "request-ceiling" => Code::new(self.code).exiting(3),
+            | "request-ceiling" | "incomplete-results" | "index-ceiling" => {
+                Code::new(self.code).exiting(3)
+            }
             "unknown-capability" => Code::UNKNOWN_CAPABILITY,
             "merge-conflict" => Code::new("merge-conflict"),
             "pr-closed" => Code::new("pr-closed"),

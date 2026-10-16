@@ -213,8 +213,8 @@ fn pull_requests() -> Command {
                     Arg::new("state")
                         .long("state")
                         .value_name("STATE")
-                        .value_parser(["open", "closed"])
-                        .help("open or closed"),
+                        .value_parser(["open", "closed", "merged"])
+                        .help("open, closed or merged"),
                 )
                 .arg(
                     Arg::new("author")
@@ -1116,9 +1116,7 @@ mod tests {
             let (called, sent) = dispatch(arguments);
             assert_eq!(called, *capability, "{arguments:?}");
             let mut expected = input.clone();
-            if let Some(fields) = crate::output::fields(arguments[0], arguments[1])
-                && !matches!((arguments[0], arguments[1]), ("pr", "checks"))
-            {
+            if let Some(fields) = crate::output::fields(arguments[0], arguments[1]) {
                 assert!(!fields.is_empty());
                 expected["_cliOutput"] = json!("");
                 if arguments[0] == "repo" && matches!(arguments[1], "read-file" | "read-dir") {
@@ -1127,6 +1125,31 @@ mod tests {
             }
             assert_eq!(sent, expected, "{arguments:?}");
         }
+    }
+
+    #[test]
+    fn merged_pr_list_uses_the_read_grant() {
+        let (id, input) = dispatch(&["pr", "list", "-R", "octo/hello", "--state", "merged"]);
+        assert_eq!(id, "gh.pull-request.list");
+        assert_eq!(input["state"], "merged");
+    }
+
+    #[test]
+    fn checks_json_proposes_selected_fields_without_changing_grant() {
+        let (id, input) = dispatch(&[
+            "pr",
+            "checks",
+            "7",
+            "-R",
+            "octo/hello",
+            "--json",
+            "name,bucket",
+        ]);
+        assert_eq!(id, "gh.pull-request.status");
+        assert_eq!(
+            input,
+            json!({"owner":"octo","repo":"hello","number":7,"_cliOutput":"name,bucket"})
+        );
     }
 
     #[test]

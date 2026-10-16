@@ -7,11 +7,11 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    ACCEPT_DIFF, ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_DESCRIPTION_OUT_BYTES, MAX_DIFF_OUT_BYTES,
-    MAX_LIST_ITEMS, MAX_PATCH_OUT_BYTES, MAX_PR_BODY_OUT_BYTES, MAX_TITLE_OUT_BYTES, RawUser,
-    bounded_optional, decode, has_next_link, invalid_input, invalid_response, is_sha, login_out,
-    marked_optional, marked_text, percent_encode, send_get, timestamp, truncate_text, url,
-    validate_login, validate_number, validate_page, validate_repo,
+    ACCEPT_DIFF, ACCEPT_JSON, MAX_DESCRIPTION_OUT_BYTES, MAX_DIFF_OUT_BYTES, MAX_LIST_ITEMS,
+    MAX_PR_BODY_OUT_BYTES, MAX_TITLE_OUT_BYTES, RawUser, bounded_optional, decode, has_next_link,
+    invalid_input, invalid_response, is_sha, login_out, marked_optional, marked_text,
+    percent_encode, send_get, timestamp, truncate_text, url, validate_login, validate_number,
+    validate_page, validate_repo,
 };
 
 // ---------------------------------------------------------------------------
@@ -232,11 +232,12 @@ fn cli_pull(pull: &RawPull, raw: &Value, fields: &str) -> Result<Value, Provider
 // gh.pull-request.list
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum StateFilter {
     Open,
     Closed,
+    Merged,
     All,
 }
 
@@ -244,7 +245,7 @@ impl StateFilter {
     pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Self::Open => "open",
-            Self::Closed => "closed",
+            Self::Closed | Self::Merged => "closed",
             Self::All => "all",
         }
     }
@@ -294,6 +295,12 @@ pub(crate) fn list(
         let fields = input.cli.as_deref().unwrap_or_default();
         let items =
             crate::collect_pages(send, base, &path, input.cli_limit.unwrap_or(30), |raw| {
+                if matches!(state, StateFilter::Merged)
+                    && raw["merged_at"].is_null()
+                    && raw["merged"] != true
+                {
+                    return Ok(None);
+                }
                 if input.author.as_deref().is_some_and(|author| {
                     !raw["user"]["login"]
                         .as_str()
@@ -332,6 +339,11 @@ pub(crate) fn list(
 
     let items = pulls
         .into_iter()
+        .filter(|raw| {
+            !matches!(state, StateFilter::Merged)
+                || !raw["merged_at"].is_null()
+                || raw["merged"] == true
+        })
         .filter(|raw| match input.author.as_deref() {
             Some(author) => raw["user"]["login"]
                 .as_str()
@@ -372,90 +384,6 @@ pub(crate) fn list(
 }
 
 // ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct FilesInput {
-    owner: String,
-    repo: String,
-    number: u32,
-    #[serde(default)]
-    page: Option<u32>,
-    #[serde(default)]
-    per_page: Option<u32>,
-    #[serde(default)]
-    include_patch: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawFile {
-    filename: String,
-    status: String,
-    additions: u64,
-    deletions: u64,
-    #[serde(default)]
-    patch: Option<String>,
-}
-
-#[expect(dead_code, reason = "file selection moves into pr view in S2")]
-pub(crate) fn files(
-    input: Value,
-    base: &Base,
-    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
-) -> Result<Value, ProviderError> {
-    let input = serde_json::from_value::<FilesInput>(input).map_err(|_| invalid_input())?;
-    validate_login(&input.owner)?;
-    validate_repo(&input.repo)?;
-    validate_number(input.number)?;
-    let (page, per_page) = validate_page(input.page, input.per_page)?;
-    let per_page = per_page.unwrap_or(30);
-    let include_patch = input.include_patch.unwrap_or(true);
-
-    let uri = url(
-        base,
-        &format!(
-            "/repos/{}/{}/pulls/{}/files?page={page}&per_page={per_page}",
-            percent_encode(&input.owner),
-            percent_encode(&input.repo),
-            input.number,
-        ),
-    )?;
-    let response = send_get(send, uri, ACCEPT_JSON)?;
-    let has_more = has_next_link(&response);
-    let files = decode::<Vec<RawFile>>(&response.body)?;
-
-    let items = files
-        .into_iter()
-        .take(MAX_LIST_ITEMS)
-        .map(|file| {
-            if file.filename.is_empty() || file.filename.len() > 1024 {
-                return Err(invalid_response());
-            }
-            let mut item = json!({
-                "path": file.filename,
-                "status": file.status,
-                "additions": file.additions,
-                "deletions": file.deletions,
-                "patchTruncated": false,
-            });
-            if include_patch && let Some(patch) = file.patch.as_deref() {
-                let (patch, truncated) = truncate_text(patch, MAX_PATCH_OUT_BYTES);
-                item["patch"] = Value::String(patch);
-                item["patchTruncated"] = Value::Bool(truncated);
-            }
-            Ok(item)
-        })
-        .collect::<Result<Vec<_>, ProviderError>>()?;
-
-    Ok(json!({
-        "files": items,
-        "page": page,
-        "hasMore": has_more,
-    }))
-}
-
-// ---------------------------------------------------------------------------
 // gh.pull-request.diff
 // ---------------------------------------------------------------------------
 
@@ -486,86 +414,6 @@ pub(crate) fn diff(
         "number": input.number,
         "diff": diff,
         "diffTruncated": truncated,
-    }))
-}
-
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct ReviewsInput {
-    owner: String,
-    repo: String,
-    number: u32,
-    #[serde(default)]
-    page: Option<u32>,
-    #[serde(default)]
-    per_page: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawReviewItem {
-    id: u64,
-    state: String,
-    #[serde(default)]
-    user: Option<RawUser>,
-    #[serde(default)]
-    commit_id: Option<String>,
-    #[serde(default)]
-    submitted_at: Option<String>,
-    #[serde(default)]
-    body: Option<String>,
-}
-
-#[expect(dead_code, reason = "review selection moves into pr view in S2")]
-pub(crate) fn reviews(
-    input: Value,
-    base: &Base,
-    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
-) -> Result<Value, ProviderError> {
-    let input = serde_json::from_value::<ReviewsInput>(input).map_err(|_| invalid_input())?;
-    validate_login(&input.owner)?;
-    validate_repo(&input.repo)?;
-    validate_number(input.number)?;
-    let (page, per_page) = validate_page(input.page, input.per_page)?;
-    let per_page = per_page.unwrap_or(20);
-
-    let uri = url(
-        base,
-        &format!(
-            "/repos/{}/{}/pulls/{}/reviews?page={page}&per_page={per_page}",
-            percent_encode(&input.owner),
-            percent_encode(&input.repo),
-            input.number,
-        ),
-    )?;
-    let response = send_get(send, uri, ACCEPT_JSON)?;
-    let has_more = has_next_link(&response);
-    let reviews = decode::<Vec<RawReviewItem>>(&response.body)?;
-
-    let items = reviews
-        .into_iter()
-        .take(MAX_LIST_ITEMS)
-        .map(|review| {
-            let (body, body_truncated) =
-                bounded_optional(review.body.as_deref(), MAX_COMMENT_OUT_BYTES);
-            Ok(json!({
-                "reviewId": review.id,
-                "state": review.state,
-                "author": login_out(review.user.as_ref()),
-                "commitId": review.commit_id,
-                "submittedAt": review.submitted_at,
-                "body": body,
-                "bodyTruncated": body_truncated,
-            }))
-        })
-        .collect::<Result<Vec<_>, ProviderError>>()?;
-
-    Ok(json!({
-        "reviews": items,
-        "page": page,
-        "hasMore": has_more,
     }))
 }
 
@@ -1063,6 +911,35 @@ mod tests {
     }
 
     #[test]
+    fn merged_list_filters_closed_rows_in_typed_and_cli_modes() {
+        for cli in [false, true] {
+            let mut input = json!({"owner":"octo","repo":"hello","state":"merged"});
+            if cli {
+                input["_cli"] = json!("number");
+                input["_cliLimit"] = json!(2);
+            }
+            let mut merged = pull_body(2, "closed", false, true);
+            merged["merged_at"] = json!("2026-01-02T00:00:00Z");
+            let uri = if cli {
+                "https://api.github.com/repos/octo/hello/pulls?state=closed&page=1&per_page=100"
+            } else {
+                "https://api.github.com/repos/octo/hello/pulls?state=closed&page=1&per_page=20"
+            };
+            let output = invoke_with(
+                &capability("gh.pull-request.list"),
+                input,
+                scripted(vec![step(
+                    move |request| assert_eq!(request.uri, uri),
+                    json_response(200, &json!([pull_body(1, "closed", false, false), merged])),
+                )]),
+            )
+            .expect("merged subset");
+            assert_eq!(output["pullRequests"].as_array().expect("rows").len(), 1);
+            assert_eq!(output["pullRequests"][0]["number"], 2);
+        }
+    }
+
+    #[test]
     fn diff_requests_the_diff_media_type() {
         let output = invoke_with(
             &capability("gh.pull-request.diff"),
@@ -1130,6 +1007,56 @@ mod tests {
         move |request| {
             calls.set(calls.get() + 1);
             script(request)
+        }
+    }
+
+    #[test]
+    fn scripted_checks_text_verdicts_and_json_buckets() {
+        use dekopon_provider_sdk::provider::Failure;
+        let head = "a".repeat(40);
+        for (status, conclusion, bucket, exit) in [
+            ("completed", "failure", "fail", 1),
+            ("in_progress", "", "pending", 8),
+            ("completed", "success", "pass", 0),
+        ] {
+            let result = invoke_with(
+                &capability("gh.pull-request.status"), checks_input(),
+                scripted(checks_steps(
+                    json!({"total_count":1,"check_runs":[{
+                        "id":1,"name":"external-ci","status":status,
+                        "conclusion": if conclusion.is_empty() { Value::Null } else { json!(conclusion) },
+                        "details_url":"https://ci.example.invalid/1"}]}),
+                    json!({"sha":head,"total_count":0,"statuses":[]}),
+                    json!({"total_count":0,"workflow_runs":[]}),
+                )),
+            ).expect("all four read steps succeeded");
+            assert_eq!(result["checks"][0]["bucket"], bucket);
+            let text =
+                crate::output::render("gh.pull-request.status", &checks_input(), &result, "")
+                    .expect("TSV");
+            assert!(
+                text.starts_with(&format!("external-ci\t{bucket}\t")),
+                "{text}"
+            );
+            let verdict = crate::output::checks_verdict(&result);
+            assert_eq!(
+                verdict
+                    .err()
+                    .map(|error| Failure::code(&error).status().get())
+                    .unwrap_or(0),
+                exit
+            );
+            let selected = crate::output::render(
+                "gh.pull-request.status",
+                &checks_input(),
+                &result,
+                "name,bucket",
+            )
+            .expect("JSON selection");
+            assert_eq!(
+                serde_json::from_str::<Value>(&selected).expect("JSON"),
+                json!([{"name":"external-ci","bucket":bucket}])
+            );
         }
     }
 

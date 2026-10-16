@@ -161,11 +161,11 @@ $ gh pr view 7 -R owner/repo --json number,title,state,headRefOid,baseRefName,ur
  "headRefOid":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26","baseRefName":"main","url":"https://github.com/owner/repo/pull/7"}
 
 $ gh pr diff 7 -R owner/repo
-{"diff":"diff --git a/...","truncated":false}
+diff --git a/... b/...
 
-$ gh pr checks 7 -R owner/repo
-{"headSha":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26",
- "workflowRuns":[...],"commitStatuses":[...]}
+$ gh pr checks 7 -R owner/repo --json name,bucket,workflow
+[{"bucket":"pass","name":"ci / validate","workflow":"Validate"}]
+# Without --json, checks print TSV; failed checks exit 1 and pending checks exit 8.
 
 $ gh repo read-file crates/dekopon-broker-host/src/lib.rs -R owner/repo \
     --ref 4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26
@@ -180,6 +180,8 @@ $ gh pr review 7 -R owner/repo --comment \
 Each `gh` command is one capability proposal, not an operating-system process. There is no real
 `gh` executable, checkout, or filesystem. Arbitrary `gh api` routes are refused because a generic
 GET would collapse separately authorized capabilities into everything the token can read.
+The finite `gh api user` route requires its own `gh.user-self.read` grant, which this reviewer
+example does not request.
 
 The comment capability pre-reads the pull request and pins the head it observed in its POST.
 A push between that read and the submission is not prevented. The agent’s orders

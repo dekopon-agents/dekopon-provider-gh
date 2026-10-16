@@ -3,9 +3,9 @@
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
 Twenty-four narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
-output projections, and SHA-pinned review/merge writes. There is deliberately no `gh.api.*`
-passthrough: a path-level escape hatch would collapse per-capability policy into "everything the
-credential can reach".
+output projections, and SHA-pinned review/merge writes. There is deliberately no arbitrary
+`gh api` passthrough: a path-level escape hatch would collapse per-capability policy into
+"everything the credential can reach".
 
 The component never sets `authorization`. The broker injects a destination-bound credential at the
 native HTTP boundary, where no guest can observe it.
@@ -34,19 +34,21 @@ denial, not an escalation.
 
 `--body-file -` is the one argument whose value is piped into the word. Proposal records only a
 marker; the authorized invocation reads at most 4 KiB of UTF-8 from stdin before any HTTP call.
-Nothing piped is a usage error rather than an empty comment. `gh api` accepts only three named GET routes (`users/LOGIN`, `repos/OWNER/REPO/branches/BRANCH`,
-`repos/OWNER/REPO/commits/REF`). No arbitrary route or API flag is accepted.
+Nothing piped is a usage error rather than an empty comment. `gh api` accepts only four named GET routes (`user`, `users/LOGIN`, `repos/OWNER/REPO/branches/BRANCH`,
+`repos/OWNER/REPO/commits/REF`). `gh api user` requires the separate `gh.user-self.read` grant;
+`gh api users/LOGIN` requires `gh.user.read`. No arbitrary route or API flag is accepted.
 
 Supported `gh pr list/view`, `gh issue list/view`, `gh repo view/list/read-file/read-dir` commands
 accept closed, comma-separated `--json FIELDS`; bare, unknown and repeated fields refuse as usage.
 Without `--json`, these commands print tab-separated rows (files print decoded content).
+`gh pr list` also accepts `--state merged`, filtering closed pulls to merged results.
 `gh pr list`, `gh issue list`, and `gh repo list OWNER` collect up to 100 matching rows
 (default 30) across at most ten REST pages; an exhausted list may return fewer rows.
 `repo list` uses GitHub's public `/users/OWNER/repos` endpoint and cannot enumerate
 private repositories inaccessible there. An interrupted collection prints no partial rows.
 A text field cut at its byte bound ends, in JSON and text alike, with the line
 `[dekopon: truncated to N bytes of M]`.
-`--jq`, `--template`, `--web` and `--checkout` still refuse. The three finite `gh api` reads
+`--jq`, `--template`, `--web` and `--checkout` still refuse. The four finite `gh api` reads
 return bounded upstream JSON objects. Direct typed invocation retains JSON output; failures
 write to stderr with a nonzero status. Filter stdout with the shell's
 `jq` builtin.

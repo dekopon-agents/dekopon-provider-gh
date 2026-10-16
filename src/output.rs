@@ -384,6 +384,8 @@ mod tests {
         assert_eq!(empty.message(), "no checks reported on the 'topic' branch");
         for (code, status) in [
             ("request-ceiling", 3),
+            ("incomplete-results", 3),
+            ("index-ceiling", 3),
             ("invalid-response", 3),
             ("forbidden", 3),
             ("not-found", 3),

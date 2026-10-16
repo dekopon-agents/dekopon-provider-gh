@@ -148,7 +148,20 @@ pub(crate) fn run(
                     "closedAt" => "closed_at",
                     _ => field,
                 };
-                let value = item.get(upstream).cloned().unwrap_or(Value::Null);
+                let value = if field == "repository"
+                    && matches!(id, crate::ids::SEARCH_PRS | crate::ids::SEARCH_ISSUES)
+                {
+                    let path = item["repository_url"]
+                        .as_str()
+                        .ok_or_else(invalid_response)?;
+                    let (_, names) = path.rsplit_once("/repos/").ok_or_else(invalid_response)?;
+                    let (owner, name) = names.split_once('/').ok_or_else(invalid_response)?;
+                    crate::validate_login(owner).map_err(|_| invalid_response())?;
+                    crate::validate_repo(name).map_err(|_| invalid_response())?;
+                    json!({"name": name, "nameWithOwner": format!("{owner}/{name}")})
+                } else {
+                    item.get(upstream).cloned().unwrap_or(Value::Null)
+                };
                 let value = if matches!(field, "author" | "owner") {
                     if value.is_null() {
                         Value::Null
@@ -296,6 +309,35 @@ mod tests {
         let error = super::run(ids::SEARCH_CODE, input, &GITHUB_API, &mut send)
             .expect_err("index not exhausted");
         assert_eq!(error.code(), "index-ceiling");
+    }
+
+    #[test]
+    fn search_prs_and_issues_derive_repository_from_rest_url() {
+        for (id, kind) in [(ids::SEARCH_PRS, "pr"), (ids::SEARCH_ISSUES, "issue")] {
+            let uri = format!(
+                "https://api.github.com/search/issues?q=fix%20repo%3Aocto%2Fhello%20is%3A{kind}&page=1&per_page=100"
+            );
+            let mut send = scripted(vec![step(
+                move |request| assert_eq!(request.uri, uri),
+                json_response(
+                    200,
+                    &json!({"total_count":1,"incomplete_results":false,"items":[{
+                        "repository_url":"https://api.github.com/repos/octo/hello","number":7
+                    }]}),
+                ),
+            )]);
+            let rows = super::run(
+                id,
+                json!({"owner":"octo","repo":"hello","query":"fix","_cliOutput":"repository"}),
+                &GITHUB_API,
+                &mut send,
+            )
+            .expect("repository projection");
+            assert_eq!(
+                rows[0]["repository"],
+                json!({"name":"hello","nameWithOwner":"octo/hello"})
+            );
+        }
     }
 
     #[test]

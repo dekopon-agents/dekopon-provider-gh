@@ -88,11 +88,9 @@ const MAX_PER_PAGE: u32 = 50;
 // each field useful instead of failing the whole invocation on one large response.
 const MAX_TITLE_OUT_BYTES: usize = 256;
 const MAX_PR_BODY_OUT_BYTES: usize = 16 * 1024;
-const MAX_PATCH_OUT_BYTES: usize = 8 * 1024;
 const MAX_CONTENT_OUT_BYTES: usize = 192 * 1024;
 const MAX_DIFF_OUT_BYTES: usize = 192 * 1024;
 const MAX_DIR_ENTRIES: usize = 200;
-const MAX_COMMENT_OUT_BYTES: usize = 4 * 1024;
 const MAX_MESSAGE_OUT_BYTES: usize = 4 * 1024;
 const MAX_DESCRIPTION_OUT_BYTES: usize = 1024;
 const MAX_TIMESTAMP_BYTES: usize = 64;
@@ -250,13 +248,13 @@ fn capabilities() -> Vec<ProviderCapability> {
     vec![
         read(
             ids::AUTH_STATUS,
-            "Reads the credential core quota, token expiration, and scopes",
+            <typed::AuthStatus as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             object_schema(json!({}), &[]),
         ),
         // Tier 1 — the review workflow slice.
         read(
             ids::CONTENT_READ,
-            "Reads one file or directory listing at a path and optional ref",
+            <typed::ContentRead as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             repo_schema(
                 json!({
                     "path": {"type": "string", "maxLength": MAX_PATH_BYTES, "description": "Repository-relative path; empty string lists the repository root."},
@@ -267,10 +265,10 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             ids::PR_LIST,
-            "Lists pull requests with optional state and author filters",
+            <typed::PrList as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             repo_schema(
                 json!({
-                    "state": state_property(),
+                    "state": {"type": "string", "enum": ["open", "closed", "merged", "all"], "description": "State filter; defaults to open."},
                     "author": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "Optional login filter applied to the fetched page, after pagination."},
                     "page": page_property(),
                     "perPage": per_page_property(20),
@@ -280,12 +278,12 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             ids::PR_READ,
-            "Reads one pull request's metadata, state, and head/base",
+            <typed::PrRead as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             repo_schema(json!({"number": number_property()}), &["number"]),
         ),
         write(
             ids::PR_APPROVE,
-            "Submits an APPROVE review pinned to the verified head SHA",
+            <typed::PrApprove as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             RiskLevel::High,
             repo_schema(
                 json!({
@@ -299,7 +297,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         // Tier 2 — review completeness.
         write(
             ids::PR_COMMENT,
-            "Submits a COMMENT review pinned to the verified head SHA",
+            <typed::PrComment as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             RiskLevel::Medium,
             repo_schema(
                 json!({
@@ -312,7 +310,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         write(
             ids::PR_REQUEST_CHANGES,
-            "Submits a REQUEST_CHANGES review pinned to the verified head SHA",
+            <typed::PrRequestChanges as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             RiskLevel::Medium,
             repo_schema(
                 json!({
@@ -325,57 +323,57 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             ids::PR_DIFF,
-            "Reads one pull request's unified diff, truncated with a marker",
+            <typed::PrDiff as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             repo_schema(json!({"number": number_property()}), &["number"]),
         ),
         read(
             ids::PR_STATUS,
-            "Reads real check runs, legacy statuses, and Actions names at one pull request's head",
+            <typed::PrStatus as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             repo_schema(json!({"number": number_property()}), &["number"]),
         ),
         // Tier 3 — broader read surface plus the two remaining writes.
         read(
             ids::REPO_READ,
-            "Reads repository metadata: default branch, visibility, and flags",
+            <typed::RepoRead as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             repo_schema(json!({}), &[]),
         ),
         read(
             ids::REPO_LIST,
-            "Lists repositories belonging to a named owner",
+            <typed::RepoList as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             object_schema(
-                json!({"owner": {"type": "string", "maxLength": MAX_OWNER_BYTES}, "_cliOutput": {"type": "string", "maxLength": 512}, "_cliLimit": {"type": "integer", "minimum": 1, "maximum": MAX_CLI_LIMIT}}),
+                json!({"owner": {"type": "string", "maxLength": MAX_OWNER_BYTES}}),
                 &["owner"],
             ),
         ),
         // Search scopes are required properties, but exactly one is checked by the handler.
         read(
             ids::SEARCH_PRS,
-            "Search scoped pull requests",
-            search_schema(true, true),
+            <typed::SearchPrs as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
+            search_schema(ids::SEARCH_PRS),
         ),
         read(
             ids::SEARCH_ISSUES,
-            "Search scoped issues",
-            search_schema(true, true),
+            <typed::SearchIssues as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
+            search_schema(ids::SEARCH_ISSUES),
         ),
         read(
             ids::SEARCH_REPOS,
-            "Search repositories for an owner",
-            search_schema(false, false),
+            <typed::SearchRepos as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
+            search_schema(ids::SEARCH_REPOS),
         ),
         read(
             ids::SEARCH_CODE,
-            "Search scoped code",
-            search_schema(true, false),
+            <typed::SearchCode as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
+            search_schema(ids::SEARCH_CODE),
         ),
         read(
             ids::SEARCH_COMMITS,
-            "Search scoped commits",
-            search_schema(true, true),
+            <typed::SearchCommits as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
+            search_schema(ids::SEARCH_COMMITS),
         ),
         read(
             ids::BRANCH_READ,
-            "Reads one branch's bounded GitHub API response",
+            <typed::BranchRead as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             repo_schema(
                 json!({"branch": {"type": "string", "maxLength": MAX_REF_BYTES, "description": "Branch name."}}),
                 &["branch"],
@@ -383,17 +381,17 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             ids::COMMIT_READ,
-            "Reads one commit's bounded GitHub API response",
+            <typed::CommitRead as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             repo_schema(json!({"ref": ref_property()}), &["ref"]),
         ),
         read(
             ids::ISSUE_READ,
-            "Reads one issue with a bounded body",
+            <typed::IssueRead as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             repo_schema(json!({"number": number_property()}), &["number"]),
         ),
         read(
             ids::ISSUE_LIST,
-            "Lists issues (GitHub includes pull requests; each item is flagged)",
+            <typed::IssueList as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             repo_schema(
                 json!({
                     "state": state_property(),
@@ -405,7 +403,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         write(
             ids::ISSUE_COMMENT,
-            "Posts one comment on an issue or pull request",
+            <typed::IssueComment as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             RiskLevel::Medium,
             repo_schema(
                 json!({
@@ -417,7 +415,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         write(
             ids::PR_MERGE,
-            "Merges one pull request, pinned to the verified head SHA",
+            <typed::PrMerge as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             RiskLevel::High,
             repo_schema(
                 json!({
@@ -430,12 +428,12 @@ fn capabilities() -> Vec<ProviderCapability> {
         ),
         read(
             ids::USER_SELF_READ,
-            "Reads the credential's bounded GitHub user identity",
+            <typed::UserSelfRead as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             object_schema(json!({}), &[]),
         ),
         read(
             ids::USER_READ,
-            "Reads one user's bounded GitHub API response",
+            <typed::UserRead as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             object_schema(
                 json!({
                     "login": {"type": "string", "maxLength": MAX_OWNER_BYTES, "description": "GitHub login."},
@@ -446,21 +444,22 @@ fn capabilities() -> Vec<ProviderCapability> {
     ]
 }
 
-fn search_schema(repo_scope: bool, qualifiers: bool) -> Value {
+fn search_schema(id: &str) -> Value {
     let mut properties = json!({
         "query": {"type": "string", "minLength": 1, "maxLength": 512},
         "owner": {"type": "string", "maxLength": MAX_OWNER_BYTES},
-        "_cliLimit": {"type": "integer", "minimum": 1, "maximum": 100},
-        "_cliOutput": {"type": "string", "maxLength": 512}
     });
-    if repo_scope {
+    if id != ids::SEARCH_REPOS {
         properties["repo"] = json!({"type": "string", "maxLength": MAX_REPO_BYTES});
     }
-    if qualifiers {
+    if matches!(
+        id,
+        ids::SEARCH_PRS | ids::SEARCH_ISSUES | ids::SEARCH_COMMITS
+    ) {
         properties["author"] = json!({"type": "string", "maxLength": MAX_OWNER_BYTES});
-        if repo_scope {
-            properties["state"] = json!({"type": "string", "enum": ["open", "closed"]});
-        }
+    }
+    if matches!(id, ids::SEARCH_PRS | ids::SEARCH_ISSUES) {
+        properties["state"] = json!({"type": "string", "enum": ["open", "closed"]});
     }
     object_schema(properties, &["query", "owner"])
 }
@@ -833,6 +832,9 @@ fn collect_pages(
     limit: usize,
     project: impl FnMut(Value) -> Result<Option<Value>, ProviderError>,
 ) -> Result<Vec<Value>, ProviderError> {
+    if !(1..=MAX_CLI_LIMIT).contains(&limit) {
+        return Err(invalid_input());
+    }
     collect_pages_with(
         send,
         base,
@@ -1144,37 +1146,19 @@ mod tests {
         ])).expect("matching rows across pages");
         assert_eq!(output["pullRequests"].as_array().expect("rows").len(), 2);
         assert_eq!(output["pullRequests"][1]["number"], 3);
-        for (link, status, code) in [
-            (next.as_str(), 502, "unexpected-status"),
-            (
-                "<https://api.github.com/repos/octo/hello/pulls?state=open&page=1&per_page=100>; rel=\"next\"",
-                200,
-                "invalid-response",
-            ),
-            ("bad cursor", 200, "invalid-response"),
-        ] {
-            let steps = if status == 502 {
-                vec![
-                    step(
-                        |_| {},
-                        response_with_headers(200, &[("link", link)], &json!([pull(2, "dev")])),
-                    ),
-                    step(|_| {}, json_response(502, &json!({}))),
-                ]
-            } else {
-                vec![step(
+        let error = invoke_with(
+            &capability("gh.pull-request.list"),
+            input.clone(),
+            scripted(vec![
+                step(
                     |_| {},
-                    response_with_headers(200, &[("link", link)], &json!([pull(2, "dev")])),
-                )]
-            };
-            let error = invoke_with(
-                &capability("gh.pull-request.list"),
-                input.clone(),
-                scripted(steps),
-            )
-            .expect_err("no partial array");
-            assert_eq!(error.code(), code);
-        }
+                    response_with_headers(200, &[("link", &next)], &json!([pull(2, "dev")])),
+                ),
+                step(|_| {}, json_response(502, &json!({}))),
+            ]),
+        )
+        .expect_err("no partial array after upstream failure");
+        assert_eq!(error.code(), "unexpected-status");
         let mut steps = Vec::new();
         for page in 1..=10 {
             let next = format!("<{prefix}&page={}&per_page=100>; rel=\"next\"", page + 1);
@@ -1249,6 +1233,31 @@ mod tests {
     }
 
     #[test]
+    fn scripted_sparse_author_list_follows_rewritten_link_but_builds_own_page_url() {
+        use super::testutil::{json_response, response_with_headers};
+        let prefix = "https://api.github.com/repos/octo/hello/pulls?state=open";
+        let pull = |number, login| {
+            json!({
+                "id":number,"number":number,"title":"Ship","state":"open","user":{"login":login},
+                "head":{"ref":"topic","sha":"a".repeat(40)},"base":{"ref":"main","sha":"b".repeat(40)},
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"
+            })
+        };
+        let result = invoke_with(&capability("gh.pull-request.list"),
+            json!({"owner":"octo","repo":"hello","author":"dev","_cli":"number","_cliLimit":2}),
+            scripted(vec![
+                step(move |request| assert_eq!(request.uri, format!("{prefix}&page=1&per_page=100")),
+                    response_with_headers(200, &[("link", "<https://api.github.com/repositories/1234/pulls?state=open&page=2>; rel=\"next\", <https://api.github.com/repositories/1234/pulls?state=open&page=3>; rel=\"last\"")],
+                        &json!([pull(1,"other"),pull(2,"dev")]))),
+                step(move |request| assert_eq!(request.uri, format!("{prefix}&page=2&per_page=100")),
+                    json_response(200, &json!([pull(3,"dev")]))),
+            ])).expect("both sparse pages complete");
+        assert_eq!(result["pullRequests"].as_array().expect("rows").len(), 2);
+        assert_eq!(result["pullRequests"][0]["number"], 2);
+        assert_eq!(result["pullRequests"][1]["number"], 3);
+    }
+
+    #[test]
     fn native_second_page_with_consistent_prev_and_last_exhausts_short() {
         use super::testutil::response_with_headers;
         let path = "https://api.github.com/repos/octo/hello/issues?state=open";
@@ -1282,43 +1291,59 @@ mod tests {
     }
 
     #[test]
-    fn native_inconsistent_last_or_repeated_prev_refuses_without_stdout() {
+    fn native_link_without_next_ends_collection() {
         let path = "https://api.github.com/repos/octo/hello/issues?state=open";
         let issue = json!([{"id":1,"number":1,"title":"Fix","state":"open",
             "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}]);
-        for link in [
-            format!("<{path}&page=3&per_page=100>; rel=\"last\""),
-            format!("<{path}&page=1&per_page=100>; rel=\"prev\""),
-        ] {
-            let native = Native::<Gh>::new().http(HttpScript::new(
-                "api.github.com",
-                "GET",
-                Response {
-                    status: 200,
-                    headers: vec![super::Header::text("link", &link).expect("fixture link")],
-                    body: issue.to_string().into_bytes(),
-                },
-            ));
-            let output = native.call(
-                "gh.issue.list",
-                &json!({"owner":"octo","repo":"hello",
-                "_cliOutput":"number","_cliLimit":30})
+        let native = Native::<Gh>::new().http(HttpScript::new(
+            "api.github.com",
+            "GET",
+            Response {
+                status: 200,
+                headers: vec![
+                    super::Header::text(
+                        "link",
+                        format!("<{path}&page=3&per_page=100>; rel=\"last\""),
+                    )
+                    .expect("fixture link"),
+                ],
+                body: issue.to_string().into_bytes(),
+            },
+        ));
+        let output = native.call(
+            "gh.issue.list",
+            &json!({"owner":"octo","repo":"hello","_cliOutput":"number","_cliLimit":30})
                 .to_string(),
-            );
-            assert_ne!(output.status, 0, "{link} must not signal exhaustion");
-            assert!(
-                output.stdout.is_empty(),
-                "{link} must not emit partial rows"
-            );
-            let sent = native.requests();
-            assert_eq!(sent.len(), 1);
-            assert_eq!(sent[0].uri, format!("{path}&page=1&per_page=100"));
-            assert!(
-                !sent[0]
-                    .headers
-                    .iter()
-                    .any(|header| header.name.eq_ignore_ascii_case("authorization"))
-            );
+        );
+        assert_eq!(output.status, 0, "{}", output.stderr);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("JSON"),
+            json!([{"number":1}])
+        );
+        let sent = native.requests();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].uri, format!("{path}&page=1&per_page=100"));
+        assert!(
+            sent[0]
+                .headers
+                .iter()
+                .all(|header| !header.name.eq_ignore_ascii_case("authorization"))
+        );
+    }
+
+    #[test]
+    fn native_cli_limit_over_100_never_calls_http() {
+        for id in ["gh.pull-request.list", "gh.issue.list", "gh.repo.list"] {
+            let input = if id == "gh.repo.list" {
+                json!({"owner":"octo","_cliLimit":101})
+            } else {
+                json!({"owner":"octo","repo":"hello","_cliLimit":101})
+            };
+            let error = invoke_with(&capability(id), input, |_| {
+                unreachable!("invalid limit must not call HTTP")
+            })
+            .expect_err("CLI limit over 100");
+            assert_eq!(error.code(), "invalid-input", "{id}");
         }
     }
 
@@ -1621,7 +1646,7 @@ mod tests {
             ),
             (
                 "gh.pull-request.list",
-                json!({"owner": "octo", "repo": "x", "state": "merged"}),
+                json!({"owner": "octo", "repo": "x", "state": "unknown"}),
             ),
             ("gh.user.read", json!({"login": "bad login"})),
             (

@@ -512,7 +512,7 @@ fn component_repo_list_requires_its_own_grant_and_renders_a_short_array()
 }
 
 #[test]
-fn component_list_rejects_a_bad_cursor_without_partial_stdout()
+fn component_list_exhausts_without_next_even_with_rewritten_last_link()
 -> Result<(), Box<dyn std::error::Error>> {
     let words = ["issue", "list", "-R", "octo/hello", "--json", "number"];
     let CommandRunOutcome::Proposed {
@@ -524,7 +524,10 @@ fn component_list_rejects_a_bad_cursor_without_partial_stdout()
     let result = scripted_component_get(
         Response {
             status: 200,
-            headers: vec![Header::text("link", "<not-a-valid-cursor>; rel=\"next\"")?],
+            headers: vec![Header::text(
+                "link",
+                "<https://api.github.com/repositories/999/issues?page=1>; rel=\"last\"",
+            )?],
             body: json!([{"id":1,"number":1,"title":"Fix","state":"open",
             "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}])
             .to_string()
@@ -534,8 +537,11 @@ fn component_list_rejects_a_bad_cursor_without_partial_stdout()
         input,
         "/repos/octo/hello/issues?state=open&page=1&per_page=100",
     )?;
-    assert_ne!(result.status, 0);
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.status, 0, "{}", result.stderr);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&result.stdout)?,
+        json!([{"number":1}])
+    );
     Ok(())
 }
 

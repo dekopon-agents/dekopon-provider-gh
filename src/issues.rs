@@ -7,11 +7,11 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    ACCEPT_JSON, MAX_COMMENT_OUT_BYTES, MAX_LABELS, MAX_LIST_ITEMS, MAX_PR_BODY_OUT_BYTES,
-    MAX_TITLE_OUT_BYTES, RawUser, bounded_optional, decode, github_json_request, has_next_link,
-    http_failed, invalid_input, invalid_response, login_out, marked_optional, marked_text,
-    percent_encode, send_get, status_error, timestamp, truncate_text, url, validate_body,
-    validate_login, validate_number, validate_page, validate_repo,
+    ACCEPT_JSON, MAX_LABELS, MAX_LIST_ITEMS, MAX_PR_BODY_OUT_BYTES, MAX_TITLE_OUT_BYTES, RawUser,
+    bounded_optional, decode, github_json_request, has_next_link, http_failed, invalid_input,
+    invalid_response, login_out, marked_optional, marked_text, percent_encode, send_get,
+    status_error, timestamp, truncate_text, url, validate_body, validate_login, validate_number,
+    validate_page, validate_repo,
 };
 
 #[derive(Debug, Deserialize)]
@@ -39,18 +39,6 @@ struct ListInput {
     cli: Option<String>,
     #[serde(default, rename = "_cliLimit")]
     cli_limit: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct PagedInput {
-    owner: String,
-    repo: String,
-    number: u32,
-    #[serde(default)]
-    page: Option<u32>,
-    #[serde(default)]
-    per_page: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,8 +79,6 @@ struct RawComment {
     id: u64,
     #[serde(default)]
     user: Option<RawUser>,
-    #[serde(default)]
-    body: Option<String>,
     created_at: String,
 }
 
@@ -268,55 +254,6 @@ pub(crate) fn list(
 
     Ok(json!({
         "issues": items,
-        "page": page,
-        "hasMore": has_more,
-    }))
-}
-
-#[expect(dead_code, reason = "comment selection moves into issue view in S2")]
-pub(crate) fn comments(
-    input: Value,
-    base: &Base,
-    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
-) -> Result<Value, ProviderError> {
-    let input = serde_json::from_value::<PagedInput>(input).map_err(|_| invalid_input())?;
-    validate_login(&input.owner)?;
-    validate_repo(&input.repo)?;
-    validate_number(input.number)?;
-    let (page, per_page) = validate_page(input.page, input.per_page)?;
-    let per_page = per_page.unwrap_or(20);
-
-    let uri = url(
-        base,
-        &format!(
-            "/repos/{}/{}/issues/{}/comments?page={page}&per_page={per_page}",
-            percent_encode(&input.owner),
-            percent_encode(&input.repo),
-            input.number,
-        ),
-    )?;
-    let response = send_get(send, uri, ACCEPT_JSON)?;
-    let has_more = has_next_link(&response);
-    let comments = decode::<Vec<RawComment>>(&response.body)?;
-
-    let items = comments
-        .into_iter()
-        .take(MAX_LIST_ITEMS)
-        .map(|comment| {
-            let (body, body_truncated) =
-                bounded_optional(comment.body.as_deref(), MAX_COMMENT_OUT_BYTES);
-            Ok(json!({
-                "commentId": comment.id,
-                "author": login_out(comment.user.as_ref()),
-                "body": body,
-                "bodyTruncated": body_truncated,
-                "createdAt": timestamp(&comment.created_at)?.to_owned(),
-            }))
-        })
-        .collect::<Result<Vec<_>, ProviderError>>()?;
-
-    Ok(json!({
-        "comments": items,
         "page": page,
         "hasMore": has_more,
     }))
