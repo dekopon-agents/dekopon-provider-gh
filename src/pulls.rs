@@ -627,7 +627,11 @@ fn keep_latest(rows: &mut std::collections::HashMap<String, Value>, key: String,
     }
 }
 
-fn checks_page(body: &[u8], field: &str) -> Result<Vec<Value>, ProviderError> {
+fn checks_page(
+    body: &[u8],
+    field: &str,
+    expected: &mut Option<u64>,
+) -> Result<Vec<Value>, ProviderError> {
     let value = decode::<Value>(body)?;
     let rows = value[field].as_array().ok_or_else(invalid_response)?;
     let total = value["total_count"].as_u64().ok_or_else(invalid_response)?;
@@ -638,7 +642,20 @@ fn checks_page(body: &[u8], field: &str) -> Result<Vec<Value>, ProviderError> {
             "checks exceed bounded collection",
         ));
     }
+    if expected
+        .replace(total)
+        .is_some_and(|previous| previous != total)
+    {
+        return Err(invalid_response());
+    }
     Ok(rows.clone())
+}
+
+fn checks_complete(rows: &[Value], total: Option<u64>) -> Result<(), ProviderError> {
+    if total != Some(rows.len() as u64) {
+        return Err(invalid_response());
+    }
+    Ok(())
 }
 
 pub(crate) fn status(
@@ -674,26 +691,17 @@ pub(crate) fn status(
         let repo = percent_encode(&input.repo);
         let head = percent_encode(&pull.head.sha);
         let path = format!("/repos/{owner}/{repo}/commits/{head}");
-        let mut check_total = 0;
-        let mut check_seen = 0;
+        let mut check_total = None;
         let check_runs = crate::collect_pages_with(
             &mut bounded_send,
             base,
             &format!("{path}/check-runs?filter=all"),
             crate::MAX_CLI_LIMIT * crate::MAX_LIST_REQUESTS,
-            |body| {
-                let value = decode::<Value>(body)?;
-                check_total = value["total_count"].as_u64().ok_or_else(invalid_response)?;
-                let rows = checks_page(body, "check_runs")?;
-                check_seen += rows.len();
-                Ok(rows)
-            },
+            |body| checks_page(body, "check_runs", &mut check_total),
             crate::list_key,
             |row| Ok(Some(row)),
         )?;
-        if check_seen < check_total as usize {
-            return Err(invalid_response());
-        }
+        checks_complete(&check_runs, check_total)?;
         let statuses_response = send_get(
             &mut bounded_send,
             url(base, &format!("{path}/status?page=1&per_page=100"))?,
@@ -721,26 +729,17 @@ pub(crate) fn status(
         if status_count != status_rows.len() as u64 {
             return Err(invalid_response());
         }
-        let mut action_total = 0;
-        let mut action_seen = 0;
+        let mut action_total = None;
         let actions = crate::collect_pages_with(
             &mut bounded_send,
             base,
             &format!("/repos/{owner}/{repo}/actions/runs?head_sha={head}"),
             crate::MAX_CLI_LIMIT * crate::MAX_LIST_REQUESTS,
-            |body| {
-                let value = decode::<Value>(body)?;
-                action_total = value["total_count"].as_u64().ok_or_else(invalid_response)?;
-                let rows = checks_page(body, "workflow_runs")?;
-                action_seen += rows.len();
-                Ok(rows)
-            },
+            |body| checks_page(body, "workflow_runs", &mut action_total),
             crate::list_key,
             |row| Ok(Some(row)),
         )?;
-        if action_seen < action_total as usize {
-            return Err(invalid_response());
-        }
+        checks_complete(&actions, action_total)?;
         let mut workflow = std::collections::HashMap::new();
         for action in actions {
             if action["head_sha"] != pull.head.sha {
