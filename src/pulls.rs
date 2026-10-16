@@ -1122,6 +1122,17 @@ mod tests {
         json!({"owner":"octo","repo":"hello","number":7})
     }
 
+    fn counted_script(
+        steps: Vec<crate::testutil::Step>,
+        calls: std::rc::Rc<std::cell::Cell<usize>>,
+    ) -> impl FnMut(crate::Request) -> Result<crate::Response, crate::HttpError> {
+        let mut script = scripted(steps);
+        move |request| {
+            calls.set(calls.get() + 1);
+            script(request)
+        }
+    }
+
     #[test]
     fn native_checks_include_third_party_runs_and_latest_duplicate_statuses() {
         let head = "a".repeat(40);
@@ -1154,18 +1165,27 @@ mod tests {
     #[test]
     fn native_third_party_check_only_survives_without_actions_or_legacy_statuses() {
         let head = "a".repeat(40);
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
         let output = invoke_with(
             &capability("gh.pull-request.status"),
             checks_input(),
-            scripted(checks_steps(
-                json!({"total_count":1,"check_runs":[{"id":1,"name":"external/security",
+            counted_script(
+                checks_steps(
+                    json!({"total_count":1,"check_runs":[{"id":1,"name":"external/security",
                     "status":"in_progress","started_at":"2026-08-10T00:00:00Z",
                     "details_url":"https://third.example/check/1"}]}),
-                json!({"sha":head,"state":"pending","total_count":0,"statuses":[]}),
-                json!({"total_count":0,"workflow_runs":[]}),
-            )),
+                    json!({"sha":head,"state":"pending","total_count":0,"statuses":[]}),
+                    json!({"total_count":0,"workflow_runs":[]}),
+                ),
+                std::rc::Rc::clone(&calls),
+            ),
         )
         .expect("third-party-only checks succeed");
+        assert_eq!(
+            calls.get(),
+            4,
+            "pull, check runs, status and Actions are required"
+        );
         assert_eq!(output["checks"].as_array().expect("checks").len(), 1);
         assert_eq!(output["checks"][0]["bucket"], "pending");
         assert_eq!(output["checks"][0]["workflow"], "");
@@ -1197,6 +1217,118 @@ mod tests {
         )
         .expect_err("missing check-run page fails closed");
         assert_eq!(error.code(), "invalid-response");
+    }
+
+    #[test]
+    fn native_checks_refuse_duplicate_ids_across_check_run_pages() {
+        let head = "a".repeat(40);
+        let first = json!({"total_count":2,"check_runs":[{"id":1,"name":"ci",
+            "status":"completed","conclusion":"success","started_at":"2026-08-10T00:00:00Z"}]});
+        let mut steps = checks_steps(
+            first.clone(),
+            json!({"sha":head,"total_count":0,"statuses":[]}),
+            json!({"total_count":0,"workflow_runs":[]}),
+        );
+        let page2 = format!(
+            "https://api.github.com/repos/octo/hello/commits/{head}/check-runs?filter=all&page=2&per_page=100"
+        );
+        steps[1].reply = response_with_headers(
+            200,
+            &[("link", &format!("<{page2}>; rel=\"next\""))],
+            &first,
+        );
+        steps.insert(
+            2,
+            step(
+                move |request| assert_eq!(request.uri, page2),
+                json_response(200, &first),
+            ),
+        );
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let error = invoke_with(
+            &capability("gh.pull-request.status"),
+            checks_input(),
+            counted_script(steps, std::rc::Rc::clone(&calls)),
+        )
+        .expect_err("repeated id cannot satisfy the upstream total");
+        assert_eq!(error.code(), "invalid-response");
+        assert_eq!(
+            calls.get(),
+            3,
+            "no status or Actions request after incomplete check runs"
+        );
+    }
+
+    #[test]
+    fn native_checks_refuse_duplicate_ids_across_workflow_pages() {
+        let head = "a".repeat(40);
+        let first = json!({"total_count":2,"workflow_runs":[{"id":5,"check_suite_id":42,
+            "name":"Build","event":"pull_request","head_sha":head}]});
+        let mut steps = checks_steps(
+            json!({"total_count":1,"check_runs":[{"id":1,"name":"ci","status":"completed",
+                "conclusion":"success","check_suite":{"id":42},"started_at":"2026-08-10T00:00:00Z"}]}),
+            json!({"sha":head,"total_count":0,"statuses":[]}),
+            first.clone(),
+        );
+        let page2 = format!(
+            "https://api.github.com/repos/octo/hello/actions/runs?head_sha={head}&page=2&per_page=100"
+        );
+        steps[3].reply = response_with_headers(
+            200,
+            &[("link", &format!("<{page2}>; rel=\"next\""))],
+            &first,
+        );
+        steps.push(step(
+            move |request| assert_eq!(request.uri, page2),
+            json_response(200, &first),
+        ));
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let error = invoke_with(
+            &capability("gh.pull-request.status"),
+            checks_input(),
+            counted_script(steps, std::rc::Rc::clone(&calls)),
+        )
+        .expect_err("repeated workflow id cannot satisfy the upstream total");
+        assert_eq!(error.code(), "invalid-response");
+        assert_eq!(calls.get(), 5);
+    }
+
+    #[test]
+    fn native_checks_refuse_a_total_that_changes_between_pages() {
+        let head = "a".repeat(40);
+        let first = json!({"total_count":3,"check_runs":[{"id":1,"name":"ci",
+            "status":"completed","conclusion":"success","started_at":"2026-08-10T00:00:00Z"}]});
+        let second = json!({"total_count":2,"check_runs":[{"id":2,"name":"lint",
+            "status":"completed","conclusion":"success","started_at":"2026-08-10T00:01:00Z"}]});
+        let mut steps = checks_steps(
+            first.clone(),
+            json!({"sha":head,"total_count":0,"statuses":[]}),
+            json!({"total_count":0,"workflow_runs":[]}),
+        );
+        let page2 = format!(
+            "https://api.github.com/repos/octo/hello/commits/{head}/check-runs?filter=all&page=2&per_page=100"
+        );
+        steps[1].reply = response_with_headers(
+            200,
+            &[("link", &format!("<{page2}>; rel=\"next\""))],
+            &first,
+        );
+        steps.insert(
+            2,
+            step(
+                move |request| assert_eq!(request.uri, page2),
+                json_response(200, &second),
+            ),
+        );
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let error = invoke_with(
+            &capability("gh.pull-request.status"),
+            checks_input(),
+            counted_script(steps, std::rc::Rc::clone(&calls)),
+        )
+        .expect_err("changing upstream total is invalid");
+        assert_eq!(error.code(), "invalid-response");
+        assert_eq!(calls.get(), 3);
     }
 
     #[test]

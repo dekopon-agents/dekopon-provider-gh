@@ -373,6 +373,10 @@ mod tests {
             assert_eq!(error.code(), code);
             assert_eq!(Failure::code(&error).status().get(), status);
         }
+        let invalid = crate::invalid_response();
+        assert_eq!(invalid.code(), "invalid-response");
+        assert_eq!(Failure::code(&invalid).status().get(), 3);
+        assert_eq!(invalid.message(), "endpoint returned an invalid resource");
         let empty = super::require_checks(&json!({"checks":[],"headRefName":"topic"}))
             .expect_err("no checks on branch");
         assert_eq!(empty.code(), "checks-empty");
