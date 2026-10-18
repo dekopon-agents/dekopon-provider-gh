@@ -157,11 +157,11 @@ A session typically proposes commands like these through the sandboxed `gh` buil
 
 ```console
 $ gh pr view 7 -R owner/repo --json number,title,state,headRefOid,baseRefName,url
-{"number":7,"title":"Cache the provider registry between invocations","state":"OPEN",
- "headRefOid":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26","baseRefName":"main","url":"https://github.com/owner/repo/pull/7"}
+{"baseRefName":"main","headRefOid":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26","number":7,"state":"OPEN",
+ "title":"Cache the provider registry between invocations","url":"https://github.com/owner/repo/pull/7"}
 
 $ gh pr diff 7 -R owner/repo
-diff --git a/... b/...
+{"diff":"diff --git a/... b/...\n...","diffTruncated":false,"number":7}
 
 $ gh pr checks 7 -R owner/repo --json name,bucket,workflow
 [{"bucket":"pass","name":"ci / validate","workflow":"Validate"}]
