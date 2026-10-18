@@ -161,7 +161,7 @@ $ gh pr view 7 -R owner/repo --json number,title,state,headRefOid,baseRefName,ur
  "headRefOid":"4f2a91c8e3b7d05a6c1f8e2b9d4a70c3e5f81b26","baseRefName":"main","url":"https://github.com/owner/repo/pull/7"}
 
 $ gh pr diff 7 -R owner/repo
-diff --git a/... b/...
+{"number":7,"diff":"diff --git a/... b/...\n...","diffTruncated":false}
 
 $ gh pr checks 7 -R owner/repo --json name,bucket,workflow
 [{"bucket":"pass","name":"ci / validate","workflow":"Validate"}]

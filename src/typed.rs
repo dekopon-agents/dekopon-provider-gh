@@ -56,8 +56,6 @@ macro_rules! capability {
         }
         pub struct $name;
         impl $name {
-            // The same typed runtime path as Capability::run, with its HTTP boundary injected
-            // by the existing native scripted-send fixture for multi-response tests.
             pub(crate) fn run_with(
                 input: $input,
                 base: &crate::Base,
