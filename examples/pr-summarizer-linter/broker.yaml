@@ -2,6 +2,7 @@
 #
 # It owns the socket, policy, constraint sets, GitHub credential, and audit chain. The gateway
 # holds none of those; it holds Slack credentials and access to a model endpoint.
+# The six grants below cover long flags and their upstream shorthands equally.
 #
 # Hygiene, all checked at startup and all fatal:
 #   chmod 0600 broker.yaml policies.cedar

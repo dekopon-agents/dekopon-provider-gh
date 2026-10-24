@@ -36,7 +36,7 @@ macro_rules! capability {
                     .find(|c| c.id.as_str() == $id)
                     .expect("declared gh capability")
                     .input_schema;
-                if matches!($id, "gh.pull-request.list" | "gh.pull-request.read" | "gh.issue.list" | "gh.issue.read" | "gh.repo.read" | "gh.repo.list" | "gh.content.read" | "gh.search.prs" | "gh.search.issues" | "gh.search.repos" | "gh.search.code" | "gh.search.commits" | "gh.pull-request.status") {
+                if matches!($id, "gh.auth.status" | "gh.pull-request.list" | "gh.pull-request.read" | "gh.issue.list" | "gh.issue.read" | "gh.repo.read" | "gh.repo.list" | "gh.content.read" | "gh.search.prs" | "gh.search.issues" | "gh.search.repos" | "gh.search.code" | "gh.search.commits" | "gh.pull-request.status") {
                     schema["properties"]["_cliOutput"] = serde_json::json!({"type": "string", "maxLength": 512});
                     if matches!($id, "gh.pull-request.list" | "gh.issue.list" | "gh.repo.list" | "gh.search.prs" | "gh.search.issues" | "gh.search.repos" | "gh.search.code" | "gh.search.commits") {
                         schema["properties"]["_cliLimit"] = serde_json::json!({"type": "integer", "minimum": 1, "maximum": 100});
@@ -95,7 +95,7 @@ macro_rules! capability {
                 let kind = input.as_object_mut().and_then(|object| object.remove("_cliKind"));
                 let mut render_input = input.clone();
                 if let Some(kind) = kind { render_input["_cliKind"] = kind; }
-                if let Some(Value::String(fields)) = selection.as_ref() {
+                if let Some(Value::String(fields)) = selection.as_ref().filter(|_| $id != crate::ids::AUTH_STATUS) {
                     if matches!($id, "gh.repo.read" | "gh.content.read") {
                         input["_cli"] = Value::Bool(true);
                     } else if $id.starts_with("gh.search.") {

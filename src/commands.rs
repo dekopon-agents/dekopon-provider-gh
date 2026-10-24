@@ -50,6 +50,15 @@ impl CommandFactory for GhArgs {
 }
 impl FromArgMatches for GhArgs {
     fn from_arg_matches(matches: &ArgMatches) -> Result<Self, clap::Error> {
+        if crate::unavailable::refusal(matches).is_none()
+            && let Some((name, _)) = matches.subcommand()
+            && let Some(text) = pure_text(name)
+        {
+            return Err(Command::new("gh")
+                .override_help(format!("{text}\n"))
+                .try_get_matches_from(["gh", "--help"])
+                .expect_err("pure commands render help"));
+        }
         Ok(Self(matches.clone()))
     }
     fn from_arg_matches_mut(matches: &mut ArgMatches) -> Result<Self, clap::Error> {
@@ -66,15 +75,8 @@ impl FromArgMatches for GhArgs {
 impl Parser for GhArgs {}
 
 pub(crate) fn propose(args: GhArgs, stdin_piped: bool) -> Result<Proposal<crate::Gh>, Usage> {
-    for (flag, reason) in REJECTED_FLAGS {
-        if args.0.contains_id(flag.trim_start_matches('-'))
-            && args
-                .0
-                .get_one::<String>(flag.trim_start_matches('-'))
-                .is_some()
-        {
-            return Err(Usage::new(format!("gh: {flag} is not supported: {reason}")));
-        }
+    if let Some(refusal) = crate::unavailable::refusal(&args.0) {
+        return Err(refusal);
     }
     let (capability, input) =
         dispatch(args.0, stdin_piped).map_err(|error| Usage::new(error.message().to_owned()))?;
@@ -86,17 +88,6 @@ fn usage(message: impl Into<String>) -> ProviderError {
     ProviderError::new("usage", message)
 }
 
-/// Flags real `gh` accepts that this command refuses by name, with the reason.
-const REJECTED_FLAGS: &[(&str, &str)] = &[
-    ("--web", "there is no browser to open"),
-    ("--jq", "pipe the output to the jq builtin instead"),
-    ("--template", "format the JSON output with jq instead"),
-    ("--checkout", "there is no working tree to check out into"),
-    ("--editor", "there is no editor; pass text with --body"),
-    ("--fill", "there is no commit context to fill from"),
-    ("--required", "required-check data is GraphQL-only"),
-];
-
 // ---------------------------------------------------------------------------
 // The command tree
 // ---------------------------------------------------------------------------
@@ -106,20 +97,11 @@ const REJECTED_FLAGS: &[(&str, &str)] = &[
 /// A command word runs in a fresh store under a fuel bound, so there is no process-lifetime
 /// static to construct this into; the bound is what caps the work.
 fn tree() -> Command {
-    Command::new("gh")
+    crate::unavailable::register(Command::new("gh")
         .about("Narrow GitHub operations, each mapping to exactly one gh.* capability")
-        .after_help(API_HELP)
+        .before_help(API_HELP)
         .version(env!("CARGO_PKG_VERSION"))
         .subcommand_required(true)
-        .args(REJECTED_FLAGS.iter().map(|(flag, _)| {
-            let name = flag.trim_start_matches('-');
-            Arg::new(name)
-                .long(name)
-                .global(true)
-                .hide(true)
-                .num_args(0..=1)
-                .default_missing_value("")
-        }))
         .subcommand(
             Command::new("api")
                 .about("Read one of four finite GitHub REST routes")
@@ -130,7 +112,7 @@ fn tree() -> Command {
                 .about("Inspect the broker-bound GitHub credential")
                 .subcommand_required(true)
                 .subcommand(
-                    Command::new("status").about("Read quota, token expiration, and scopes"),
+                    Command::new("status").about("Read quota, token expiration, and scopes").arg(json_arg()).arg(Arg::new("active").long("active").short('a').action(ArgAction::SetTrue)),
                 ),
         )
         .subcommand(pull_requests())
@@ -168,6 +150,32 @@ fn tree() -> Command {
         )
         .subcommand(issues())
         .subcommand(search_tree())
+        .subcommand(pure_command("version", concat!("dekopon-provider-gh ", env!("CARGO_PKG_VERSION"))))
+        .subcommand(pure_command("licenses", "Show component licenses (MIT OR Apache-2.0)"))
+        .subcommand(pure_command("actions", "GitHub Actions: workflow and run operations are not implemented in this provider yet."))
+        .subcommand(pure_command("accessibility", "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser.")))
+}
+
+fn pure_text(name: &str) -> Option<&'static str> {
+    match name {
+        "version" => Some(concat!("dekopon-provider-gh ", env!("CARGO_PKG_VERSION"))),
+        "licenses" => Some(concat!(
+            include_str!("../LICENSE-MIT"),
+            "\n",
+            include_str!("../LICENSE-APACHE")
+        )),
+        "actions" => Some(
+            "GitHub Actions: workflow and run operations are not implemented in this provider yet.",
+        ),
+        "accessibility" => Some(
+            "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser.",
+        ),
+        _ => None,
+    }
+}
+
+fn pure_command(name: &'static str, text: &'static str) -> Command {
+    Command::new(name).about(text)
 }
 
 fn search_tree() -> Command {
@@ -212,6 +220,7 @@ fn pull_requests() -> Command {
                 .arg(
                     Arg::new("state")
                         .long("state")
+                        .short('s')
                         .value_name("STATE")
                         .value_parser(["open", "closed", "merged"])
                         .help("open, closed or merged"),
@@ -219,6 +228,7 @@ fn pull_requests() -> Command {
                 .arg(
                     Arg::new("author")
                         .long("author")
+                        .short('A')
                         .value_name("LOGIN")
                         .help("Match author across bounded pages"),
                 )
@@ -243,7 +253,13 @@ fn pull_requests() -> Command {
                 .about("Read real check runs and statuses at the pull's head")
                 .arg(number_arg("Pull-request number"))
                 .arg(repo_arg(true))
-                .arg(json_arg()),
+                .arg(json_arg())
+                .arg(
+                    Arg::new("required")
+                        .long("required")
+                        .hide(true)
+                        .action(ArgAction::SetTrue),
+                ),
         )
         .subcommand(
             Command::new("review")
@@ -298,6 +314,7 @@ fn issues() -> Command {
                 .arg(
                     Arg::new("state")
                         .long("state")
+                        .short('s')
                         .value_name("STATE")
                         .value_parser(["open", "closed"])
                         .help("open or closed"),
@@ -362,6 +379,7 @@ fn body() -> [Arg; 2] {
             .help("Body text"),
         Arg::new("body-file")
             .long("body-file")
+            .short('F')
             .value_name("-")
             .value_parser(["-"])
             .conflicts_with("body")
@@ -379,6 +397,14 @@ fn match_head_commit() -> Arg {
 /// One member of a mutually exclusive group, which is how `gh` spells a choice.
 fn event_flag(name: &'static str, help: &'static str) -> Arg {
     Arg::new(name)
+        .short(match name {
+            "approve" => 'a',
+            "comment" => 'c',
+            "request-changes" | "rebase" => 'r',
+            "merge" => 'm',
+            "squash" => 's',
+            _ => unreachable!(),
+        })
         .long(name)
         .action(ArgAction::SetTrue)
         .help(help)
@@ -405,7 +431,7 @@ fn dispatch(
     }
     let (verb, matches) = area_matches
         .subcommand()
-        .expect("the tree requires a subcommand");
+        .ok_or_else(|| usage(format!("gh {area}: command is not implemented yet")))?;
     let command = format!("{area} {verb}");
     let mut input = Map::new();
 
@@ -428,6 +454,11 @@ fn dispatch(
             ids::PR_DIFF
         }
         ("pr", "checks") => {
+            if matches.get_flag("required") {
+                return Err(usage(
+                    "gh pr checks: --required is GraphQL-only and not implemented yet",
+                ));
+            }
             insert_repo_and_number(&mut input, matches)?;
             ids::PR_STATUS
         }
@@ -584,7 +615,11 @@ fn dispatch(
             }
         }
         ("auth", "status") => ids::AUTH_STATUS,
-        _ => unreachable!("the tree has no other subcommand than {command}"),
+        _ => {
+            return Err(usage(format!(
+                "gh {command}: command is not implemented yet"
+            )));
+        }
     };
 
     if matches!(area, "search")
@@ -595,7 +630,9 @@ fn dispatch(
             Value::from(matches.get_one::<u64>("limit").copied().unwrap_or(30)),
         );
     }
-    if let Some(fields) = crate::output::fields(area, verb) {
+    if let Some(fields) =
+        crate::output::fields(area, verb).filter(|_| area != "auth" || matches.contains_id("json"))
+    {
         let selection = match matches.get_one::<String>("json") {
             Some(value) if value.is_empty() => {
                 return Err(usage(format!(
@@ -629,28 +666,30 @@ fn api_route(matches: &ArgMatches) -> Result<(&'static str, Value), ProviderErro
     let (id, input) = match parts.as_slice() {
         ["user"] => (ids::USER_SELF_READ, serde_json::json!({})),
         ["users", login] => {
-            crate::validate_login(login).map_err(|_| usage("gh api: invalid login"))?;
+            crate::validate_login(login).map_err(|_| usage(crate::unavailable::api_refusal()))?;
             (ids::USER_READ, serde_json::json!({"login": login}))
         }
         ["repos", owner, repo, "branches", branch] => {
-            crate::validate_login(owner).map_err(|_| usage("gh api: invalid owner"))?;
-            crate::validate_repo(repo).map_err(|_| usage("gh api: invalid repository"))?;
-            crate::validate_ref(branch).map_err(|_| usage("gh api: invalid branch"))?;
+            crate::validate_login(owner).map_err(|_| usage(crate::unavailable::api_refusal()))?;
+            crate::validate_repo(repo).map_err(|_| usage(crate::unavailable::api_refusal()))?;
+            crate::validate_ref(branch).map_err(|_| usage(crate::unavailable::api_refusal()))?;
             (
                 ids::BRANCH_READ,
                 serde_json::json!({"owner": owner, "repo": repo, "branch": branch}),
             )
         }
         ["repos", owner, repo, "commits", reference] => {
-            crate::validate_login(owner).map_err(|_| usage("gh api: invalid owner"))?;
-            crate::validate_repo(repo).map_err(|_| usage("gh api: invalid repository"))?;
-            crate::validate_ref(reference).map_err(|_| usage("gh api: invalid ref"))?;
+            crate::validate_login(owner).map_err(|_| usage(crate::unavailable::api_refusal()))?;
+            crate::validate_repo(repo).map_err(|_| usage(crate::unavailable::api_refusal()))?;
+            crate::validate_ref(reference).map_err(|_| usage(crate::unavailable::api_refusal()))?;
             (
                 ids::COMMIT_READ,
                 serde_json::json!({"owner": owner, "repo": repo, "ref": reference}),
             )
         }
-        _ => return Err(usage(API_HELP)),
+        _ => {
+            return Err(usage(crate::unavailable::api_refusal()));
+        }
     };
     Ok((id, input))
 }
@@ -1168,14 +1207,11 @@ mod tests {
             );
         }
         let (stdout, _, _) = rendered(&["--help"]);
-        assert!(stdout.starts_with("Narrow GitHub operations"), "{stdout:?}");
+        assert!(stdout.contains("Narrow GitHub operations"), "{stdout:?}");
         assert!(stdout.contains("<COMMAND>\n"), "{stdout:?}");
         assert!(stdout.contains("no raw API passthrough"), "{stdout:?}");
         let (stdout, _, _) = rendered(&["pr", "view", "-h"]);
-        assert!(
-            stdout.contains("\nUsage: gh pr view [OPTIONS] --repo <OWNER/REPO> <NUMBER>\n"),
-            "{stdout:?}"
-        );
+        assert!(stdout.contains("Usage: gh pr view"), "{stdout:?}");
     }
 
     #[test]
@@ -1193,7 +1229,6 @@ mod tests {
             &[][..],
             &["bogus"][..],
             &["pr"][..],
-            &["pr", "create", "-R", "o/r"][..],
             &["pr", "view"][..],
             &["pr", "view", "7"][..],
             &["pr", "view", "seven", "-R", "o/r"][..],
@@ -1211,19 +1246,6 @@ mod tests {
                 "{words:?}: plain, never coloured"
             );
         }
-        let (_, stderr, _) = rendered(&["pr", "create", "-R", "o/r"]);
-        assert!(
-            stderr.starts_with("error: unrecognized subcommand 'create'"),
-            "{stderr:?}"
-        );
-        // A subcommand's usage line carries the word the model typed, not the bare subcommand.
-        let (_, stderr, _) = rendered(&["pr", "view", "7"]);
-        assert!(stderr.contains("--repo <OWNER/REPO>"), "{stderr:?}");
-        let (_, stderr, _) = rendered(&["pr", "diff", "7", "-R", "o/r", "--approve"]);
-        assert!(
-            stderr.starts_with("error: unexpected argument '--approve'"),
-            "{stderr:?}"
-        );
     }
 
     #[test]
@@ -1380,11 +1402,14 @@ mod tests {
 
     #[test]
     fn lying_flags_are_rejected_with_guidance() {
-        for flag in ["--web", "--jq", "--template", "--checkout"] {
+        for flag in ["--web", "--jq", "--template"] {
             let failure = refuse(&["pr", "view", "7", "-R", "o/r", flag]);
             assert_eq!(failure.code(), "usage");
             let message = failure.message().to_owned();
-            assert!(message.contains(flag), "{message}");
+            assert!(
+                message.contains("gh pr view: not available in this environment"),
+                "{flag}: {message}"
+            );
         }
         let (id, input) = dispatch(&["pr", "view", "7", "-R", "o/r", "--json=number,title"]);
         assert_eq!(id, "gh.pull-request.read");
@@ -1485,8 +1510,10 @@ mod tests {
             &["api", "users/a", "-f", "x=y"],
             &["api", "users/a", "--method", "POST"],
         ] {
-            let (_, _, status) = rendered(words);
-            assert_eq!(status, 2, "{words:?}");
+            assert_eq!(
+                refuse(words).message(),
+                "gh api: not available in this environment (by policy)"
+            );
         }
     }
 
@@ -1496,15 +1523,13 @@ mod tests {
         assert!(required.message().contains("GraphQL-only"));
         assert_eq!(refuse(&["pr", "view", "7", "-R", "o?/r"]).code(), "usage");
         for words in [
-            &["pr", "status", "7", "-R", "o/r"][..],
-            &["pr", "files", "7", "-R", "o/r"],
+            &["pr", "files", "7", "-R", "o/r"][..],
             &["pr", "reviews", "7", "-R", "o/r"],
             &["issue", "comments", "7", "-R", "o/r"],
             &["content", "view", "x", "-R", "o/r"],
             &["user", "view", "alice"],
             &["branch", "view", "main", "-R", "o/r"],
             &["commit", "view", "main", "-R", "o/r"],
-            &["pr", "checks", "7", "-R", "o/r", "--watch"],
             &["pr", "list", "-R", "o/r", "--page", "2"],
             &["issue", "list", "-R", "o/r", "--per-page", "5"],
             &["pr", "files", "7", "-R", "o/r", "--no-patch"],

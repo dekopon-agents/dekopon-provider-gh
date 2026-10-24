@@ -3,7 +3,7 @@
 //! Every operation is one fixed REST request shape (or one fixed pre-read plus one write) against
 //! the GitHub REST API, projected into a small bounded output. The origin is `api.github.com`
 //! unless the owner sets `providerSettings.gh.baseUrl`; no model input names it. There is deliberately no generic
-//! `gh.api.*` passthrough and no GraphQL: broker HTTP constraints bind host and method but not
+//! `gh.api.*` passthrough: broker HTTP constraints bind host and method but not
 //! path, so path discipline is exactly what this guest exists to provide. A grant of
 //! `gh.pull-request.read` is authority to read pull requests, not authority over everything the
 //! broker credential can reach.
@@ -38,6 +38,7 @@ mod auth;
 pub mod commands;
 mod content;
 pub mod error;
+pub mod graphql;
 mod issues;
 mod output;
 mod pulls;
@@ -45,6 +46,7 @@ mod repos;
 mod reviews;
 mod search;
 pub mod typed;
+mod unavailable;
 
 const GITHUB_API: Base = Base::from_static("https://api.github.com");
 
@@ -171,6 +173,7 @@ impl Provider for Gh {
     }
 }
 
+#[cfg(not(feature = "foundation-fixture"))]
 #[allow(unsafe_code)]
 mod export {
     dekopon_provider_sdk::export!(super::Gh);

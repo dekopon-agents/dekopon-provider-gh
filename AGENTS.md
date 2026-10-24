@@ -1,7 +1,7 @@
 # Guidance for coding agents
 
 The GitHub provider for Dekopon: one Wasm component, twenty-four narrow capabilities, no arbitrary
-`gh api` passthrough. [README.md](README.md) is the design; read the section your change touches.
+`gh api` passthrough. Foundation helpers add no production capability; the count remains twenty-four. [README.md](README.md) is the design; read the section your change touches.
 
 ## Contract
 
@@ -40,7 +40,8 @@ DEKOPON_PROVIDER_COMPONENT="$PWD/gh-provider.wasm" cargo test --locked --workspa
 ```
 
 Pins are exact (`rust-toolchain.toml`, wasm-tools 1.259.0) because `build.sh` asserts
-reproducible bytes. Nothing in the suite contacts GitHub.
+reproducible bytes. Nothing in the suite contacts GitHub. The foundation component tests build an isolated GraphQL
+fixture with the same pinned Rust and wasm-tools; its capability is never exported by the production build.
 
 ## Change rules
 

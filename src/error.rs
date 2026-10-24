@@ -37,7 +37,7 @@ impl Failure for ProviderError {
             "checks-empty" => Code::new("checks-empty").exiting(1),
             "unauthorized" | "forbidden" | "not-found" | "unprocessable" | "rate-limited"
             | "unexpected-status" | "invalid-response" | "http-failed" | "invalid-request"
-            | "request-ceiling" | "incomplete-results" | "index-ceiling" => {
+            | "request-ceiling" | "incomplete-results" | "index-ceiling" | "graphql-error" => {
                 Code::new(self.code).exiting(3)
             }
             "unknown-capability" => Code::UNKNOWN_CAPABILITY,

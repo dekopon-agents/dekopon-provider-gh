@@ -1,0 +1,183 @@
+command	auth git-credential	W1
+command	auth login	W3	hostname/h scopes/s with-token web/w clipboard/c git-protocol/p secure-storage insecure-storage skip-ssh-key
+command	auth logout	W4	hostname/h user/u
+command	auth refresh	W3	hostname/h scopes/s remove-scopes/r reset-scopes clipboard/c secure-storage insecure-storage
+command	auth setup-git	W1	hostname/h force/f
+command	auth switch	W4	hostname/h user/u
+command	auth token	X2	hostname/h user/u secure-storage
+command	codespace code	W5	codespace/c repo/R repo-owner insiders web/w
+command	codespace cp	W7	recursive/r expand/e codespace/c repo/R repo-owner profile/p
+command	codespace jupyter	W7	codespace/c repo/R repo-owner
+command	codespace logs	W7	codespace/c repo/R repo-owner follow/f
+command	codespace ports	W7	codespace/c repo/R repo-owner jq/q json template/t
+command	codespace ports forward	W7	all-interfaces
+command	codespace ports visibility	W7
+command	codespace rebuild	W7	codespace/c repo/R repo-owner full
+command	codespace select	W2	codespace/c repo/R repo-owner file/f
+command	codespace ssh	W7	profile server-port codespace/c repo/R repo-owner debug/d debug-file config stdio
+command	gist clone	W1
+command	pr checkout	W1	recurse-submodules force/f detach branch/b worktree
+command	repo clone	W1	upstream-remote-name/u no-upstream
+command	repo set-default	W1	view/v unset/u
+command	repo deploy-key add	X4	title/t allow-write/w
+command	run download	W10	dir/D name/n pattern/p
+command	run watch	W6	exit-status compact interval/i
+command	extension browse	W2	debug single-column/s
+command	extension create	W12	precompiled
+command	extension exec	W12
+command	extension install	W12	force pin
+command	extension list	W12
+command	extension remove	W12
+command	extension search	X5	web/w jq/q json template/t limit/L order sort license owner
+command	extension upgrade	W12	all force dry-run
+command	alias delete	W13	all
+command	alias import	W13	clobber
+command	alias list	W13
+command	alias set	W13	shell/s clobber
+command	config clear-cache	W13
+command	config get	W13	host/h
+command	config list	W13	host/h
+command	config set	W13	host/h
+command	gpg-key add	X4	title/t
+command	ssh-key add	X4	type title/t
+command	skill install	W8	agent scope pin dir all force/f from-local allow-hidden-dirs upstream
+command	skill list	W8	agent scope dir jq/q json template/t
+command	skill publish	W8	fix dry-run tag
+command	skill search	X5	page limit/L owner jq/q json template/t
+command	skill update	W8	all force dry-run unpin dir
+command	completion	W14	shell/s
+command	preview prompter	W2
+command	send-telemetry	X6
+command	copilot	W12	remove
+flag	auth status	X3	hostname/h
+flag	auth status	X2	show-token/t
+flag	auth status	X7	jq/q template
+flag	api	X1	hostname method/X field/F raw-field/f header/H preview/p include/i slurp paginate input silent template/t jq/q cache verbose allow-escape-sequences
+flag	codespace create	W5	web/w
+flag	codespace create	W2	default-permissions
+flag	codespace create	W6	status/s
+flag	codespace list	W5	web/w
+flag	codespace list	X7	jq/q template/t
+flag	codespace view	X7	jq/q template/t
+flag	gist create	W5	web/w
+flag	gist view	W5	web/w
+flag	issue comment	W2	editor/e
+flag	issue comment	W5	web/w
+flag	issue create	W2	editor/e
+flag	issue create	W5	web/w
+flag	issue create	W8	recover
+flag	issue develop	W1	checkout/c worktree
+flag	issue list	W5	web/w
+flag	issue list	X7	jq/q template/t
+flag	issue status	X7	jq/q template/t
+flag	issue view	W5	web/w
+flag	issue view	X7	jq/q template/t
+flag	label create	W2	color/c
+flag	label edit	W2	color/c
+flag	label list	W5	web/w
+flag	label list	X7	jq/q template/t
+flag	pr checks	W5	web/w
+flag	pr checks	W6	watch fail-fast interval/i
+flag	pr checks	X7	jq/q template/t
+flag	pr comment	W2	editor/e
+flag	pr comment	W5	web/w
+flag	pr create	W2	editor/e
+flag	pr create	W5	web/w
+flag	pr create	W1	fill/f fill-first fill-verbose
+flag	pr create	W8	recover
+flag	pr diff	W2	color
+flag	pr diff	W5	web/w
+flag	pr list	W5	web/w
+flag	pr list	X7	jq/q template/t
+flag	pr status	X7	jq/q template/t
+flag	pr view	W5	web/w
+flag	pr view	X7	jq/q template/t
+flag	project close	X7	jq/q template/t
+flag	project copy	X7	jq/q template/t
+flag	project create	X7	jq/q template/t
+flag	project delete	X7	jq/q template/t
+flag	project edit	X7	jq/q template/t
+flag	project field-create	X7	jq/q template/t
+flag	project field-delete	X7	jq/q template/t
+flag	project field-list	X7	jq/q template/t
+flag	project item-add	X7	jq/q template/t
+flag	project item-archive	X7	jq/q template/t
+flag	project item-create	X7	jq/q template/t
+flag	project item-delete	X7	jq/q template/t
+flag	project item-edit	X7	jq/q template/t
+flag	project item-list	X7	jq/q template/t
+flag	project list	W5	web/w
+flag	project list	X7	jq/q template/t
+flag	project mark-template	X7	jq/q template/t
+flag	release create	W1	notes-from-tag
+flag	release download	W8	dir/D clobber skip-existing
+flag	release list	X7	jq/q template/t
+flag	release verify	W8	custom-trusted-root
+flag	release verify	X7	jq/q template/t
+flag	release verify-asset	W8	custom-trusted-root
+flag	release verify-asset	X7	jq/q template/t
+flag	release view	W5	web/w
+flag	release view	X7	jq/q template/t
+flag	repo autolink list	W5	web/w
+flag	repo autolink list	X7	jq/q template/t
+flag	repo autolink view	X7	jq/q template/t
+flag	repo create	W1	source/s remote/r push clone/c
+flag	repo deploy-key list	X7	jq/q template/t
+flag	repo fork	W1	clone remote remote-name
+flag	repo license view	W5	web/w
+flag	repo list	X7	jq/q template/t
+flag	repo read-dir	X7	jq/q template/t
+flag	repo read-file	W8	clobber
+flag	repo read-file	X7	jq/q template/t
+flag	repo view	W5	web/w
+flag	repo view	X7	jq/q template/t
+flag	run list	X7	jq/q template/t
+flag	run view	W10	log log-failed
+flag	run view	W5	web/w
+flag	run view	X7	jq/q template/t
+flag	workflow list	X7	jq/q template/t
+flag	workflow view	W5	web/w
+flag	cache list	X7	jq/q template/t
+flag	secret list	X7	jq/q template/t
+flag	variable get	X7	jq/q template/t
+flag	variable list	X7	jq/q template/t
+flag	ruleset check	W5	web/w
+flag	ruleset list	W5	web/w
+flag	ruleset view	W5	web/w
+flag	search code	W5	web/w
+flag	search code	X7	jq/q template/t
+flag	search commits	W5	web/w
+flag	search commits	X7	jq/q template/t
+flag	search issues	W5	web/w
+flag	search issues	X7	jq/q template/t
+flag	search prs	W5	web/w
+flag	search prs	X7	jq/q template/t
+flag	search repos	W5	web/w
+flag	search repos	X7	jq/q template/t
+flag	attestation download	X3	hostname
+flag	attestation inspect	X3	hostname
+flag	attestation inspect	X7	jq/q template/t
+flag	attestation trusted-root	W8	tuf-root
+flag	attestation trusted-root	X3	hostname
+flag	attestation verify	W11	bundle-from-oci
+flag	attestation verify	W8	custom-trusted-root
+flag	attestation verify	X3	hostname
+flag	attestation verify	X7	jq/q template/t
+flag	discussion list	W5	web/w
+flag	discussion list	X7	jq/q template/t
+flag	discussion view	W5	web/w
+flag	discussion view	X7	jq/q template/t
+flag	agent-task create	W6	follow
+flag	agent-task list	W5	web/w
+flag	agent-task list	X7	jq/q template/t
+flag	agent-task view	W5	web/w
+flag	agent-task view	W6	follow
+flag	agent-task view	X7	jq/q template/t
+flag	accessibility	W5	web/w
+flag	project view	W5	web/w
+flag	project view	X7	jq/q template/t
+scope	search prs	X5
+scope	search issues	X5
+scope	search repos	X5
+scope	search code	X5
+scope	search commits	X5
