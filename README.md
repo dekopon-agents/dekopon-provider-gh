@@ -46,6 +46,11 @@ Without `--json`, these commands print tab-separated rows (files print decoded c
 (default 30) across at most ten REST pages; an exhausted list may return fewer rows.
 `repo list` uses GitHub's public `/users/OWNER/repos` endpoint and cannot enumerate
 private repositories inaccessible there. An interrupted collection prints no partial rows.
+`gh pr view --json files` collects all file pages, up to GitHub's 3,000-file cap.
+It needs one metadata GET plus up to 30 file GETs under the same grant. Each response
+uses the grant's per-response byte limit; a failed page emits no partial JSON.
+Next links must retain the exact requested origin, path and `per_page=100`; only the
+consecutive `page` changes. Reviews and comments retain their existing one-page bounds.
 A text field cut at its byte bound ends, in JSON and text alike, with the line
 `[dekopon: truncated to N bytes of M]`.
 `--jq`, `--template`, `--web` and `--checkout` still refuse. The four finite `gh api` reads
