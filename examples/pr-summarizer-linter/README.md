@@ -10,14 +10,14 @@ capabilities, injects a GitHub token bound to `api.github.com`, executes the `gh
 component, and hash-links every decision and result into an audit chain naming the person who
 asked. The token is never visible to the model, shell session, agent, or component that uses it.
 
-The provider still exports twenty-four production capabilities; this example grants five.
+The provider still exports twenty-seven production capabilities; this example grants five.
 Upstream shorthands select the same grants: `gh pr review ... -c -b <text>` is equivalent to
 `--comment --body <text>`, and `-F -` reads a piped body. Unsupported upstream operations refuse
 before HTTP; `gh --help` lists their reasons. `gh version`, `licenses`, `actions`, and
 `accessibility` are pure local output. Future GraphQL-backed reads need an explicit POST grant;
 this example's existing REST read grants stay GET-only.
 
-This workflow can comment. It cannot approve, request changes, or merge. Those are separate `gh`
+This workflow can submit COMMENT reviews, including optional line comments. It cannot approve, request changes, merge, or edit/delete issue comments. Those are separate `gh`
 capabilities absent from the catalog, policy, and broker constraint sets, and tests prove the
 omission against the checked-in provider manifest.
 
@@ -191,7 +191,8 @@ The finite `gh api user` route requires its own `gh.user-self.read` grant, which
 example does not request.
 
 The comment capability pre-reads the pull request and pins the head it observed in its POST.
-A push between that read and the submission is not prevented. The agent’s orders
+The agent supplies the metadata head SHA using `--match-head-commit`, so a moved head refuses
+before the POST. A push between the provider pre-read and submission is not prevented. The agent’s orders
 say not to retry: the new revision needs a new review. Drafts may receive comments, but closed or
 merged pull requests are refused.
 
@@ -292,3 +293,21 @@ request grant than this metadata-only example; 32 requests and 1 MiB per respons
 accommodate files plus either reviews or comments. Requesting all three with 30 file
 pages needs 33 requests and fails at the broker’s default 32-request ceiling.
 A byte or request refusal fails the whole read without partial output.
+
+## Batch 1 grant choices
+
+The same five capability ids remain granted. The PR read grant allows two GETs, so text
+`pr view --comments` can fetch its single comments page; the agent's normal metadata selection
+still makes one request. Diff name-only, patch and exclusions retain the one-GET grant.
+The COMMENT grant still allows one pre-read and one POST, with a 16384-byte request ceiling.
+Optional line-comment arrays fit that grant and require a positive line and validated content path;
+the review body can accompany them. The provider checks the aggregate serialized limit before HTTP.
+
+The three new issue-comment capabilities are deliberately absent from this reviewer. An owner
+who enables `gh.issue.comment-edit`, `gh.issue.comment-delete`, or `gh.issue.comment-edit-or-create`
+must add each chosen id separately to the catalog, Cedar actions and broker constraint sets:
+external-write, Medium risk, Issues: Write, allowedMethods `[POST]`, allowedHosts `[api.github.com]`,
+and up to eleven requests (ten lookup pages plus one mutation). PR numbers additionally need
+Pull requests: Read for GraphQL lookup. They use fixed documents and never accept a query or API path.
+They edit/delete issue comments and have no PR-head dependency. The compound edit-or-create id
+has its own grant because its fallback creates a comment. No read capability gains POST.

@@ -44,10 +44,11 @@ struct LineComment {
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
 enum Side {
-    LEFT,
+    Left,
     #[default]
-    RIGHT,
+    Right,
 }
 
 fn review_body(input: &ReviewInput, event: ReviewEvent, sha: &str) -> Result<Value, ProviderError> {
@@ -190,6 +191,12 @@ fn submit_review(
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
     event: ReviewEvent,
 ) -> Result<Value, ProviderError> {
+    if input.get("comments").is_some() {
+        match event {
+            ReviewEvent::Comment => {}
+            ReviewEvent::Approve | ReviewEvent::RequestChanges => return Err(invalid_input()),
+        }
+    }
     let input = serde_json::from_value::<ReviewInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
@@ -215,12 +222,15 @@ fn submit_review(
             }
             validate_body(&comment.body)?;
         }
-        review_body(&input, event, &"0".repeat(40))?;
     }
     match input.body.as_deref() {
         Some(body) => validate_body(body)?,
         None if event.body_required() && input.comments.is_none() => return Err(invalid_input()),
         None => {}
+    }
+
+    if input.comments.is_some() {
+        review_body(&input, event, &"0".repeat(40))?;
     }
 
     // Pre-read: the refusals below happen before any write leaves this guest, so a mock that
@@ -667,5 +677,10 @@ mod tests {
         )
         .expect_err("moved head refuses");
         assert_eq!(error.code(), "head-changed");
+    }
+    #[test]
+    fn native_bad_line_items_keep_the_invalid_input_code_without_http() {
+        let error = invoke_with(&capability("gh.pull-request.comment"), json!({"owner":"octo","repo":"hello","number":7,"comments":[{"path":"../lib.rs","line":1,"body":"review"}]}), |_| panic!("invalid line items cannot send HTTP")).expect_err("invalid item");
+        assert_eq!(error.code(), "invalid-input");
     }
 }

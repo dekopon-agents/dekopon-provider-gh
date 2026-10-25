@@ -1,0 +1,2883 @@
+[
+  {
+    "name": "search issues --order",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--order",
+      "desc"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "order": "desc",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --sort",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--sort",
+      "updated"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "sort": "updated",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue&sort=updated&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --search-type",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--search-type",
+      "hybrid"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "searchType": "hybrid",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue&search_type=hybrid&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --include-prs",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--include-prs"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "includePrs": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --app",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--app",
+      "github-actions"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "app": "github-actions",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20author%3A%22app%2Fgithub-actions%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --archived",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--archived=false"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "archived": false,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20archived%3Afalse&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --assignee",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--assignee",
+      "octocat"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "assignee": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20assignee%3Aoctocat&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --closed",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--closed",
+      ">=2020-01-01T10:00:00Z"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "closed": ">=2020-01-01T10:00:00Z",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20closed%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --commenter",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--commenter",
+      "octocat"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "commenter": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20commenter%3Aoctocat&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --comments",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--comments",
+      ">=1"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "comments": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20comments%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --created",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--created",
+      ">=2020-01-01T10:00:00Z"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "created": ">=2020-01-01T10:00:00Z",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20created%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --match",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--match",
+      "comments"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "match": [
+        "comments"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20in%3Acomments&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --interactions",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--interactions",
+      ">=1"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "interactions": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20interactions%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --involves",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--involves",
+      "octocat"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "involves": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20involves%3Aoctocat&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --visibility",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--visibility",
+      "internal"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "visibility": [
+        "internal"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20is%3Ainternal&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --label",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--label",
+      "area:db"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "label": [
+        "area:db"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20label%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --language",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--language",
+      "area:db"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "language": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20language%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --locked",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--locked"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "locked": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20is%3Alocked&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --mentions",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--mentions",
+      "octocat"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "mentions": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20mentions%3Aoctocat&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --milestone",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--milestone",
+      "area:db"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "milestone": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20milestone%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --no-assignee",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--no-assignee"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "noAssignee": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Aassignee&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --no-label",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--no-label"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "noLabel": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Alabel&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --no-milestone",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--no-milestone"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "noMilestone": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Amilestone&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --no-project",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--no-project"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "noProject": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Aproject&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --project",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--project",
+      "octocat/1"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "project": "octocat/1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20project%3Aoctocat%2F1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --reactions",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--reactions",
+      ">=1"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "reactions": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20reactions%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --team-mentions",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--team-mentions",
+      "octocat/team"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "teamMentions": "octocat/team",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20team%3Aoctocat%2Fteam&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search issues --updated",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--updated",
+      ">=2020-01-01T10:00:00Z"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "updated": ">=2020-01-01T10:00:00Z",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20updated%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --order",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--order",
+      "desc"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "order": "desc",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --sort",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--sort",
+      "updated"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "sort": "updated",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr&sort=updated&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --app",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--app",
+      "github-actions"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "app": "github-actions",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20author%3A%22app%2Fgithub-actions%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --archived",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--archived=false"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "archived": false,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20archived%3Afalse&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --assignee",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--assignee",
+      "octocat"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "assignee": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20assignee%3Aoctocat&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --closed",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--closed",
+      ">=2020-01-01T10:00:00Z"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "closed": ">=2020-01-01T10:00:00Z",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20closed%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --commenter",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--commenter",
+      "octocat"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "commenter": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20commenter%3Aoctocat&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --comments",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--comments",
+      ">=1"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "comments": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20comments%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --created",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--created",
+      ">=2020-01-01T10:00:00Z"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "created": ">=2020-01-01T10:00:00Z",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20created%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --match",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--match",
+      "comments"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "match": [
+        "comments"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20in%3Acomments&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --interactions",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--interactions",
+      ">=1"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "interactions": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20interactions%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --involves",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--involves",
+      "octocat"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "involves": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20involves%3Aoctocat&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --visibility",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--visibility",
+      "internal"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "visibility": [
+        "internal"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Ainternal&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --label",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--label",
+      "area:db"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "label": [
+        "area:db"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20label%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --language",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--language",
+      "area:db"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "language": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20language%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --locked",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--locked"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "locked": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Alocked&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --mentions",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--mentions",
+      "octocat"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "mentions": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20mentions%3Aoctocat&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --milestone",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--milestone",
+      "area:db"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "milestone": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20milestone%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --no-assignee",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--no-assignee"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "noAssignee": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Aassignee&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --no-label",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--no-label"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "noLabel": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Alabel&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --no-milestone",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--no-milestone"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "noMilestone": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Amilestone&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --no-project",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--no-project"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "noProject": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Aproject&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --project",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--project",
+      "octocat/1"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "project": "octocat/1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20project%3Aoctocat%2F1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --reactions",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--reactions",
+      ">=1"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "reactions": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20reactions%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --team-mentions",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--team-mentions",
+      "octocat/team"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "teamMentions": "octocat/team",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20team%3Aoctocat%2Fteam&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --updated",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--updated",
+      ">=2020-01-01T10:00:00Z"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "updated": ">=2020-01-01T10:00:00Z",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20updated%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --base",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--base",
+      "topic/feature"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "base": "topic/feature",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20base%3A%22topic%2Ffeature%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --draft",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--draft=false"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "draft": false,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20draft%3Afalse&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --head",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--head",
+      "topic/feature"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "head": "topic/feature",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20head%3A%22topic%2Ffeature%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --merged-at",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--merged-at",
+      ">=2020-01-01T10:00:00Z"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "mergedAt": ">=2020-01-01T10:00:00Z",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20merged%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --merged",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--merged"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "merged": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Amerged&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --review",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--review",
+      "changes_requested"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "review": "changes_requested",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20review%3Achanges_requested&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --review-requested",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--review-requested",
+      "octocat"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "reviewRequested": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20review-requested%3Aoctocat&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --reviewed-by",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--reviewed-by",
+      "octocat"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "reviewedBy": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20reviewed-by%3Aoctocat&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs --checks",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--checks",
+      "failure"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "checks": "failure",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20status%3Afailure&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --order",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--order",
+      "desc"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "order": "desc",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --sort",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--sort",
+      "updated"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "sort": "updated",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao&sort=updated&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --archived",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--archived=false"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "archived": false,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20archived%3Afalse&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --created",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--created",
+      ">=2020-01-01T10:00:00Z"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "created": ">=2020-01-01T10:00:00Z",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20created%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --followers",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--followers",
+      ">=1"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "followers": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20followers%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --include-forks",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--include-forks",
+      "only"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "includeForks": "only",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20fork%3Aonly&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --forks",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--forks",
+      ">=1"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "forks": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20forks%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --good-first-issues",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--good-first-issues",
+      ">=1"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "goodFirstIssues": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20good-first-issues%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --help-wanted-issues",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--help-wanted-issues",
+      ">=1"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "helpWantedIssues": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20help-wanted-issues%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --match",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--match",
+      "readme"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "match": [
+        "readme"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20in%3Areadme&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --visibility",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--visibility",
+      "internal"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "visibility": [
+        "internal"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20is%3Ainternal&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --language",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--language",
+      "area:db"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "language": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20language%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --license",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--license",
+      "area:db"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "license": [
+        "area:db"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20license%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --updated",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--updated",
+      ">=2020-01-01T10:00:00Z"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "updated": ">=2020-01-01T10:00:00Z",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20pushed%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --size",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--size",
+      ">=1"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "size": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20size%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --stars",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--stars",
+      ">=1"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "stars": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20stars%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --topic",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--topic",
+      "area:db"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "topic": [
+        "area:db"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20topic%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search repos --number-topics",
+    "argv": [
+      "search",
+      "repos",
+      "term",
+      "--owner",
+      "o",
+      "--number-topics",
+      ">=1"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "term",
+      "numberTopics": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=term%20user%3Ao%20topics%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search code --extension",
+    "argv": [
+      "search",
+      "code",
+      "term",
+      "-R",
+      "o/r",
+      "--extension",
+      "area:db"
+    ],
+    "capability": "gh.search.code",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "extension": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/code?q=term%20repo%3Ao%2Fr%20extension%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search code --filename",
+    "argv": [
+      "search",
+      "code",
+      "term",
+      "-R",
+      "o/r",
+      "--filename",
+      "area:db"
+    ],
+    "capability": "gh.search.code",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "filename": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/code?q=term%20repo%3Ao%2Fr%20filename%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search code --match",
+    "argv": [
+      "search",
+      "code",
+      "term",
+      "-R",
+      "o/r",
+      "--match",
+      "path"
+    ],
+    "capability": "gh.search.code",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "match": [
+        "path"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/code?q=term%20repo%3Ao%2Fr%20in%3Apath&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search code --language",
+    "argv": [
+      "search",
+      "code",
+      "term",
+      "-R",
+      "o/r",
+      "--language",
+      "area:db"
+    ],
+    "capability": "gh.search.code",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "language": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/code?q=term%20repo%3Ao%2Fr%20language%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search code --size",
+    "argv": [
+      "search",
+      "code",
+      "term",
+      "-R",
+      "o/r",
+      "--size",
+      ">=1"
+    ],
+    "capability": "gh.search.code",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "size": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/code?q=term%20repo%3Ao%2Fr%20size%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --order",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--order",
+      "desc"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "order": "desc",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --sort",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--sort",
+      "committer-date"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "sort": "committer-date",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr&sort=committer-date&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --author-date",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--author-date",
+      ">=2020-01-01T10:00:00Z"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "authorDate": ">=2020-01-01T10:00:00Z",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20author-date%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --author-email",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--author-email",
+      "area:db"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "authorEmail": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20author-email%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --author-name",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--author-name",
+      "area:db"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "authorName": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20author-name%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --committer",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--committer",
+      "octocat"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "committer": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer%3Aoctocat&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --committer-date",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--committer-date",
+      ">=2020-01-01T10:00:00Z"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "committerDate": ">=2020-01-01T10:00:00Z",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer-date%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --committer-email",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--committer-email",
+      "area:db"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "committerEmail": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer-email%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --committer-name",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--committer-name",
+      "area:db"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "committerName": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer-name%3A%22area%3Adb%22&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --hash",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--hash",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20hash%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --merge",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--merge=false"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "merge": false,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20merge%3Afalse&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --parent",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--parent",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "parent": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20parent%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --tree",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--tree",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "tree": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20tree%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search commits --visibility",
+    "argv": [
+      "search",
+      "commits",
+      "term",
+      "-R",
+      "o/r",
+      "--visibility",
+      "internal"
+    ],
+    "capability": "gh.search.commits",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "visibility": [
+        "internal"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20is%3Ainternal&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "pr list --base",
+    "argv": [
+      "pr",
+      "list",
+      "-R",
+      "o/r",
+      "--base",
+      "topic/feature"
+    ],
+    "capability": "gh.pull-request.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "base": "topic/feature",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/repos/o/r/pulls?state=open&base=topic%2Ffeature&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "pr list --head",
+    "argv": [
+      "pr",
+      "list",
+      "-R",
+      "o/r",
+      "--head",
+      "topic/feature"
+    ],
+    "capability": "gh.pull-request.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "head": "topic/feature",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/repos/o/r/pulls?state=open&head=topic%2Ffeature&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "pr list --label",
+    "argv": [
+      "pr",
+      "list",
+      "-R",
+      "o/r",
+      "--label",
+      "area:db"
+    ],
+    "capability": "gh.pull-request.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "label": [
+        "area:db"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/repos/o/r/pulls?state=open&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "pr list --assignee",
+    "argv": [
+      "pr",
+      "list",
+      "-R",
+      "o/r",
+      "--assignee",
+      "octocat"
+    ],
+    "capability": "gh.pull-request.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "assignee": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/repos/o/r/pulls?state=open&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "pr list --search",
+    "argv": [
+      "pr",
+      "list",
+      "-R",
+      "o/r",
+      "--search",
+      "needle"
+    ],
+    "capability": "gh.pull-request.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "search": "needle",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=needle%20repo%3Ao%2Fr%20is%3Apr%20is%3Aopen&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "pr list --draft",
+    "argv": [
+      "pr",
+      "list",
+      "-R",
+      "o/r",
+      "--draft=false"
+    ],
+    "capability": "gh.pull-request.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "draft": false,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/repos/o/r/pulls?state=open&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "pr list --app",
+    "argv": [
+      "pr",
+      "list",
+      "-R",
+      "o/r",
+      "--app",
+      "github-actions"
+    ],
+    "capability": "gh.pull-request.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "app": "github-actions",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=author%3A%22app%2Fgithub-actions%22%20repo%3Ao%2Fr%20is%3Apr%20is%3Aopen&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "issue list --assignee",
+    "argv": [
+      "issue",
+      "list",
+      "-R",
+      "o/r",
+      "--assignee",
+      "octocat"
+    ],
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "assignee": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/repos/o/r/issues?state=open&assignee=octocat&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "issue list --label",
+    "argv": [
+      "issue",
+      "list",
+      "-R",
+      "o/r",
+      "--label",
+      "area:db"
+    ],
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "label": [
+        "area:db"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/repos/o/r/issues?state=open&labels=area%3Adb&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "issue list --author",
+    "argv": [
+      "issue",
+      "list",
+      "-R",
+      "o/r",
+      "--author",
+      "octocat"
+    ],
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "author": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/repos/o/r/issues?state=open&creator=octocat&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "issue list --mention",
+    "argv": [
+      "issue",
+      "list",
+      "-R",
+      "o/r",
+      "--mention",
+      "octocat"
+    ],
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "mention": "octocat",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/repos/o/r/issues?state=open&mentioned=octocat&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "issue list --milestone",
+    "argv": [
+      "issue",
+      "list",
+      "-R",
+      "o/r",
+      "--milestone",
+      "area:db"
+    ],
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "milestone": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=milestone%3A%22area%3Adb%22%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "issue list --app",
+    "argv": [
+      "issue",
+      "list",
+      "-R",
+      "o/r",
+      "--app",
+      "github-actions"
+    ],
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "app": "github-actions",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=author%3A%22app%2Fgithub-actions%22%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "issue list --search",
+    "argv": [
+      "issue",
+      "list",
+      "-R",
+      "o/r",
+      "--search",
+      "needle"
+    ],
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "search": "needle",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=needle%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "issue list --type",
+    "argv": [
+      "issue",
+      "list",
+      "-R",
+      "o/r",
+      "--type",
+      "area:db"
+    ],
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "type": "area:db",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/repos/o/r/issues?state=open&type=area%3Adb&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "pr state all",
+    "argv": [
+      "pr",
+      "list",
+      "-R",
+      "o/r",
+      "--state",
+      "all"
+    ],
+    "capability": "gh.pull-request.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "state": "all",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "path": "/repos/o/r/pulls?state=all&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "issue state all",
+    "argv": [
+      "issue",
+      "list",
+      "-R",
+      "o/r",
+      "--state",
+      "all"
+    ],
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "state": "all",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "path": "/repos/o/r/issues?state=all&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "repo list --source",
+    "argv": [
+      "repo",
+      "list",
+      "o",
+      "--source"
+    ],
+    "capability": "gh.repo.list",
+    "input": {
+      "owner": "o",
+      "source": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "repo list --fork",
+    "argv": [
+      "repo",
+      "list",
+      "o",
+      "--fork"
+    ],
+    "capability": "gh.repo.list",
+    "input": {
+      "owner": "o",
+      "fork": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "repo list --archived",
+    "argv": [
+      "repo",
+      "list",
+      "o",
+      "--archived"
+    ],
+    "capability": "gh.repo.list",
+    "input": {
+      "owner": "o",
+      "archived": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "repo list --no-archived",
+    "argv": [
+      "repo",
+      "list",
+      "o",
+      "--no-archived"
+    ],
+    "capability": "gh.repo.list",
+    "input": {
+      "owner": "o",
+      "noArchived": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "repo list --private",
+    "argv": [
+      "repo",
+      "list",
+      "o",
+      "--private"
+    ],
+    "capability": "gh.repo.list",
+    "input": {
+      "owner": "o",
+      "private": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "repo list --public",
+    "argv": [
+      "repo",
+      "list",
+      "o",
+      "--public"
+    ],
+    "capability": "gh.repo.list",
+    "input": {
+      "owner": "o",
+      "public": true,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "repo list --visibility",
+    "argv": [
+      "repo",
+      "list",
+      "o",
+      "--visibility",
+      "internal"
+    ],
+    "capability": "gh.repo.list",
+    "input": {
+      "owner": "o",
+      "visibility": "internal",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "repo list --language",
+    "argv": [
+      "repo",
+      "list",
+      "o",
+      "--language",
+      "c sharp"
+    ],
+    "capability": "gh.repo.list",
+    "input": {
+      "owner": "o",
+      "language": "c sharp",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "repo list --topic",
+    "argv": [
+      "repo",
+      "list",
+      "o",
+      "--topic",
+      "area:db"
+    ],
+    "capability": "gh.repo.list",
+    "input": {
+      "owner": "o",
+      "topic": [
+        "area:db"
+      ],
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "search": false
+  },
+  {
+    "name": "search issues explicit unlocked",
+    "argv": [
+      "search",
+      "issues",
+      "term",
+      "-R",
+      "o/r",
+      "--locked=false"
+    ],
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "locked": false,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aunlocked&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "search prs explicit unmerged",
+    "argv": [
+      "search",
+      "prs",
+      "term",
+      "-R",
+      "o/r",
+      "--merged=false"
+    ],
+    "capability": "gh.search.prs",
+    "input": {
+      "owner": "o",
+      "repo": "r",
+      "query": "term",
+      "merged": false,
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Aunmerged&page=1&per_page=100",
+    "search": true
+  },
+  {
+    "name": "qualifier only search",
+    "argv": [
+      "search",
+      "repos",
+      "--owner",
+      "o",
+      "--stars",
+      ">=1"
+    ],
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "o",
+      "query": "",
+      "stars": ">=1",
+      "_cliLimit": 30,
+      "_cliOutput": ""
+    },
+    "path": "/search/repositories?q=user%3Ao%20stars%3A%3E%3D1&page=1&per_page=100",
+    "search": true
+  }
+]

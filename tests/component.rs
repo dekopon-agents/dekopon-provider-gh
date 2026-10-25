@@ -13,7 +13,7 @@ fn component() -> std::path::PathBuf {
 #[test]
 fn manifest_keeps_read_and_write_grants_independent() {
     let manifest = provider::manifest::<Gh>().expect("closed manifest");
-    assert_eq!(manifest.capabilities.len(), 24);
+    assert_eq!(manifest.capabilities.len(), 27);
     assert!(
         manifest
             .capabilities
@@ -42,6 +42,9 @@ fn manifest_keeps_read_and_write_grants_independent() {
         "gh.pull-request.request-changes",
         "gh.pull-request.merge",
         "gh.issue.comment",
+        "gh.issue.comment-edit",
+        "gh.issue.comment-delete",
+        "gh.issue.comment-edit-or-create",
     ];
     let actual: std::collections::BTreeSet<_> = manifest
         .capabilities
@@ -80,6 +83,9 @@ fn manifest_keeps_read_and_write_grants_independent() {
         let marker = capability.input_schema["properties"].get("_stdinBody");
         if [
             "gh.issue.comment",
+            "gh.issue.comment-edit",
+            "gh.issue.comment-edit-or-create",
+            "gh.pull-request.merge",
             "gh.pull-request.approve",
             "gh.pull-request.comment",
             "gh.pull-request.request-changes",

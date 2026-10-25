@@ -295,7 +295,7 @@ fn next_file_page(
     Ok(next)
 }
 
-fn cli_pull(pull: &RawPull, raw: &Value, fields: &str) -> Result<Value, ProviderError> {
+pub(crate) fn cli_pull(pull: &RawPull, raw: &Value, fields: &str) -> Result<Value, ProviderError> {
     let title = marked_text(&pull.title, MAX_TITLE_OUT_BYTES);
     let body = marked_optional(pull.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
     let state = if pull.merged.unwrap_or(false) || !raw["merged_at"].is_null() {
@@ -386,6 +386,11 @@ pub(crate) fn list(
     base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
+    let mut input = input;
+    crate::qualifiers::remove_nulls("pr list", &mut input);
+    if crate::qualifiers::has_values("pr list", &input) {
+        return crate::list_filters::run("pr list", input, base, send);
+    }
     let input = serde_json::from_value::<ListInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
@@ -641,6 +646,9 @@ pub(crate) fn status(
     base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
+    if input.get("comments").is_some() {
+        return Err(invalid_input());
+    }
     let input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;

@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "request": {
+    "method": "GET",
+    "path": "/search/code",
+    "query": "q=parity%20repo%3Adekopon-agents%2Fgh-parity-scratch%20extension%3A%22txt%22%20filename%3A%22parity-batch1.txt%22%20in%3Afile%20language%3A%22text%22%20size%3A%3E0&page=1&per_page=100",
+    "headers": {
+      "accept": "application/vnd.github+json",
+      "accept-encoding": "identity",
+      "authorization": "[redacted]",
+      "connection": "close",
+      "host": "127.0.0.1:8787",
+      "user-agent": "dekopon-gh-provider/0.1",
+      "x-github-api-version": "2022-11-28"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "date": "Sun, 25 Oct 2026 07:39:18 GMT",
+      "server": "envoy",
+      "vary": "accept-encoding",
+      "x-envoy-upstream-service-time": "557",
+      "x-github-edge-region": "iad",
+      "x-github-request-id": "B9EE:18E9CA:1270933:3C170D0:6ADDB225",
+      "x-ratelimit-limit": "600",
+      "x-ratelimit-remaining": "599",
+      "x-ratelimit-reset": "1792914017",
+      "x-ratelimit-resource": "code_search_expanded_ratelimit",
+      "x-ratelimit-used": "1"
+    },
+    "body": {
+      "json": {
+        "total_count": 0,
+        "incomplete_results": true,
+        "items": []
+      }
+    }
+  }
+}

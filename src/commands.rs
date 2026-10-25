@@ -178,7 +178,7 @@ fn supported_tree() -> Command {
                         .arg(Arg::new("path").required(true).value_name("PATH"))
                         .arg(repo_arg(true))
                         .arg(Arg::new("ref").long("ref").value_name("REF"))
-                        .arg(Arg::new("allow-escape-sequences").long("allow-escape-sequences").action(ArgAction::SetTrue))
+                        .arg(Arg::new("allow-escape-sequences").long("allow-escape-sequences").num_args(0..=1).default_missing_value("true").default_value("false").require_equals(true).value_parser(clap::value_parser!(bool)))
                         .arg(json_arg()),
                 )
                 .subcommand(
@@ -259,6 +259,10 @@ fn search_tree() -> Command {
         if matches!(verb, "prs" | "issues" | "commits") {
             sub = sub.arg(Arg::new("author").long("author").value_name("LOGIN"));
         }
+        let command_name = format!("search {verb}");
+        let extra = crate::qualifiers::args(&command_name);
+        sub = sub.mut_arg("query", |arg| arg.required(false));
+        sub = sub.args(extra);
         command = command.subcommand(sub);
     }
     command
@@ -278,7 +282,7 @@ fn pull_requests() -> Command {
                         .short('s')
                         .value_name("STATE")
                         .value_parser(["open", "closed", "merged", "all"])
-                        .help("open, closed or merged"),
+                        .help("open, closed, merged or all"),
                 )
                 .arg(
                     Arg::new("author")
@@ -288,7 +292,8 @@ fn pull_requests() -> Command {
                         .help("Match author across bounded pages"),
                 )
                 .arg(limit_arg())
-                .arg(json_arg()),
+                .arg(json_arg())
+                .args(crate::qualifiers::args("pr list")),
         )
         .subcommand(
             Command::new("view")
@@ -297,7 +302,11 @@ fn pull_requests() -> Command {
                     Arg::new("comments")
                         .long("comments")
                         .short('c')
-                        .action(ArgAction::SetTrue),
+                        .num_args(0..=1)
+                        .default_missing_value("true")
+                        .default_value("false")
+                        .require_equals(true)
+                        .value_parser(clap::value_parser!(bool)),
                 )
                 .arg(number_arg("Pull-request number"))
                 .arg(repo_arg(true))
@@ -306,16 +315,32 @@ fn pull_requests() -> Command {
         .subcommand(
             Command::new("diff")
                 .about("Read one pull request's unified diff, truncated with a marker")
-                .arg(Arg::new("patch").long("patch").action(ArgAction::SetTrue))
+                .arg(
+                    Arg::new("patch")
+                        .long("patch")
+                        .num_args(0..=1)
+                        .default_missing_value("true")
+                        .default_value("false")
+                        .require_equals(true)
+                        .value_parser(clap::value_parser!(bool)),
+                )
                 .arg(
                     Arg::new("name-only")
                         .long("name-only")
-                        .action(ArgAction::SetTrue),
+                        .num_args(0..=1)
+                        .default_missing_value("true")
+                        .default_value("false")
+                        .require_equals(true)
+                        .value_parser(clap::value_parser!(bool)),
                 )
                 .arg(
                     Arg::new("allow-escape-sequences")
                         .long("allow-escape-sequences")
-                        .action(ArgAction::SetTrue),
+                        .num_args(0..=1)
+                        .default_missing_value("true")
+                        .default_value("false")
+                        .require_equals(true)
+                        .value_parser(clap::value_parser!(bool)),
                 )
                 .arg(
                     Arg::new("exclude")
@@ -389,7 +414,11 @@ fn issues() -> Command {
                     Arg::new("comments")
                         .long("comments")
                         .short('c')
-                        .action(ArgAction::SetTrue),
+                        .num_args(0..=1)
+                        .default_missing_value("true")
+                        .default_value("false")
+                        .require_equals(true)
+                        .value_parser(clap::value_parser!(bool)),
                 )
                 .arg(number_arg("Issue number"))
                 .arg(repo_arg(true))
@@ -408,14 +437,26 @@ fn issues() -> Command {
                         .help("open, closed or all"),
                 )
                 .arg(limit_arg())
-                .arg(json_arg()),
+                .arg(json_arg())
+                .args(crate::qualifiers::args("issue list")),
         )
         .subcommand(
             Command::new("comment")
                 .about("Post one comment on an issue or pull request")
                 .arg(number_arg("Issue or pull-request number"))
                 .arg(repo_arg(true))
-                .args(body()),
+                .args(body())
+                .args(
+                    ["edit-last", "delete-last", "yes", "create-if-none"].map(|flag| {
+                        Arg::new(flag)
+                            .long(flag)
+                            .num_args(0..=1)
+                            .default_missing_value("true")
+                            .default_value("false")
+                            .require_equals(true)
+                            .value_parser(clap::value_parser!(bool))
+                    }),
+                ),
         )
 }
 
@@ -613,6 +654,18 @@ fn dispatch(
                 "body",
                 body_text(matches, stdin_piped)?.as_ref(),
             );
+            if let Some(body) = input
+                .get("body")
+                .and_then(Value::as_str)
+                .filter(|body| *body != crate::typed::STDIN_BODY)
+            {
+                crate::validate_body(body)
+                    .map_err(|_| usage("gh pr merge --body: invalid value"))?;
+            }
+            if let Some(subject) = matches.get_one::<String>("subject") {
+                crate::validate_body(subject)
+                    .map_err(|_| usage("gh pr merge --subject: invalid value"))?;
+            }
             mark_piped_body(&mut input, matches);
             insert_text(&mut input, "subject", matches.get_one::<String>("subject"));
             insert_text(
@@ -680,12 +733,49 @@ fn dispatch(
             ids::ISSUE_LIST
         }
         ("issue", "comment") => {
+            let edit = matches.get_flag("edit-last");
+            let delete = matches.get_flag("delete-last");
+            let create = matches.get_flag("create-if-none");
+            let yes = matches.get_flag("yes");
+            if edit && delete {
+                return Err(usage(
+                    "gh issue comment: --edit-last and --delete-last cannot be used together",
+                ));
+            }
+            if delete && !yes {
+                return Err(usage("gh issue comment: --delete-last requires --yes"));
+            }
+            if create && !edit {
+                return Err(usage(
+                    "gh issue comment: --create-if-none requires --edit-last",
+                ));
+            }
+            if yes && !delete {
+                return Err(usage("gh issue comment: --yes requires --delete-last"));
+            }
+            for flag in ["body", "body-file"] {
+                if delete && matches.contains_id(flag) {
+                    return Err(usage(format!(
+                        "gh issue comment: --delete-last and --{flag} cannot be used together"
+                    )));
+                }
+            }
             insert_repo_and_number(&mut input, matches)?;
-            let text = body_text(matches, stdin_piped)?
-                .ok_or_else(|| usage(format!("gh: {command} requires --body text")))?;
-            input.insert("body".to_owned(), Value::String(text));
-            mark_piped_body(&mut input, matches);
-            ids::ISSUE_COMMENT
+            if !delete {
+                let text = body_text(matches, stdin_piped)?
+                    .ok_or_else(|| usage(format!("gh: {command} requires --body text")))?;
+                input.insert("body".to_owned(), Value::String(text));
+                mark_piped_body(&mut input, matches);
+            }
+            if delete {
+                ids::ISSUE_COMMENT_DELETE
+            } else if edit && create {
+                ids::ISSUE_COMMENT_EDIT_OR_CREATE
+            } else if edit {
+                ids::ISSUE_COMMENT_EDIT
+            } else {
+                ids::ISSUE_COMMENT
+            }
         }
         ("search", "prs" | "issues" | "repos" | "code" | "commits") => {
             let owner = matches.get_one::<String>("owner");
@@ -709,11 +799,12 @@ fn dispatch(
             }
             let query = matches
                 .get_many::<String>("query")
-                .expect("required query")
+                .into_iter()
+                .flatten()
                 .map(String::as_str)
                 .collect::<Vec<_>>()
                 .join(" ");
-            if query.is_empty()
+            if (query.is_empty() && !crate::qualifiers::has_flags(&command, matches))
                 || query.len() > 512
                 || query.chars().any(char::is_control)
                 || query.split_whitespace().any(|word| {
@@ -748,6 +839,9 @@ fn dispatch(
         _ => unreachable!("the supported tree has no other command"),
     };
 
+    if area == "search" || command == "pr list" || command == "issue list" {
+        crate::qualifiers::dispatch(&command, matches, &mut input)?;
+    }
     if matches!(area, "search")
         || matches!(command.as_str(), "pr list" | "issue list" | "repo list")
     {
@@ -841,6 +935,9 @@ pub(crate) const DISPATCH_TABLE: &[(&str, &str, &str)] = &[
     ("issue", "view", ids::ISSUE_READ),
     ("issue", "list", ids::ISSUE_LIST),
     ("issue", "comment", ids::ISSUE_COMMENT),
+    ("issue", "comment", ids::ISSUE_COMMENT_EDIT),
+    ("issue", "comment", ids::ISSUE_COMMENT_DELETE),
+    ("issue", "comment", ids::ISSUE_COMMENT_EDIT_OR_CREATE),
     ("auth", "status", ids::AUTH_STATUS),
     ("search", "prs", ids::SEARCH_PRS),
     ("search", "issues", ids::SEARCH_ISSUES),
