@@ -180,6 +180,8 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
     for argv in [
         vec!["--", "pr", "view", "7", "-R", "octo/hello"],
         vec!["auth", "login", "--definitely-a-typo"],
+        vec!["codespace", "ports", "bogus"],
+        vec!["cs", "ports", "-c", "demo", "bogus"],
         vec![
             "pr",
             "create",
@@ -212,6 +214,74 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
         assert!(stderr.contains("error:"));
     }
     for (argv, subject, reason) in [
+        (
+            vec![
+                "codespace",
+                "ports",
+                "-c",
+                "demo",
+                "forward",
+                "8080:8080",
+                "--all-interfaces",
+            ],
+            "codespace ports forward",
+            "needs a dev tunnel or websocket",
+        ),
+        (
+            vec![
+                "codespace",
+                "ports",
+                "forward",
+                "-c",
+                "demo",
+                "8080:8080",
+                "--all-interfaces",
+            ],
+            "codespace ports forward",
+            "needs a dev tunnel or websocket",
+        ),
+        (
+            vec![
+                "cs",
+                "ports",
+                "--codespace=forward",
+                "forward",
+                "8080:8080",
+                "--all-interfaces",
+            ],
+            "codespace ports forward",
+            "needs a dev tunnel or websocket",
+        ),
+        (
+            vec!["cs", "ports", "-cdemo", "visibility", "8080:private"],
+            "codespace ports visibility",
+            "needs a dev tunnel or websocket",
+        ),
+        (
+            vec!["cs", "ssh", "-c", "demo"],
+            "codespace ssh",
+            "needs a dev tunnel or websocket",
+        ),
+        (
+            vec!["extension", "ls"],
+            "extension list",
+            "needs local executable support",
+        ),
+        (
+            vec!["ext", "ls"],
+            "extension list",
+            "needs local executable support",
+        ),
+        (
+            vec!["extensions", "uninstall", "label"],
+            "extension remove",
+            "needs local executable support",
+        ),
+        (
+            vec!["pr", "co", "7"],
+            "pr checkout",
+            "needs a local git checkout",
+        ),
         (
             vec!["copilot", "-p", "x"],
             "copilot",
@@ -606,13 +676,10 @@ fn moved_heads_refuse_all_existing_pr_writes_after_one_read()
         let harness = Harness::<Gh>::get(component()).http(HttpScript::new("localhost", "GET", Response {status:200, headers:vec![], body:json!({"number":7,"title":"Moved","state":"open","draft":false,"merged":false,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","head":{"ref":"feature","sha":"a".repeat(40)},"base":{"ref":"main","sha":"c".repeat(40)}}).to_string().into_bytes()}));
         let base = format!("{}/prefix", harness.origin().expect("origin"));
         let output = harness.settings(json!({"baseUrl":base})).call(id, input)?;
-        assert_ne!(output.status, 0);
-        assert!(
-            output
-                .stderr
-                .contains("head no longer matches expectedHeadSha"),
-            "{id}: {}",
-            output.stderr
+        assert_eq!(output.status, 1);
+        assert_eq!(
+            output.stderr,
+            "the pull request head no longer matches expectedHeadSha\n"
         );
         assert!(output.stdout.is_empty());
         assert_eq!(output.http_calls.len(), 1);
