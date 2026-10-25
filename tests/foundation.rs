@@ -216,6 +216,41 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
     }
     for (argv, subject, reason) in [
         (
+            vec![
+                "issue",
+                "comment",
+                "7",
+                "-R",
+                "octo/hello",
+                "--attach",
+                "before.png",
+                "--attach",
+                "after.png",
+            ],
+            "issue comment --attach",
+            "needs local file access",
+        ),
+        (
+            vec![
+                "pr", "create", "--label", "bug", "--label", "feature", "--web",
+            ],
+            "pr create --web",
+            "needs a browser or local application",
+        ),
+        (
+            vec![
+                "pr",
+                "create",
+                "--reviewer",
+                "alice",
+                "--reviewer",
+                "bob",
+                "--web",
+            ],
+            "pr create --web",
+            "needs a browser or local application",
+        ),
+        (
             vec!["pr", "-R", "octo/hello", "view", "7", "--web"],
             "pr view --web",
             "needs a browser or local application",

@@ -136,7 +136,10 @@ fn leaf<'a>(root: &'a mut Command, path: &'static str) -> &'a mut Command {
 }
 
 fn flag_arg(flag: Flag) -> Arg {
-    let mut arg = Arg::new(flag.name).long(flag.name).hide(true);
+    let mut arg = Arg::new(flag.name)
+        .long(flag.name)
+        .hide(true)
+        .overrides_with(flag.name);
     arg = match flag.arity {
         Arity::Boolean => arg
             .action(clap::ArgAction::SetTrue)
