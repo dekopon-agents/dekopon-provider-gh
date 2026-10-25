@@ -128,8 +128,22 @@ pub(crate) fn read(
             percent_encode(&input.repo)
         );
         if fields.split(',').any(|field| field == "files") {
-            projected["files"] = json!(crate::view_items(send, base, &format!("{path}pulls/{}/files?per_page=100", input.number), &["filename", "status", "additions", "deletions"])?
-                .into_iter().map(|file| json!({"path": file["filename"], "status": file["status"], "additions": file["additions"], "deletions": file["deletions"]})).collect::<Vec<_>>());
+            let canonical = raw["base"]["repo"]["id"]
+                .as_u64()
+                .filter(|id| *id > 0)
+                .map(|id| {
+                    url(
+                        base,
+                        &format!("/repositories/{id}/pulls/{}/files", input.number),
+                    )
+                })
+                .transpose()?;
+            projected["files"] = json!(file_items(
+                send,
+                base,
+                &format!("{path}pulls/{}/files?per_page=100", input.number),
+                canonical.as_deref()
+            )?);
         }
         if fields
             .split(',')
@@ -182,6 +196,98 @@ pub(crate) fn read(
         "createdAt": timestamp(&pull.created_at)?,
         "updatedAt": timestamp(&pull.updated_at)?,
     }))
+}
+
+fn file_items(
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+    base: &Base,
+    path: &str,
+    canonical: Option<&str>,
+) -> Result<Vec<Value>, ProviderError> {
+    let original = url(base, path)?;
+    let mut uri = original.clone();
+    let mut files = Vec::new();
+    for page in 1..=30 {
+        let response = send_get(send, uri, ACCEPT_JSON)?;
+        let items = decode::<Vec<Value>>(&response.body)?;
+        if items.len() > 100
+            || items.iter().any(|item| {
+                ["filename", "status", "additions", "deletions"]
+                    .iter()
+                    .any(|key| item[*key].is_null())
+            })
+        {
+            return Err(invalid_response());
+        }
+        files.extend(items.into_iter().map(|mut file| {
+            json!({
+                "path": file["filename"].take(),
+                "status": file["status"].take(),
+                "additions": file["additions"].take(),
+                "deletions": file["deletions"].take(),
+            })
+        }));
+        match next_file_page(&response, &original, canonical, page)? {
+            Some(next) => uri = next,
+            None => return Ok(files),
+        }
+    }
+    Err(ProviderError::new(
+        "request-ceiling",
+        "pull-request files exceed the page ceiling",
+    ))
+}
+
+fn next_file_page(
+    response: &Response,
+    original: &str,
+    canonical: Option<&str>,
+    page: u32,
+) -> Result<Option<String>, ProviderError> {
+    let mut next = None;
+    for value in crate::header_values(response, "link") {
+        let value = core::str::from_utf8(value).map_err(|_| invalid_response())?;
+        for part in value.split(',') {
+            let mut fields = part.trim().split(';');
+            let target = fields.next().ok_or_else(invalid_response)?.trim();
+            if !target.starts_with('<') || !target.ends_with('>') {
+                return Err(invalid_response());
+            }
+            let mut is_next = false;
+            for field in fields {
+                let (name, value) = field.trim().split_once('=').ok_or_else(invalid_response)?;
+                if name.trim() == "rel" {
+                    is_next |= value
+                        .trim()
+                        .trim_matches('"')
+                        .split_ascii_whitespace()
+                        .any(|rel| rel == "next");
+                }
+            }
+            if !is_next {
+                continue;
+            }
+            let target = target
+                .strip_prefix('<')
+                .and_then(|s| s.strip_suffix('>'))
+                .ok_or_else(invalid_response)?;
+            let (path, query) = target.split_once('?').ok_or_else(invalid_response)?;
+            let expected_path = original
+                .strip_suffix("?per_page=100")
+                .ok_or_else(invalid_response)?;
+            if (path != expected_path && Some(path) != canonical) || next.is_some() {
+                return Err(invalid_response());
+            }
+            let mut parameters = query.split('&').collect::<Vec<_>>();
+            parameters.sort_unstable();
+            let expected_page = format!("page={}", page + 1);
+            if parameters != [expected_page.as_str(), "per_page=100"] {
+                return Err(invalid_response());
+            }
+            next = Some(target.to_owned());
+        }
+    }
+    Ok(next)
 }
 
 fn cli_pull(pull: &RawPull, raw: &Value, fields: &str) -> Result<Value, ProviderError> {
@@ -798,6 +904,93 @@ mod tests {
             );
             assert_eq!(output.code(), "invalid-response");
         }
+    }
+
+    #[test]
+    fn native_file_page_host_limits_keep_the_existing_typed_failure() {
+        use dekopon_provider_sdk::provider::{HttpError, HttpErrorCode};
+        for code in [
+            HttpErrorCode::ResponseTooLarge,
+            HttpErrorCode::HostCallLimit,
+        ] {
+            let mut count = 0;
+            let error = invoke_with(
+                &capability("gh.pull-request.read"),
+                json!({"owner":"octo","repo":"hello","number":7,"_cli":"files"}),
+                |request| {
+                    crate::testutil::assert_standard_headers(&request);
+                    count += 1;
+                    let path = "https://api.github.com/repos/octo/hello/pulls/7";
+                    match count {
+                        1 => {
+                            assert_eq!(request.uri, path);
+                            json_response(200, &pull_body(7, "open", false, false))
+                        }
+                        2 => {
+                            assert_eq!(request.uri, format!("{path}/files?per_page=100"));
+                            response_with_headers(
+                                200,
+                                &[(
+                                    "link",
+                                    &format!("<{path}/files?per_page=100&page=2>; rel=\"next\""),
+                                )],
+                                &json!([]),
+                            )
+                        }
+                        3 => {
+                            assert_eq!(request.uri, format!("{path}/files?per_page=100&page=2"));
+                            Err(HttpError {
+                                code,
+                                message: "host-only detail".to_owned(),
+                            })
+                        }
+                        _ => panic!("no further requests after refusal"),
+                    }
+                },
+            )
+            .expect_err("host limit fails the read");
+            assert_eq!(count, 3);
+            assert_eq!(error.code(), "http-failed");
+            assert_eq!(error.message(), "broker HTTP request failed");
+        }
+    }
+
+    #[test]
+    fn native_file_cursors_change_only_the_consecutive_page() {
+        let original = "https://ghe.example/api/v3/repos/octo/hello/pulls/7/files?per_page=100";
+        for target in [
+            format!("{original}&page=1"),
+            format!("{original}&page=3"),
+            format!("{original}&page=2&page=2"),
+            format!("{original}&page=2&extra=yes"),
+            format!("{original}&page=2#fragment"),
+            original.replace("per_page=100", "per_page=50&page=2"),
+            original.replace("https://ghe.example", "https://user@ghe.example") + "&page=2",
+            original.replace("/api/v3/", "/api/") + "&page=2",
+        ] {
+            let response = response_with_headers(
+                200,
+                &[("link", &format!("<{target}>; rel=\"next\""))],
+                &json!([]),
+            );
+            assert_eq!(
+                super::next_file_page(&response.expect("response"), original, None, 1)
+                    .expect_err("cursor refused")
+                    .code(),
+                "invalid-response"
+            );
+        }
+        let target = original.replace("per_page=100", "page=2&per_page=100");
+        let response = response_with_headers(
+            200,
+            &[("link", &format!("<{target}>; rel=\"next\""))],
+            &json!([]),
+        );
+        assert_eq!(
+            super::next_file_page(&response.expect("response"), original, None, 1)
+                .expect("valid cursor"),
+            Some(target)
+        );
     }
 
     #[test]

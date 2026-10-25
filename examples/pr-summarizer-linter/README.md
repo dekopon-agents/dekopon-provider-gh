@@ -278,3 +278,10 @@ execution, and audit — not from trusting the summary.
 - [`dekopon-brokerd`](https://github.com/dekopon-agents/dekopon/blob/main/crates/dekopon-brokerd/README.md) — broker configuration and recovery.
 - [`security-model.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/security-model.md) — trust boundaries and limitations.
 - [`examples/local/dekopon.yaml`](https://github.com/dekopon-agents/dekopon/blob/main/examples/local/dekopon.yaml) — a smaller catalog-only reviewer declaration.
+
+`gh pr view --json files` reads up to 3,000 files with one metadata request and up to
+30 file requests. Operators using this expansion need a larger `gh.pull-request.read`
+request grant than this metadata-only example; 32 requests and 1 MiB per response
+accommodate files plus either reviews or comments. Requesting all three with 30 file
+pages needs 33 requests and fails at the broker’s default 32-request ceiling.
+A byte or request refusal fails the whole read without partial output.
