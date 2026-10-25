@@ -25,7 +25,6 @@ enum Case {
     Requests,
     Cap,
     ForeignId,
-    Large,
     Budget,
 }
 
@@ -36,18 +35,17 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
     let response_origin = origin.clone();
     let expected = match case {
         Case::Complete | Case::Requests => 4,
-        Case::Cap | Case::Large => 31,
+        Case::Cap => 31,
         Case::Budget => 32,
         Case::Origin | Case::Path | Case::Oversized | Case::ForeignId => 3,
     };
     let page_path = match case {
-        Case::Large => FILES,
+        Case::Cap => FILES,
         Case::Complete
         | Case::Origin
         | Case::Path
         | Case::Oversized
         | Case::Requests
-        | Case::Cap
         | Case::ForeignId
         | Case::Budget => CANONICAL,
     };
@@ -106,7 +104,7 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
             } else if matches!(case, Case::Oversized) && index == 2 {
                 " ".repeat(1024 * 1024 + 1)
             } else {
-                json!((0..100).map(|file| json!({"filename":format!("{index}/{file}"),"status":"modified","additions":1,"deletions":0,"patch": if matches!(case, Case::Large) { "x".repeat(25000) } else { "must not escape".to_owned() }})).collect::<Vec<_>>()).to_string()
+                json!((0..100).map(|file| json!({"filename":format!("{index}/{file}"),"status":"modified","additions":1,"deletions":0,"patch": if matches!(case, Case::Cap) { "x".repeat(25000) } else { "must not escape".to_owned() }})).collect::<Vec<_>>()).to_string()
             };
             let next = if index == 0
                 || (index >= 30 && matches!(case, Case::Budget))
@@ -187,7 +185,7 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
                 },
                 max_request_bytes: 65536,
                 max_response_bytes: match case {
-                    Case::Large => 4 * 1024 * 1024,
+                    Case::Cap => 4 * 1024 * 1024,
                     _ => 1024 * 1024,
                 },
                 allow_plaintext_loopback: true,
@@ -224,49 +222,61 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
         )
         .await;
     let stdout = capture.await??;
-    if matches!(case, Case::Complete | Case::Large) {
-        let output = result?;
-        assert_eq!(output.http_calls.len(), expected);
-        let value: Value = serde_json::from_slice(&stdout)?;
-        let files = value["files"].as_array().expect("files array");
-        assert_eq!(files.len(), (expected - 1) * 100);
-        for (index, file) in files.iter().enumerate() {
-            assert_eq!(
-                *file,
-                json!({"path":format!("{}/{}", index / 100 + 1, index % 100),"status":"modified","additions":1,"deletions":0})
-            );
+    match case {
+        Case::Complete => {
+            let output = result?;
+            assert_eq!(output.http_calls.len(), expected);
+            let value: Value = serde_json::from_slice(&stdout)?;
+            let files = value["files"].as_array().expect("files array");
+            assert_eq!(files.len(), (expected - 1) * 100);
+            for (index, file) in files.iter().enumerate() {
+                assert_eq!(
+                    *file,
+                    json!({"path":format!("{}/{}", index / 100 + 1, index % 100),"status":"modified","additions":1,"deletions":0})
+                );
+            }
         }
-    } else {
-        let failure = result.expect_err("pagination must refuse");
-        assert!(stdout.is_empty());
-        assert_eq!(
-            failure.http_calls.len(),
-            if matches!(case, Case::Requests) {
-                3
-            } else {
-                expected
-            }
-        );
-        match (case, *failure.error) {
-            (Case::Oversized, BrokerHostError::HostCallRejected { reason, .. }) => {
-                assert_eq!(reason, "byte-limit");
-            }
-            (Case::Requests | Case::Budget, BrokerHostError::HostCallRejected { reason, .. }) => {
-                assert_eq!(reason, "host-call-limit");
-            }
-            (
-                Case::Origin | Case::Path | Case::Cap | Case::ForeignId,
-                BrokerHostError::ProviderFailure { status, stderr, .. },
-            ) => {
-                assert_eq!(status, 3);
-                let message = if matches!(case, Case::Cap) {
-                    "pull-request files exceed the page ceiling"
+        Case::Origin
+        | Case::Path
+        | Case::Oversized
+        | Case::Requests
+        | Case::Cap
+        | Case::ForeignId
+        | Case::Budget => {
+            let failure = result.expect_err("pagination must refuse");
+            assert!(stdout.is_empty());
+            assert_eq!(
+                failure.http_calls.len(),
+                if matches!(case, Case::Requests) {
+                    3
                 } else {
-                    "endpoint returned an invalid resource"
-                };
-                assert_eq!(stderr, format!("{message}\n"));
+                    expected
+                }
+            );
+            match (case, *failure.error) {
+                (Case::Oversized, BrokerHostError::HostCallRejected { reason, .. }) => {
+                    assert_eq!(reason, "byte-limit");
+                }
+                (
+                    Case::Requests | Case::Budget,
+                    BrokerHostError::HostCallRejected { reason, .. },
+                ) => {
+                    assert_eq!(reason, "host-call-limit");
+                }
+                (
+                    Case::Origin | Case::Path | Case::Cap | Case::ForeignId,
+                    BrokerHostError::ProviderFailure { status, stderr, .. },
+                ) => {
+                    assert_eq!(status, 3);
+                    let message = if matches!(case, Case::Cap) {
+                        "pull-request files exceed the page ceiling"
+                    } else {
+                        "endpoint returned an invalid resource"
+                    };
+                    assert_eq!(stderr, format!("{message}\n"));
+                }
+                (_, error) => panic!("unexpected failure: {error:?}"),
             }
-            (_, error) => panic!("unexpected failure: {error:?}"),
         }
     }
     if matches!(case, Case::Requests) {
@@ -275,14 +285,28 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         tokio::time::timeout(std::time::Duration::from_secs(5), server).await???;
     }
-    assert_eq!(
-        seen.lock().expect("capture lock").len(),
-        if matches!(case, Case::Requests) {
-            3
-        } else {
-            expected
-        }
-    );
+    let observed = match case {
+        Case::Requests => 3,
+        Case::Complete
+        | Case::Origin
+        | Case::Path
+        | Case::Oversized
+        | Case::Cap
+        | Case::ForeignId
+        | Case::Budget => expected,
+    };
+    let expected_uris = (0..observed)
+        .map(|index| {
+            let path = match index {
+                0 => "/gh/repos/octo/hello/pulls/7".to_owned(),
+                1 => FILES.to_owned(),
+                31 => "/gh/repos/octo/hello/pulls/7/reviews?per_page=100".to_owned(),
+                _ => format!("{page_path}&page={index}"),
+            };
+            format!("{origin}{path}")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(*seen.lock().expect("capture lock"), expected_uris);
     Ok(())
 }
 
@@ -320,12 +344,6 @@ async fn component_refuses_file_pages_beyond_the_request_grant()
 async fn component_reads_three_thousand_files_and_refuses_a_further_page()
 -> Result<(), Box<dyn std::error::Error>> {
     run(Case::Cap).await
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn component_discards_large_patches_between_file_pages()
--> Result<(), Box<dyn std::error::Error>> {
-    run(Case::Large).await
 }
 
 #[tokio::test(flavor = "multi_thread")]
