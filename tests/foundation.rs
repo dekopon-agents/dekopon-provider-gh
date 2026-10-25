@@ -72,7 +72,9 @@ fn fixture_component() -> std::path::PathBuf {
 fn valid_refusal_argv(command: &str) -> Vec<String> {
     let mut words: Vec<_> = command.split_whitespace().map(str::to_owned).collect();
     let args: &[&str] = match command {
-        "pr list" | "issue list" | "repo read-dir" => &["-R", "octo/hello"],
+        "pr list" | "issue list" | "repo read-dir" | "pr edit" | "issue edit" => {
+            &["-R", "octo/hello"]
+        }
         "pr view" | "pr checks" | "pr diff" | "issue view" | "issue comment" => {
             &["7", "-R", "octo/hello"]
         }
@@ -208,6 +210,45 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
         assert_eq!(status, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("error:"));
+    }
+    for (argv, subject, reason) in [
+        (
+            vec!["copilot", "-p", "x"],
+            "copilot",
+            "needs local executable support",
+        ),
+        (
+            vec!["extension", "exec", "label", "--foo"],
+            "extension exec",
+            "needs local executable support",
+        ),
+        (
+            vec![
+                "issue",
+                "comment",
+                "7",
+                "-R",
+                "octo/hello",
+                "--attach",
+                "a.png",
+            ],
+            "issue comment --attach",
+            "needs local file access",
+        ),
+    ] {
+        let CommandRunOutcome::Failed { error } = runtime.block_on(registry.run_command(
+            "gh",
+            &argv.into_iter().map(str::to_owned).collect::<Vec<_>>(),
+            false,
+        ))?
+        else {
+            panic!("inventory refusal expected")
+        };
+        assert_eq!(error.code, "usage");
+        assert_eq!(
+            error.message,
+            format!("gh {subject}: not available in this environment ({reason})")
+        );
     }
     for value in ["true", "false"] {
         let argv = vec![

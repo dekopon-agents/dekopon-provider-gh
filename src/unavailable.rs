@@ -22,11 +22,17 @@ pub(crate) struct Flag {
     pub arity: Arity,
 }
 
+pub(crate) enum Parsing {
+    Flags,
+    PassThrough,
+}
+
 pub(crate) struct Entry {
     pub command: &'static str,
     pub kind: Kind,
     pub reason: &'static str,
     pub flags: &'static str,
+    pub parsing: Parsing,
 }
 
 impl Entry {
@@ -69,6 +75,7 @@ pub(crate) fn entries() -> impl Iterator<Item = Entry> {
             "W6" => "needs a long-lived invocation",
             "W7" => "needs a dev tunnel or websocket",
             "W8" => "needs a local filesystem",
+            "W8-upload" => "needs local file access",
             "W10" => "needs redirects to rotating storage hosts",
             "W11" => "needs an OCI registry token exchange",
             "W12" => "needs local executable support",
@@ -77,11 +84,18 @@ pub(crate) fn entries() -> impl Iterator<Item = Entry> {
             "X1" | "X2" | "X3" | "X4" | "X5" | "X6" | "X7" => "by policy",
             _ => unreachable!("closed inventory reasons"),
         };
+        let flags = fields.next().unwrap_or_default();
+        let parsing = match fields.next() {
+            None => Parsing::Flags,
+            Some("pass-through") => Parsing::PassThrough,
+            Some(_) => unreachable!("closed registry parsing modes"),
+        };
         Entry {
             command,
             kind,
             reason,
-            flags: fields.next().unwrap_or_default(),
+            flags,
+            parsing,
         }
     })
 }
@@ -327,6 +341,12 @@ pub(crate) fn external_refusal(
         .max_by_key(|(path, _, _)| path.len());
     let mut command = base();
     if let Some((path, entries, args)) = candidate {
+        for entry in entries {
+            match entry.parsing {
+                Parsing::Flags => {}
+                Parsing::PassThrough => return Ok(Some(Usage::new(message(entry, "")))),
+            }
+        }
         let mut known: Vec<_> = entries.iter().flat_map(|entry| entry.flags()).collect();
         known.push(Flag {
             name: "help",

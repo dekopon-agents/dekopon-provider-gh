@@ -24,7 +24,7 @@ command	run download	W10	dir/D:value name/n:value pattern/p:value
 command	run watch	W6	exit-status:bool compact:bool interval/i:value
 command	extension browse	W2	debug:bool single-column/s:bool
 command	extension create	W12	precompiled:value
-command	extension exec	W12
+command	extension exec	W12		pass-through
 command	extension install	W12	force:bool pin:value
 command	extension list	W12
 command	extension remove	W12
@@ -48,7 +48,7 @@ command	skill update	W8	all:bool force:bool dry-run:bool unpin:bool dir:value
 command	completion	W14	shell/s:value
 command	preview prompter	W2
 command	send-telemetry	X6
-command	copilot	W12	remove:bool
+command	copilot	W12	remove:bool	pass-through
 flag	auth status	X3	hostname/h:value
 flag	auth status	X2	show-token/t:bool
 flag	auth status	X7	jq/q:value template:value
@@ -174,6 +174,12 @@ flag	agent-task view	X7	jq/q:value template/t:value
 flag	accessibility	W5	web/w:bool
 flag	project view	W5	web/w:bool
 flag	project view	X7	jq/q:value template/t:value
+flag	issue comment	W8-upload	attach:value
+flag	issue create	W8-upload	attach:value
+flag	issue edit	W8-upload	attach:value
+flag	pr comment	W8-upload	attach:value
+flag	pr create	W8-upload	attach:value
+flag	pr edit	W8-upload	attach:value
 scope	search prs	X5
 scope	search issues	X5
 scope	search repos	X5
@@ -194,12 +200,14 @@ syntax	discussion list	-	after:value answered:bool author/A:value category/c:val
 syntax	discussion view	-	after:value comments/c:bool json:value limit/L:value order:value repo/R:value
 syntax	gist create	-	desc/d:value filename/f:value public/p:bool
 syntax	gist view	-	allow-escape-sequences:bool filename/f:value files:bool raw/r:bool
-syntax	issue create	-	assignee/a:value attach:value blocked-by:value blocking:value body/b:value body-file/F:value label/l:value milestone/m:value parent:value project/p:value repo/R:value template/T:value title/t:value type:value
+syntax	issue create	-	assignee/a:value blocked-by:value blocking:value body/b:value body-file/F:value label/l:value milestone/m:value parent:value project/p:value repo/R:value template/T:value title/t:value type:value
+syntax	issue edit	-	title/t:value body/b:value body-file/F:value add-assignee:value remove-assignee:value add-label:value remove-label:value add-project:value remove-project:value milestone/m:value remove-milestone:bool type:value remove-type:bool parent:value remove-parent:bool add-sub-issue:value remove-sub-issue:value add-blocked-by:value remove-blocked-by:value add-blocking:value remove-blocking:value repo/R:value
 syntax	issue develop	-	base/b:value branch-repo:value issue-repo/i:value list/l:bool name/n:value repo/R:value
 syntax	issue status	-	json:value repo/R:value
 syntax	label list	-	json:value limit/L:value order:value repo/R:value search/S:value sort:value
-syntax	pr comment	-	attach:value body/b:value body-file/F:value create-if-none:bool delete-last:bool edit-last:bool repo/R:value yes:bool
-syntax	pr create	-	assignee/a:value attach:value base/B:value body/b:value body-file/F:value draft/d:bool dry-run:bool head/H:value label/l:value milestone/m:value no-maintainer-edit:bool project/p:value repo/R:value reviewer/r:value template/T:value title/t:value
+syntax	pr comment	-	body/b:value body-file/F:value create-if-none:bool delete-last:bool edit-last:bool repo/R:value yes:bool
+syntax	pr create	-	assignee/a:value base/B:value body/b:value body-file/F:value draft/d:bool dry-run:bool head/H:value label/l:value milestone/m:value no-maintainer-edit:bool project/p:value repo/R:value reviewer/r:value template/T:value title/t:value
+syntax	pr edit	-	title/t:value body/b:value body-file/F:value base/B:value add-reviewer:value remove-reviewer:value add-assignee:value remove-assignee:value add-label:value remove-label:value add-project:value remove-project:value milestone/m:value remove-milestone:bool repo/R:value
 syntax	pr status	-	conflict-status/c:bool json:value repo/R:value
 syntax	project close	-	format:value owner:value undo:bool
 syntax	project copy	-	drafts:bool format:value source-owner:value target-owner:value title:value
