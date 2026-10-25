@@ -22,6 +22,8 @@ struct ReadInput {
     number: u32,
     #[serde(default, rename = "_cli")]
     cli: Option<String>,
+    #[serde(default)]
+    comments: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,7 +98,10 @@ pub(crate) fn read(
     base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
-    let input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
+    let mut input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
+    if input.comments && input.cli.is_none() {
+        input.cli = Some(String::new());
+    }
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
@@ -118,7 +123,7 @@ pub(crate) fn read(
     }
     if let Some(fields) = input.cli.as_deref() {
         let mut projected = cli_issue(&issue, &raw, fields)?;
-        if fields.split(',').any(|field| field == "comments") {
+        if input.comments || fields.split(',').any(|field| field == "comments") {
             let path = format!(
                 "/repos/{}/{}/issues/{}/comments?per_page=100",
                 percent_encode(&input.owner),

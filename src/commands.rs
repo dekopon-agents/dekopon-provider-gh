@@ -24,7 +24,7 @@ use clap::{
     self, Arg, ArgAction, ArgGroup, ArgMatches, Command, CommandFactory, FromArgMatches, Parser,
 };
 use dekopon_provider_sdk::provider::{Proposal, Usage};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::ids;
 
@@ -178,6 +178,7 @@ fn supported_tree() -> Command {
                         .arg(Arg::new("path").required(true).value_name("PATH"))
                         .arg(repo_arg(true))
                         .arg(Arg::new("ref").long("ref").value_name("REF"))
+                        .arg(Arg::new("allow-escape-sequences").long("allow-escape-sequences").action(ArgAction::SetTrue))
                         .arg(json_arg()),
                 )
                 .subcommand(
@@ -192,7 +193,8 @@ fn supported_tree() -> Command {
                         .about("List repositories for a named owner")
                         .arg(Arg::new("owner").required(true).value_name("OWNER"))
                         .arg(limit_arg())
-                        .arg(json_arg()),
+                        .arg(json_arg())
+                        .args(crate::qualifiers::repo_args()),
                 )
                 .subcommand(
                     Command::new("view")
@@ -275,7 +277,7 @@ fn pull_requests() -> Command {
                         .long("state")
                         .short('s')
                         .value_name("STATE")
-                        .value_parser(["open", "closed", "merged"])
+                        .value_parser(["open", "closed", "merged", "all"])
                         .help("open, closed or merged"),
                 )
                 .arg(
@@ -291,6 +293,12 @@ fn pull_requests() -> Command {
         .subcommand(
             Command::new("view")
                 .about("Read one pull request's metadata, state, and head/base")
+                .arg(
+                    Arg::new("comments")
+                        .long("comments")
+                        .short('c')
+                        .action(ArgAction::SetTrue),
+                )
                 .arg(number_arg("Pull-request number"))
                 .arg(repo_arg(true))
                 .arg(json_arg()),
@@ -298,6 +306,24 @@ fn pull_requests() -> Command {
         .subcommand(
             Command::new("diff")
                 .about("Read one pull request's unified diff, truncated with a marker")
+                .arg(Arg::new("patch").long("patch").action(ArgAction::SetTrue))
+                .arg(
+                    Arg::new("name-only")
+                        .long("name-only")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("allow-escape-sequences")
+                        .long("allow-escape-sequences")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("exclude")
+                        .long("exclude")
+                        .short('e')
+                        .action(ArgAction::Append)
+                        .value_delimiter(','),
+                )
                 .arg(number_arg("Pull-request number"))
                 .arg(repo_arg(true)),
         )
@@ -330,7 +356,8 @@ fn pull_requests() -> Command {
                         .args(["approve", "comment", "request-changes"])
                         .required(true),
                 )
-                .args(body()),
+                .args(body())
+                .arg(match_head_commit()),
         )
         .subcommand(
             Command::new("merge")
@@ -345,7 +372,9 @@ fn pull_requests() -> Command {
                         .args(["merge", "squash", "rebase"])
                         .required(true),
                 )
-                .arg(match_head_commit()),
+                .arg(match_head_commit())
+                .args(body())
+                .arg(Arg::new("subject").long("subject").short('t')),
         )
 }
 
@@ -356,6 +385,12 @@ fn issues() -> Command {
         .subcommand(
             Command::new("view")
                 .about("Read one issue with a bounded body")
+                .arg(
+                    Arg::new("comments")
+                        .long("comments")
+                        .short('c')
+                        .action(ArgAction::SetTrue),
+                )
                 .arg(number_arg("Issue number"))
                 .arg(repo_arg(true))
                 .arg(json_arg()),
@@ -369,8 +404,8 @@ fn issues() -> Command {
                         .long("state")
                         .short('s')
                         .value_name("STATE")
-                        .value_parser(["open", "closed"])
-                        .help("open or closed"),
+                        .value_parser(["open", "closed", "all"])
+                        .help("open, closed or all"),
                 )
                 .arg(limit_arg())
                 .arg(json_arg()),
@@ -499,10 +534,33 @@ fn dispatch(
             ids::PR_LIST
         }
         ("pr", "view") => {
+            if matches.get_flag("comments") {
+                input.insert("comments".into(), json!(true));
+            }
             insert_repo_and_number(&mut input, matches)?;
             ids::PR_READ
         }
         ("pr", "diff") => {
+            if matches.get_flag("patch") && matches.get_flag("name-only") {
+                return Err(usage(
+                    "gh pr diff: --patch and --name-only cannot be used together",
+                ));
+            }
+            for (flag, field) in [
+                ("patch", "patch"),
+                ("name-only", "nameOnly"),
+                ("allow-escape-sequences", "allowEscapeSequences"),
+            ] {
+                if matches.get_flag(flag) {
+                    input.insert(field.into(), json!(true));
+                }
+            }
+            if let Some(patterns) = matches.get_many::<String>("exclude") {
+                let patterns = patterns.cloned().collect::<Vec<_>>();
+                crate::diff::patterns(&patterns)
+                    .map_err(|_| usage("gh pr diff --exclude: invalid value"))?;
+                input.insert("exclude".into(), json!(patterns));
+            }
             insert_repo_and_number(&mut input, matches)?;
             ids::PR_DIFF
         }
@@ -517,6 +575,11 @@ fn dispatch(
         }
         ("pr", "review") => {
             insert_repo_and_number(&mut input, matches)?;
+            if let Some(sha) = matches.get_one::<String>("match-head-commit") {
+                crate::validate_expected_sha(Some(sha))
+                    .map_err(|_| usage("gh pr review --match-head-commit: invalid value"))?;
+                insert_text(&mut input, "expectedHeadSha", Some(sha));
+            }
             // The group is `required`, so exactly one of the three is set.
             if matches.get_flag("approve") {
                 insert_text(
@@ -547,6 +610,13 @@ fn dispatch(
             insert_repo_and_number(&mut input, matches)?;
             insert_text(
                 &mut input,
+                "body",
+                body_text(matches, stdin_piped)?.as_ref(),
+            );
+            mark_piped_body(&mut input, matches);
+            insert_text(&mut input, "subject", matches.get_one::<String>("subject"));
+            insert_text(
+                &mut input,
                 "expectedHeadSha",
                 matches.get_one::<String>("match-head-commit"),
             );
@@ -561,6 +631,7 @@ fn dispatch(
             let owner = matches.get_one::<String>("owner").expect("required owner");
             crate::validate_login(owner).map_err(|_| usage("gh repo list: invalid owner"))?;
             insert_text(&mut input, "owner", Some(owner));
+            crate::qualifiers::repo_dispatch(matches, &mut input)?;
             ids::REPO_LIST
         }
         ("repo", "view") => {
@@ -573,6 +644,9 @@ fn dispatch(
         ("repo", "read-file" | "read-dir") => {
             insert_repo(&mut input, matches)?;
             if verb == "read-file" {
+                if matches.get_flag("allow-escape-sequences") {
+                    input.insert("allowEscapeSequences".into(), json!(true));
+                }
                 insert_required_text(&mut input, "path", matches);
             } else {
                 input.insert(
@@ -594,6 +668,9 @@ fn dispatch(
             ids::CONTENT_READ
         }
         ("issue", "view") => {
+            if matches.get_flag("comments") {
+                input.insert("comments".into(), json!(true));
+            }
             insert_repo_and_number(&mut input, matches)?;
             ids::ISSUE_READ
         }

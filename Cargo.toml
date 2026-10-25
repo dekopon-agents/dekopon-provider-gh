@@ -21,6 +21,8 @@ schemars = "=1.2.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 time = { version = "=0.3.55", features = ["parsing"] }
+glob = "0.3.3"
+regex = "1.12.3"
 
 [dev-dependencies]
 dekopon-provider-sdk-testkit = "=0.45.0"

@@ -37,11 +37,13 @@ use serde_json::{Value, json};
 mod auth;
 pub mod commands;
 mod content;
+mod diff;
 pub mod error;
 pub mod graphql;
 mod issues;
 mod output;
 mod pulls;
+mod qualifiers;
 mod repos;
 mod reviews;
 mod search;
@@ -248,7 +250,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         input_schema: schema,
     };
 
-    vec![
+    let mut capabilities = vec![
         read(
             ids::AUTH_STATUS,
             <typed::AuthStatus as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
@@ -305,10 +307,13 @@ fn capabilities() -> Vec<ProviderCapability> {
             repo_schema(
                 json!({
                     "number": number_property(),
-                    "body": body_property("Review comment; required."),
+                    "body": body_property("Review body; required without line comments."),
+                    "comments": {"type":"array","minItems":1,"maxItems":50,"items":{"type":"object","additionalProperties":false,"required":["path","line","body"],"properties":{
+                        "path":{"type":"string","maxLength":MAX_PATH_BYTES},"line":{"type":"integer","minimum":1},"side":{"type":"string","enum":["LEFT","RIGHT"],"default":"RIGHT"},"startLine":{"type":"integer","minimum":1},"body":body_property("Line comment body.")
+                    }}},
                     "expectedHeadSha": sha_property(),
                 }),
-                &["number", "body"],
+                &["number"],
             ),
         ),
         write(
@@ -425,6 +430,8 @@ fn capabilities() -> Vec<ProviderCapability> {
                     "number": number_property(),
                     "mergeMethod": {"type": "string", "enum": ["merge", "squash", "rebase"], "description": "Required merge strategy."},
                     "expectedHeadSha": sha_property(),
+                    "body": body_property("Merge commit message."),
+                    "subject": body_property("Merge commit title."),
                 }),
                 &["number", "mergeMethod"],
             ),
@@ -444,7 +451,27 @@ fn capabilities() -> Vec<ProviderCapability> {
                 &["login"],
             ),
         ),
-    ]
+    ];
+    for capability in &mut capabilities {
+        let properties = &mut capability.input_schema["properties"];
+        match capability.id.as_str() {
+            ids::PR_READ | ids::ISSUE_READ => {
+                properties["comments"] = json!({"type":"boolean"});
+            }
+            ids::PR_DIFF => {
+                for field in ["patch", "nameOnly", "allowEscapeSequences"] {
+                    properties[field] = json!({"type":"boolean"});
+                }
+                properties["exclude"] =
+                    json!({"type":"array","items":{"type":"string","maxLength":1024}});
+            }
+            ids::CONTENT_READ => {
+                properties["allowEscapeSequences"] = json!({"type":"boolean"});
+            }
+            _ => {}
+        }
+    }
+    capabilities
 }
 
 fn search_schema(id: &str) -> Value {

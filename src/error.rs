@@ -32,6 +32,7 @@ impl Failure for ProviderError {
         match self.code {
             "invalid-input" => Code::INVALID_INPUT,
             "usage" => Code::USAGE,
+            "request-too-large" => Code::new("request-too-large").exiting(2),
             "checks-pending" => Code::new("checks-pending").exiting(8),
             "checks-failed" => Code::new("checks-failed").exiting(1),
             "checks-empty" => Code::new("checks-empty").exiting(1),

@@ -23,6 +23,8 @@ struct Input {
     reference: Option<String>,
     #[serde(default, rename = "_cli")]
     cli: bool,
+    #[serde(default, rename = "allowEscapeSequences")]
+    _allow_escape_sequences: bool,
 }
 
 /// One entry of a directory listing response.

@@ -155,6 +155,7 @@ fn has_piped_body(id: &str) -> bool {
     matches!(
         id,
         "gh.issue.comment"
+            | "gh.pull-request.merge"
             | "gh.pull-request.approve"
             | "gh.pull-request.comment"
             | "gh.pull-request.request-changes"
