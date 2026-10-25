@@ -698,6 +698,26 @@ async fn dispatch_refusals_preserve_exact_messages_and_never_propose_http_author
             "gh search issues: --search-type and --order cannot be used together",
         ),
     ];
+    let argv = [
+        "pr",
+        "list",
+        "-R",
+        "o/r",
+        "--search",
+        "repo:other/repo",
+        "--app",
+        "bad\"app",
+    ]
+    .map(str::to_owned);
+    let CommandRunOutcome::Failed { error } = registry()
+        .await
+        .run_command("gh", &argv, false)
+        .await
+        .expect("rewrite")
+    else {
+        panic!("invalid app must refuse")
+    };
+    assert_eq!(error.message, "gh pr list --app: invalid value");
     for (argv, expected) in cases {
         let argv = argv.into_iter().map(str::to_owned).collect::<Vec<_>>();
         let CommandRunOutcome::Failed { error } = registry()
@@ -723,6 +743,10 @@ async fn dispatch_refusals_preserve_exact_messages_and_never_propose_http_author
         (
             vec!["pr", "view", "7", "-R", "o/r", "--commments"],
             "error: unexpected argument '--commments' found",
+        ),
+        (
+            vec!["search", "repos", "--owner", "o"],
+            "error: the following required arguments were not provided:",
         ),
         (
             vec!["pr", "create"],
@@ -1174,4 +1198,44 @@ async fn legacy_review_bodies_keep_their_base_validation_without_line_comments()
         input,
         json!({"owner":"o","repo":"r","path":"x","allowEscapeSequences":true,"_cliOutput":"","_cliKind":"read-file"})
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn query_budgets_count_supplied_terms_without_tightening_legacy_searches() {
+    let raw = "x".repeat(512);
+    let input = json!({"owner":"o","repo":"r","query":raw,"author":"octocat","state":"closed","_cliOutput":"","_cliLimit":30});
+    let path = format!(
+        "/search/issues?q={raw}%20repo%3Ao%2Fr%20is%3Apr%20state%3Aclosed%20author%3Aoctocat&page=1&per_page=100"
+    );
+    let (status, stderr, _) = invoke(
+        "gh.search.prs",
+        input,
+        vec![exchange(
+            &path,
+            "GET",
+            Value::Null,
+            json!({"total_count":0,"incomplete_results":false,"items":[]}),
+        )],
+    )
+    .await;
+    assert_eq!(status, 0, "{stderr}");
+    for (id, input) in [
+        (
+            "gh.search.prs",
+            json!({"owner":"o","repo":"r","query":"x".repeat(490),"author":"octocat","state":"closed","label":["x"],"_cliOutput":"","_cliLimit":30}),
+        ),
+        (
+            "gh.pull-request.list",
+            json!({"owner":"o","repo":"r","search":"x".repeat(505),"state":"closed","_cliOutput":"","_cliLimit":30}),
+        ),
+        (
+            "gh.issue.list",
+            json!({"owner":"o","repo":"r","search":"x".repeat(505),"state":"closed","_cliOutput":"","_cliLimit":30}),
+        ),
+    ] {
+        let (status, stderr, stdout) = invoke(id, input, vec![]).await;
+        assert_eq!(status, 2);
+        assert_eq!(stderr, "input does not match the capability contract\n");
+        assert!(stdout.is_empty());
+    }
 }

@@ -548,6 +548,7 @@ fn capabilities() -> Vec<ProviderCapability> {
             _ => "",
         };
         crate::qualifiers::add_schema(command, properties);
+        crate::qualifiers::query_schema(command, &mut capability.input_schema);
     }
     capabilities
 }

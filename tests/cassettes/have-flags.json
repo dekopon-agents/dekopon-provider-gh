@@ -497,5 +497,19 @@
       "0046-POST-graphql.json",
       "0047-POST-graphql.json"
     ]
+  },
+  {
+    "name": "edit-or-create existing comment",
+    "capability": "gh.issue.comment-edit-or-create",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 2,
+      "body": "Batch 1 edited comment"
+    },
+    "files": [
+      "0011-POST-graphql.json",
+      "0012-POST-graphql.json"
+    ]
   }
 ]

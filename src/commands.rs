@@ -261,7 +261,10 @@ fn search_tree() -> Command {
         }
         let command_name = format!("search {verb}");
         let extra = crate::qualifiers::args(&command_name);
-        sub = sub.mut_arg("query", |arg| arg.required(false));
+        sub = sub.mut_arg("query", |arg| {
+            arg.required(false)
+                .required_unless_present_any(crate::qualifiers::flag_names(&command_name))
+        });
         sub = sub.args(extra);
         command = command.subcommand(sub);
     }
@@ -1830,5 +1833,18 @@ mod tests {
     fn rewriting_names_a_capability_without_asserting_any_authority() {
         let (capability, _) = dispatch(&["pr", "review", "7", "-R", "o/r", "--approve"]);
         assert_eq!(capability, "gh.pull-request.approve");
+    }
+    #[test]
+    fn native_missing_search_queries_keep_clap_errors_unless_a_new_qualifier_is_supplied() {
+        let (_, stderr, status) = rendered(&["search", "repos", "--owner", "o"]);
+        assert_eq!(status, 2);
+        assert_eq!(
+            stderr.lines().next(),
+            Some("error: the following required arguments were not provided:")
+        );
+        assert!(stderr.contains("<QUERY>..."));
+        let (_, input) = dispatch(&["search", "repos", "--owner", "o", "--stars", ">=1"]);
+        assert_eq!(input["query"], "");
+        assert_eq!(input["stars"], ">=1");
     }
 }

@@ -118,8 +118,9 @@ enums and quoted free text. Counts and dates support `>`, `>=`, `<`, `<=`, close
 and open `N..*`/`*..N` ranges. A free-text value becomes one quoted term, so a label such as
 `area:db` or `x repo:elsewhere/repo` cannot change scope. Quotes, backslashes and controls in
 these values refuse before HTTP. Raw list `--search` text retains the shipped scope-word rule;
-its text plus new typed terms must fit 512 bytes, excluding provider-appended scope/kind terms.
-Existing search query validation and legacy author/state accounting remain unchanged.
+its text plus supplied typed terms on new search paths must fit 512 bytes, excluding
+provider-appended scope/kind terms. Existing queries without new query terms retain their
+legacy author/state accounting. REST-only filters do not acquire a search-query length limit.
 Issue semantic/hybrid searches use the fixed `search_type` REST parameter and return at most one
 page, up to 100 results. They exclude `--include-prs`, explicit `--sort` and explicit `--order`.
 An app filter and author filter are mutually exclusive on issue/PR lists and searches.

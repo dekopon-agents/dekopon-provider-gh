@@ -1250,9 +1250,6 @@ pub(crate) fn validate(command: &str, input: &Value) -> Result<(), ValidationErr
                     if !token(text, field.kind) {
                         return Err(ValidationError::Value(field.flag));
                     }
-                    if field.flag == "search" && scope_word(text) {
-                        return Err(ValidationError::Scope);
-                    }
                 }
             }
         }
@@ -1260,7 +1257,32 @@ pub(crate) fn validate(command: &str, input: &Value) -> Result<(), ValidationErr
             bytes += value.as_str().unwrap_or("").len();
         }
     }
-    for term in terms(command, input) {
+    if input["search"].as_str().is_some_and(scope_word) {
+        return Err(ValidationError::Scope);
+    }
+    let terms = terms(command, input);
+    let list = command == "pr list" || command == "issue list";
+    let list_search = list
+        && (input.get("search").is_some_and(|v| !v.is_null())
+            || input.get("app").is_some_and(|v| !v.is_null())
+            || input["milestone"]
+                .as_str()
+                .is_some_and(|value| value.parse::<u64>().is_err()));
+    if list && !list_search {
+        return Ok(());
+    }
+    if list_search || !terms.is_empty() {
+        if let Some(state) = input["state"].as_str().filter(|state| *state != "all") {
+            let prefix = if list { "is" } else { "state" };
+            bytes += prefix.len() + 1 + state.len() + usize::from(bytes != 0);
+        }
+        if command != "issue list"
+            && let Some(author) = input["author"].as_str()
+        {
+            bytes += "author:".len() + author.len() + usize::from(bytes != 0);
+        }
+    }
+    for term in terms {
         bytes += term.len() + usize::from(bytes != 0);
     }
     if bytes > 512 {
@@ -1393,5 +1415,22 @@ pub(crate) fn remove_nulls(command: &str, input: &mut Value) {
                 input.remove(field.property);
             }
         }
+    }
+}
+
+pub(crate) fn flag_names(command: &str) -> Vec<&'static str> {
+    fields(command).iter().map(|field| field.flag).collect()
+}
+
+pub(crate) fn query_schema(command: &str, schema: &mut Value) {
+    if command.starts_with("search ") {
+        schema["properties"]["query"]["minLength"] = json!(0);
+        let mut alternatives = vec![json!({"properties":{"query":{"minLength":1}}})];
+        alternatives.extend(
+            fields(command)
+                .iter()
+                .map(|field| json!({"required":[field.property]})),
+        );
+        schema["anyOf"] = json!(alternatives);
     }
 }
