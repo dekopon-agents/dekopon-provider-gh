@@ -128,8 +128,22 @@ pub(crate) fn read(
             percent_encode(&input.repo)
         );
         if fields.split(',').any(|field| field == "files") {
-            projected["files"] = json!(file_items(send, base, &format!("{path}pulls/{}/files?per_page=100", input.number), &["filename", "status", "additions", "deletions"])?
-                .into_iter().map(|file| json!({"path": file["filename"], "status": file["status"], "additions": file["additions"], "deletions": file["deletions"]})).collect::<Vec<_>>());
+            let canonical = raw["base"]["repo"]["id"]
+                .as_u64()
+                .filter(|id| *id > 0)
+                .map(|id| {
+                    url(
+                        base,
+                        &format!("/repositories/{id}/pulls/{}/files", input.number),
+                    )
+                })
+                .transpose()?;
+            projected["files"] = json!(file_items(
+                send,
+                base,
+                &format!("{path}pulls/{}/files?per_page=100", input.number),
+                canonical.as_deref()
+            )?);
         }
         if fields
             .split(',')
@@ -188,7 +202,7 @@ fn file_items(
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
     base: &Base,
     path: &str,
-    required: &[&str],
+    canonical: Option<&str>,
 ) -> Result<Vec<Value>, ProviderError> {
     let original = url(base, path)?;
     let mut uri = original.clone();
@@ -197,14 +211,23 @@ fn file_items(
         let response = send_get(send, uri, ACCEPT_JSON)?;
         let items = decode::<Vec<Value>>(&response.body)?;
         if items.len() > 100
-            || items
-                .iter()
-                .any(|item| required.iter().any(|key| item[*key].is_null()))
+            || items.iter().any(|item| {
+                ["filename", "status", "additions", "deletions"]
+                    .iter()
+                    .any(|key| item[*key].is_null())
+            })
         {
             return Err(invalid_response());
         }
-        files.extend(items);
-        match next_file_page(&response, &original, page)? {
+        files.extend(items.into_iter().map(|mut file| {
+            json!({
+                "path": file["filename"].take(),
+                "status": file["status"].take(),
+                "additions": file["additions"].take(),
+                "deletions": file["deletions"].take(),
+            })
+        }));
+        match next_file_page(&response, &original, canonical, page)? {
             Some(next) => uri = next,
             None => return Ok(files),
         }
@@ -218,6 +241,7 @@ fn file_items(
 fn next_file_page(
     response: &Response,
     original: &str,
+    canonical: Option<&str>,
     page: u32,
 ) -> Result<Option<String>, ProviderError> {
     let mut next = None;
@@ -251,7 +275,7 @@ fn next_file_page(
             let expected_path = original
                 .strip_suffix("?per_page=100")
                 .ok_or_else(invalid_response)?;
-            if path != expected_path || next.is_some() {
+            if (path != expected_path && Some(path) != canonical) || next.is_some() {
                 return Err(invalid_response());
             }
             let mut parameters = query.split('&').collect::<Vec<_>>();
@@ -950,7 +974,7 @@ mod tests {
                 &json!([]),
             );
             assert_eq!(
-                super::next_file_page(&response.expect("response"), original, 1)
+                super::next_file_page(&response.expect("response"), original, None, 1)
                     .expect_err("cursor refused")
                     .code(),
                 "invalid-response"
@@ -963,7 +987,8 @@ mod tests {
             &json!([]),
         );
         assert_eq!(
-            super::next_file_page(&response.expect("response"), original, 1).expect("valid cursor"),
+            super::next_file_page(&response.expect("response"), original, None, 1)
+                .expect("valid cursor"),
             Some(target)
         );
     }

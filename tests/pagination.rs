@@ -12,6 +12,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 static REGISTRY: tokio::sync::OnceCell<BrokerProviderRegistry> = tokio::sync::OnceCell::const_new();
 
+const CANONICAL: &str = "/gh/repositories/1403954647/pulls/7/files?per_page=100";
+
 const FILES: &str = "/gh/repos/octo/hello/pulls/7/files?per_page=100";
 
 #[derive(Clone, Copy)]
@@ -22,7 +24,9 @@ enum Case {
     Oversized,
     Requests,
     Cap,
-    Full,
+    ForeignId,
+    Large,
+    Budget,
 }
 
 async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
@@ -32,8 +36,20 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
     let response_origin = origin.clone();
     let expected = match case {
         Case::Complete | Case::Requests => 4,
-        Case::Cap | Case::Full => 31,
-        Case::Origin | Case::Path | Case::Oversized => 3,
+        Case::Cap | Case::Large => 31,
+        Case::Budget => 32,
+        Case::Origin | Case::Path | Case::Oversized | Case::ForeignId => 3,
+    };
+    let page_path = match case {
+        Case::Large => FILES,
+        Case::Complete
+        | Case::Origin
+        | Case::Path
+        | Case::Oversized
+        | Case::Requests
+        | Case::Cap
+        | Case::ForeignId
+        | Case::Budget => CANONICAL,
     };
     let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
     let captured = Arc::clone(&seen);
@@ -59,7 +75,10 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
             let expected_path = match index {
                 0 => "/gh/repos/octo/hello/pulls/7".to_owned(),
                 1 => FILES.to_owned(),
-                _ => format!("{FILES}&page={index}"),
+                31 if matches!(case, Case::Budget) => {
+                    "/gh/repos/octo/hello/pulls/7/reviews?per_page=100".to_owned()
+                }
+                _ => format!("{page_path}&page={index}"),
             };
             assert_eq!(path, expected_path);
             assert!(request.starts_with("GET "));
@@ -81,16 +100,26 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
                 .expect("capture lock")
                 .push(format!("{response_origin}{path}"));
             let body = if index == 0 {
-                json!({"number":7,"title":"Ship","state":"open","head":{"ref":"topic","sha":"a".repeat(40)},"base":{"ref":"main","sha":"b".repeat(40)},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}).to_string()
+                json!({"number":7,"title":"Ship","state":"open","head":{"ref":"topic","sha":"a".repeat(40)},"base":{"ref":"main","sha":"b".repeat(40),"repo":{"id":1403954647}},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}).to_string()
+            } else if index == 31 && matches!(case, Case::Budget) {
+                "[]".to_owned()
             } else if matches!(case, Case::Oversized) && index == 2 {
                 " ".repeat(1024 * 1024 + 1)
             } else {
-                json!((0..100).map(|file| json!({"filename":format!("{index}/{file}"),"status":"modified","additions":1,"deletions":0,"patch":"must not escape"})).collect::<Vec<_>>()).to_string()
+                json!((0..100).map(|file| json!({"filename":format!("{index}/{file}"),"status":"modified","additions":1,"deletions":0,"patch": if matches!(case, Case::Large) { "x".repeat(25000) } else { "must not escape".to_owned() }})).collect::<Vec<_>>()).to_string()
             };
             let next = if index == 0
-                || (index + 1 == expected && !matches!(case, Case::Cap | Case::Origin | Case::Path))
-            {
+                || (index >= 30 && matches!(case, Case::Budget))
+                || (index + 1 == expected
+                    && !matches!(
+                        case,
+                        Case::Cap | Case::Origin | Case::Path | Case::ForeignId
+                    )) {
                 None
+            } else if index == 2 && matches!(case, Case::ForeignId) {
+                Some(format!(
+                    "{response_origin}/gh/repositories/1403954648/pulls/7/files?per_page=100&page=3"
+                ))
             } else if index == 2 && matches!(case, Case::Origin) {
                 Some(format!("http://other.example{FILES}&page=3"))
             } else if index == 2 && matches!(case, Case::Path) {
@@ -98,7 +127,7 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
                     "{response_origin}/gh/repos/octo/other/pulls/7/files?per_page=100&page=3"
                 ))
             } else {
-                Some(format!("{response_origin}{FILES}&page={}", index + 1))
+                Some(format!("{response_origin}{page_path}&page={}", index + 1))
             };
             let link = next
                 .map(|next| format!("Link: <{next}>; rel=\"next\"\r\n"))
@@ -120,10 +149,7 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
         .get_or_try_init(|| async {
             BrokerProviderRegistry::load_with_options(
                 [std::path::PathBuf::from(component)],
-                BrokerHostLimits {
-                    max_http_requests: 35,
-                    ..Default::default()
-                },
+                BrokerHostLimits::default(),
                 None,
                 &BrokerHostOptions {
                     plaintext_hosts: PlaintextHosts::new(["127.0.0.1"])
@@ -141,7 +167,7 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
             agent: "pagination-test".parse()?,
         },
         TraceId::new(*b"pagination-test!")?,
-        json!({"owner":"octo","repo":"hello","number":7,"_cliOutput":"files"}),
+        json!({"owner":"octo","repo":"hello","number":7,"_cliOutput": match case { Case::Budget => "files,reviews,comments", _ => "files" }}),
     );
     let authorized = AuthorizationGate::new().authorize(
         proposal,
@@ -157,10 +183,13 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
                 max_requests: if matches!(case, Case::Requests) {
                     3
                 } else {
-                    35
+                    32
                 },
                 max_request_bytes: 65536,
-                max_response_bytes: 1024 * 1024,
+                max_response_bytes: match case {
+                    Case::Large => 4 * 1024 * 1024,
+                    _ => 1024 * 1024,
+                },
                 allow_plaintext_loopback: true,
                 propagate_trace: false,
                 request_templates: vec![],
@@ -195,7 +224,7 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
         )
         .await;
     let stdout = capture.await??;
-    if matches!(case, Case::Complete | Case::Full) {
+    if matches!(case, Case::Complete | Case::Large) {
         let output = result?;
         assert_eq!(output.http_calls.len(), expected);
         let value: Value = serde_json::from_slice(&stdout)?;
@@ -222,11 +251,11 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
             (Case::Oversized, BrokerHostError::HostCallRejected { reason, .. }) => {
                 assert_eq!(reason, "byte-limit");
             }
-            (Case::Requests, BrokerHostError::HostCallRejected { reason, .. }) => {
+            (Case::Requests | Case::Budget, BrokerHostError::HostCallRejected { reason, .. }) => {
                 assert_eq!(reason, "host-call-limit");
             }
             (
-                Case::Origin | Case::Path | Case::Cap,
+                Case::Origin | Case::Path | Case::Cap | Case::ForeignId,
                 BrokerHostError::ProviderFailure { status, stderr, .. },
             ) => {
                 assert_eq!(status, 3);
@@ -294,6 +323,19 @@ async fn component_reads_three_thousand_files_and_refuses_a_further_page()
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn component_reads_all_three_thousand_files() -> Result<(), Box<dyn std::error::Error>> {
-    run(Case::Full).await
+async fn component_discards_large_patches_between_file_pages()
+-> Result<(), Box<dyn std::error::Error>> {
+    run(Case::Large).await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn component_refuses_a_canonical_file_page_for_another_repository()
+-> Result<(), Box<dyn std::error::Error>> {
+    run(Case::ForeignId).await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn component_combined_expansions_exhaust_the_default_request_budget_without_output()
+-> Result<(), Box<dyn std::error::Error>> {
+    run(Case::Budget).await
 }
