@@ -176,7 +176,23 @@ impl Provider for Gh {
 #[cfg(not(gh_foundation_fixture))]
 #[allow(unsafe_code)]
 mod export {
-    dekopon_provider_sdk::export!(super::Gh);
+    struct Component;
+
+    impl dekopon_provider_sdk::export_bindings::Guest for Component {
+        fn describe() -> String {
+            dekopon_provider_sdk::__typed_describe::<super::Gh>()
+        }
+
+        fn invoke(capability: String, input_json: String) -> Result<(), u8> {
+            dekopon_provider_sdk::__typed_invoke::<super::Gh>(&capability, &input_json)
+        }
+
+        fn run_command(argv: Vec<String>, stdin_piped: bool) -> String {
+            super::commands::run_command(&argv, stdin_piped)
+        }
+    }
+
+    dekopon_provider_sdk::export_bindings::export!(Component with_types_in dekopon_provider_sdk::export_bindings);
 }
 
 /// Routes one invocation to its capability implementation.

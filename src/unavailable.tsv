@@ -1,181 +1,241 @@
 command	auth git-credential	W1
-command	auth login	W3	hostname/h scopes/s with-token web/w clipboard/c git-protocol/p secure-storage insecure-storage skip-ssh-key
-command	auth logout	W4	hostname/h user/u
-command	auth refresh	W3	hostname/h scopes/s remove-scopes/r reset-scopes clipboard/c secure-storage insecure-storage
-command	auth setup-git	W1	hostname/h force/f
-command	auth switch	W4	hostname/h user/u
-command	auth token	X2	hostname/h user/u secure-storage
-command	codespace code	W5	codespace/c repo/R repo-owner insiders web/w
-command	codespace cp	W7	recursive/r expand/e codespace/c repo/R repo-owner profile/p
-command	codespace jupyter	W7	codespace/c repo/R repo-owner
-command	codespace logs	W7	codespace/c repo/R repo-owner follow/f
-command	codespace ports	W7	codespace/c repo/R repo-owner jq/q json template/t
-command	codespace ports forward	W7	all-interfaces
-command	codespace ports visibility	W7
-command	codespace rebuild	W7	codespace/c repo/R repo-owner full
-command	codespace select	W2	codespace/c repo/R repo-owner file/f
-command	codespace ssh	W7	profile server-port codespace/c repo/R repo-owner debug/d debug-file config stdio
+command	auth login	W3	hostname/h:value scopes/s:value with-token:bool web/w:bool clipboard/c:bool git-protocol/p:value secure-storage:bool insecure-storage:bool skip-ssh-key:bool
+command	auth logout	W4	hostname/h:value user/u:value
+command	auth refresh	W3	hostname/h:value scopes/s:value remove-scopes/r:value reset-scopes:bool clipboard/c:bool secure-storage:bool insecure-storage:bool
+command	auth setup-git	W1	hostname/h:value force/f:bool
+command	auth switch	W4	hostname/h:value user/u:value
+command	auth token	X2	hostname/h:value user/u:value secure-storage:bool
+command	codespace code	W5	codespace/c:value repo/R:value repo-owner:value insiders:bool web/w:bool
+command	codespace cp	W7	recursive/r:bool expand/e:bool codespace/c:value repo/R:value repo-owner:value profile/p:value
+command	codespace jupyter	W7	codespace/c:value repo/R:value repo-owner:value
+command	codespace logs	W7	codespace/c:value repo/R:value repo-owner:value follow/f:bool
+command	codespace ports	W7	codespace/c:value repo/R:value repo-owner:value jq/q:value json:value template/t:value
+command	codespace ports forward	W7	all-interfaces:bool codespace/c:value repo/R:value repo-owner:value
+command	codespace ports visibility	W7	codespace/c:value repo/R:value repo-owner:value
+command	codespace rebuild	W7	codespace/c:value repo/R:value repo-owner:value full:bool
+command	codespace select	W2	codespace/c:value repo/R:value repo-owner:value file/f:value
+command	codespace ssh	W7	profile:value server-port:value codespace/c:value repo/R:value repo-owner:value debug/d:bool debug-file:value config:bool stdio:bool
 command	gist clone	W1
-command	pr checkout	W1	recurse-submodules force/f detach branch/b worktree
-command	repo clone	W1	upstream-remote-name/u no-upstream
-command	repo set-default	W1	view/v unset/u
-command	repo deploy-key add	X4	title/t allow-write/w
-command	run download	W10	dir/D name/n pattern/p
-command	run watch	W6	exit-status compact interval/i
-command	extension browse	W2	debug single-column/s
-command	extension create	W12	precompiled
+command	pr checkout	W1	recurse-submodules:bool force/f:bool detach:bool branch/b:value worktree:value
+command	repo clone	W1	upstream-remote-name/u:value no-upstream:bool
+command	repo set-default	W1	view/v:bool unset/u:bool
+command	repo deploy-key add	X4	title/t:value allow-write/w:bool
+command	run download	W10	dir/D:value name/n:value pattern/p:value
+command	run watch	W6	exit-status:bool compact:bool interval/i:value
+command	extension browse	W2	debug:bool single-column/s:bool
+command	extension create	W12	precompiled:value
 command	extension exec	W12
-command	extension install	W12	force pin
+command	extension install	W12	force:bool pin:value
 command	extension list	W12
 command	extension remove	W12
-command	extension search	X5	web/w jq/q json template/t limit/L order sort license owner
-command	extension upgrade	W12	all force dry-run
-command	alias delete	W13	all
-command	alias import	W13	clobber
+command	extension search	X5	web/w:bool jq/q:value json:value template/t:value limit/L:value order:value sort:value license:value owner:value
+command	extension upgrade	W12	all:bool force:bool dry-run:bool
+command	alias delete	W13	all:bool
+command	alias import	W13	clobber:bool
 command	alias list	W13
-command	alias set	W13	shell/s clobber
+command	alias set	W13	shell/s:bool clobber:bool
 command	config clear-cache	W13
-command	config get	W13	host/h
-command	config list	W13	host/h
-command	config set	W13	host/h
-command	gpg-key add	X4	title/t
-command	ssh-key add	X4	type title/t
-command	skill install	W8	agent scope pin dir all force/f from-local allow-hidden-dirs upstream
-command	skill list	W8	agent scope dir jq/q json template/t
-command	skill publish	W8	fix dry-run tag
-command	skill search	X5	page limit/L owner jq/q json template/t
-command	skill update	W8	all force dry-run unpin dir
-command	completion	W14	shell/s
+command	config get	W13	host/h:value
+command	config list	W13	host/h:value
+command	config set	W13	host/h:value
+command	gpg-key add	X4	title/t:value
+command	ssh-key add	X4	type:value title/t:value
+command	skill install	W8	agent:value scope:value pin:value dir:value all:bool force/f:bool from-local:bool allow-hidden-dirs:bool upstream:bool
+command	skill list	W8	agent:value scope:value dir:value jq/q:value json:value template/t:value
+command	skill publish	W8	fix:bool dry-run:bool tag:value
+command	skill search	X5	page:value limit/L:value owner:value jq/q:value json:value template/t:value
+command	skill update	W8	all:bool force:bool dry-run:bool unpin:bool dir:value
+command	completion	W14	shell/s:value
 command	preview prompter	W2
 command	send-telemetry	X6
-command	copilot	W12	remove
-flag	auth status	X3	hostname/h
-flag	auth status	X2	show-token/t
-flag	auth status	X7	jq/q template
-flag	api	X1	hostname method/X field/F raw-field/f header/H preview/p include/i slurp paginate input silent template/t jq/q cache verbose allow-escape-sequences
-flag	codespace create	W5	web/w
-flag	codespace create	W2	default-permissions
-flag	codespace create	W6	status/s
-flag	codespace list	W5	web/w
-flag	codespace list	X7	jq/q template/t
-flag	codespace view	X7	jq/q template/t
-flag	gist create	W5	web/w
-flag	gist view	W5	web/w
-flag	issue comment	W2	editor/e
-flag	issue comment	W5	web/w
-flag	issue create	W2	editor/e
-flag	issue create	W5	web/w
-flag	issue create	W8	recover
-flag	issue develop	W1	checkout/c worktree
-flag	issue list	W5	web/w
-flag	issue list	X7	jq/q template/t
-flag	issue status	X7	jq/q template/t
-flag	issue view	W5	web/w
-flag	issue view	X7	jq/q template/t
-flag	label list	W5	web/w
-flag	label list	X7	jq/q template/t
-flag	pr checks	W5	web/w
-flag	pr checks	W6	watch fail-fast interval/i
-flag	pr checks	X7	jq/q template/t
-flag	pr comment	W2	editor/e
-flag	pr comment	W5	web/w
-flag	pr create	W2	editor/e
-flag	pr create	W5	web/w
-flag	pr create	W1	fill/f fill-first fill-verbose
-flag	pr create	W8	recover
-flag	pr diff	W2	color
-flag	pr diff	W5	web/w
-flag	pr list	W5	web/w
-flag	pr list	X7	jq/q template/t
-flag	pr status	X7	jq/q template/t
-flag	pr view	W5	web/w
-flag	pr view	X7	jq/q template/t
-flag	project close	X7	jq/q template/t
-flag	project copy	X7	jq/q template/t
-flag	project create	X7	jq/q template/t
-flag	project delete	X7	jq/q template/t
-flag	project edit	X7	jq/q template/t
-flag	project field-create	X7	jq/q template/t
-flag	project field-delete	X7	jq/q template/t
-flag	project field-list	X7	jq/q template/t
-flag	project item-add	X7	jq/q template/t
-flag	project item-archive	X7	jq/q template/t
-flag	project item-create	X7	jq/q template/t
-flag	project item-delete	X7	jq/q template/t
-flag	project item-edit	X7	jq/q template/t
-flag	project item-list	X7	jq/q template/t
-flag	project list	W5	web/w
-flag	project list	X7	jq/q template/t
-flag	project mark-template	X7	jq/q template/t
-flag	release create	W1	notes-from-tag
-flag	release download	W8	dir/D clobber skip-existing
-flag	release list	X7	jq/q template/t
-flag	release verify	W8	custom-trusted-root
-flag	release verify	X7	jq/q template/t
-flag	release verify-asset	W8	custom-trusted-root
-flag	release verify-asset	X7	jq/q template/t
-flag	release view	W5	web/w
-flag	release view	X7	jq/q template/t
-flag	repo autolink list	W5	web/w
-flag	repo autolink list	X7	jq/q template/t
-flag	repo autolink view	X7	jq/q template/t
-flag	repo create	W1	source/s remote/r push clone/c
-flag	repo deploy-key list	X7	jq/q template/t
-flag	repo fork	W1	clone remote remote-name
-flag	repo license view	W5	web/w
-flag	repo list	X7	jq/q template/t
-flag	repo read-dir	X7	jq/q template/t
-flag	repo read-file	W8	clobber
-flag	repo read-file	X7	jq/q template/t
-flag	repo view	W5	web/w
-flag	repo view	X7	jq/q template/t
-flag	run list	X7	jq/q template/t
-flag	run view	W10	log log-failed
-flag	run view	W5	web/w
-flag	run view	X7	jq/q template/t
-flag	workflow list	X7	jq/q template/t
-flag	workflow view	W5	web/w
-flag	cache list	X7	jq/q template/t
-flag	secret list	X7	jq/q template/t
-flag	variable get	X7	jq/q template/t
-flag	variable list	X7	jq/q template/t
-flag	ruleset check	W5	web/w
-flag	ruleset list	W5	web/w
-flag	ruleset view	W5	web/w
-flag	search code	W5	web/w
-flag	search code	X7	jq/q template/t
-flag	search commits	W5	web/w
-flag	search commits	X7	jq/q template/t
-flag	search issues	W5	web/w
-flag	search issues	X7	jq/q template/t
-flag	search prs	W5	web/w
-flag	search prs	X7	jq/q template/t
-flag	search repos	W5	web/w
-flag	search repos	X7	jq/q template/t
-flag	attestation download	X3	hostname
-flag	attestation inspect	X3	hostname
-flag	attestation inspect	X7	jq/q template/t
-flag	attestation trusted-root	W8	tuf-root
-flag	attestation trusted-root	X3	hostname
-flag	attestation verify	W11	bundle-from-oci
-flag	attestation verify	W8	custom-trusted-root
-flag	attestation verify	X3	hostname
-flag	attestation verify	X7	jq/q template/t
-flag	discussion list	W5	web/w
-flag	discussion list	X7	jq/q template/t
-flag	discussion view	W5	web/w
-flag	discussion view	X7	jq/q template/t
-flag	agent-task create	W6	follow
-flag	agent-task list	W5	web/w
-flag	agent-task list	X7	jq/q template/t
-flag	agent-task view	W5	web/w
-flag	agent-task view	W6	follow
-flag	agent-task view	X7	jq/q template/t
-flag	accessibility	W5	web/w
-flag	project view	W5	web/w
-flag	project view	X7	jq/q template/t
+command	copilot	W12	remove:bool
+flag	auth status	X3	hostname/h:value
+flag	auth status	X2	show-token/t:bool
+flag	auth status	X7	jq/q:value template:value
+flag	api	X1	hostname:value method/X:value field/F:value raw-field/f:value header/H:value preview/p:value include/i:bool slurp:bool paginate:bool input:value silent:bool template/t:value jq/q:value cache:value verbose:bool allow-escape-sequences:bool
+flag	codespace create	W5	web/w:bool
+flag	codespace create	W2	default-permissions:bool
+flag	codespace create	W6	status/s:bool
+flag	codespace list	W5	web/w:bool
+flag	codespace list	X7	jq/q:value template/t:value
+flag	codespace view	X7	jq/q:value template/t:value
+flag	gist create	W5	web/w:bool
+flag	gist view	W5	web/w:bool
+flag	issue comment	W2	editor/e:bool
+flag	issue comment	W5	web/w:bool
+flag	issue create	W2	editor/e:bool
+flag	issue create	W5	web/w:bool
+flag	issue create	W8	recover:value
+flag	issue develop	W1	checkout/c:bool worktree:value
+flag	issue list	W5	web/w:bool
+flag	issue list	X7	jq/q:value template/t:value
+flag	issue status	X7	jq/q:value template/t:value
+flag	issue view	W5	web/w:bool
+flag	issue view	X7	jq/q:value template/t:value
+flag	label list	W5	web/w:bool
+flag	label list	X7	jq/q:value template/t:value
+flag	pr checks	W5	web/w:bool
+flag	pr checks	W6	watch:bool fail-fast:bool interval/i:value
+flag	pr checks	X7	jq/q:value template/t:value
+flag	pr comment	W2	editor/e:bool
+flag	pr comment	W5	web/w:bool
+flag	pr create	W2	editor/e:bool
+flag	pr create	W5	web/w:bool
+flag	pr create	W1	fill/f:bool fill-first:bool fill-verbose:bool
+flag	pr create	W8	recover:value
+flag	pr diff	W2	color:value
+flag	pr diff	W5	web/w:bool
+flag	pr list	W5	web/w:bool
+flag	pr list	X7	jq/q:value template/t:value
+flag	pr status	X7	jq/q:value template/t:value
+flag	pr view	W5	web/w:bool
+flag	pr view	X7	jq/q:value template/t:value
+flag	project close	X7	jq/q:value template/t:value
+flag	project copy	X7	jq/q:value template/t:value
+flag	project create	X7	jq/q:value template/t:value
+flag	project delete	X7	jq/q:value template/t:value
+flag	project edit	X7	jq/q:value template/t:value
+flag	project field-create	X7	jq/q:value template/t:value
+flag	project field-delete	X7	jq/q:value template/t:value
+flag	project field-list	X7	jq/q:value template/t:value
+flag	project item-add	X7	jq/q:value template/t:value
+flag	project item-archive	X7	jq/q:value template/t:value
+flag	project item-create	X7	jq/q:value template/t:value
+flag	project item-delete	X7	jq/q:value template/t:value
+flag	project item-edit	X7	jq/q:value template/t:value
+flag	project item-list	X7	jq/q:value template/t:value
+flag	project list	W5	web/w:bool
+flag	project list	X7	jq/q:value template/t:value
+flag	project mark-template	X7	jq/q:value template/t:value
+flag	release create	W1	notes-from-tag:bool
+flag	release download	W8	dir/D:value clobber:bool skip-existing:bool
+flag	release list	X7	jq/q:value template/t:value
+flag	release verify	W8	custom-trusted-root:value
+flag	release verify	X7	jq/q:value template/t:value
+flag	release verify-asset	W8	custom-trusted-root:value
+flag	release verify-asset	X7	jq/q:value template/t:value
+flag	release view	W5	web/w:bool
+flag	release view	X7	jq/q:value template/t:value
+flag	repo autolink list	W5	web/w:bool
+flag	repo autolink list	X7	jq/q:value template/t:value
+flag	repo autolink view	X7	jq/q:value template/t:value
+flag	repo create	W1	source/s:value remote/r:value push:bool clone/c:bool
+flag	repo deploy-key list	X7	jq/q:value template/t:value
+flag	repo fork	W1	clone:bool remote:bool remote-name:value
+flag	repo license view	W5	web/w:bool
+flag	repo list	X7	jq/q:value template/t:value
+flag	repo read-dir	X7	jq/q:value template/t:value
+flag	repo read-file	W8	clobber:bool
+flag	repo read-file	X7	jq/q:value template/t:value
+flag	repo view	W5	web/w:bool
+flag	repo view	X7	jq/q:value template/t:value
+flag	run list	X7	jq/q:value template/t:value
+flag	run view	W10	log:bool log-failed:bool
+flag	run view	W5	web/w:bool
+flag	run view	X7	jq/q:value template/t:value
+flag	workflow list	X7	jq/q:value template/t:value
+flag	workflow view	W5	web/w:bool
+flag	cache list	X7	jq/q:value template/t:value
+flag	secret list	X7	jq/q:value template/t:value
+flag	variable get	X7	jq/q:value template/t:value
+flag	variable list	X7	jq/q:value template/t:value
+flag	ruleset check	W5	web/w:bool
+flag	ruleset list	W5	web/w:bool
+flag	ruleset view	W5	web/w:bool
+flag	search code	W5	web/w:bool
+flag	search code	X7	jq/q:value template/t:value
+flag	search commits	W5	web/w:bool
+flag	search commits	X7	jq/q:value template/t:value
+flag	search issues	W5	web/w:bool
+flag	search issues	X7	jq/q:value template/t:value
+flag	search prs	W5	web/w:bool
+flag	search prs	X7	jq/q:value template/t:value
+flag	search repos	W5	web/w:bool
+flag	search repos	X7	jq/q:value template/t:value
+flag	attestation download	X3	hostname:value
+flag	attestation inspect	X3	hostname:value
+flag	attestation inspect	X7	jq/q:value template/t:value
+flag	attestation trusted-root	W8	tuf-root:value
+flag	attestation trusted-root	X3	hostname:value
+flag	attestation verify	W11	bundle-from-oci:bool
+flag	attestation verify	W8	custom-trusted-root:value
+flag	attestation verify	X3	hostname:value
+flag	attestation verify	X7	jq/q:value template/t:value
+flag	discussion list	W5	web/w:bool
+flag	discussion list	X7	jq/q:value template/t:value
+flag	discussion view	W5	web/w:bool
+flag	discussion view	X7	jq/q:value template/t:value
+flag	agent-task create	W6	follow:bool
+flag	agent-task list	W5	web/w:bool
+flag	agent-task list	X7	jq/q:value template/t:value
+flag	agent-task view	W5	web/w:bool
+flag	agent-task view	W6	follow:bool
+flag	agent-task view	X7	jq/q:value template/t:value
+flag	accessibility	W5	web/w:bool
+flag	project view	W5	web/w:bool
+flag	project view	X7	jq/q:value template/t:value
 scope	search prs	X5
 scope	search issues	X5
 scope	search repos	X5
 scope	search code	X5
 scope	search commits	X5
+syntax	agent-task create	-	base/b:value custom-agent/a:value from-file/F:value repo/R:value
+syntax	agent-task list	-	json:value limit/L:value
+syntax	agent-task view	-	json:value log:bool repo/R:value
+syntax	attestation download	-	digest-alg/d:value limit/L:value owner/o:value predicate-type:value repo/R:value
+syntax	attestation inspect	-	format:value
+syntax	attestation trusted-root	-	tuf-url:value verify-only:bool
+syntax	attestation verify	-	bundle/b:value cert-identity:value cert-identity-regex/i:value cert-oidc-issuer:value deny-self-hosted-runners:bool digest-alg/d:value format:value limit/L:value no-public-good:bool owner/o:value predicate-type:value repo/R:value signer-digest:value signer-repo:value signer-workflow:value source-digest:value source-ref:value
+syntax	cache list	-	json:value key/k:value limit/L:value order/O:value ref/r:value repo/R:value sort/S:value
+syntax	codespace create	-	branch/b:value devcontainer-path:value display-name/d:value idle-timeout:value location/l:value machine/m:value repo/R:value retention-period:value
+syntax	codespace list	-	json:value limit/L:value org/o:value repo/R:value user/u:value
+syntax	codespace view	-	codespace/c:value json:value repo/R:value repo-owner:value
+syntax	discussion list	-	after:value answered:bool author/A:value category/c:value json:value label/l:value limit/L:value order:value repo/R:value search/S:value sort:value state/s:value
+syntax	discussion view	-	after:value comments/c:bool json:value limit/L:value order:value repo/R:value
+syntax	gist create	-	desc/d:value filename/f:value public/p:bool
+syntax	gist view	-	allow-escape-sequences:bool filename/f:value files:bool raw/r:bool
+syntax	issue create	-	assignee/a:value attach:value blocked-by:value blocking:value body/b:value body-file/F:value label/l:value milestone/m:value parent:value project/p:value repo/R:value template/T:value title/t:value type:value
+syntax	issue develop	-	base/b:value branch-repo:value issue-repo/i:value list/l:bool name/n:value repo/R:value
+syntax	issue status	-	json:value repo/R:value
+syntax	label list	-	json:value limit/L:value order:value repo/R:value search/S:value sort:value
+syntax	pr comment	-	attach:value body/b:value body-file/F:value create-if-none:bool delete-last:bool edit-last:bool repo/R:value yes:bool
+syntax	pr create	-	assignee/a:value attach:value base/B:value body/b:value body-file/F:value draft/d:bool dry-run:bool head/H:value label/l:value milestone/m:value no-maintainer-edit:bool project/p:value repo/R:value reviewer/r:value template/T:value title/t:value
+syntax	pr status	-	conflict-status/c:bool json:value repo/R:value
+syntax	project close	-	format:value owner:value undo:bool
+syntax	project copy	-	drafts:bool format:value source-owner:value target-owner:value title:value
+syntax	project create	-	format:value owner:value title:value
+syntax	project delete	-	format:value owner:value
+syntax	project edit	-	description/d:value format:value owner:value readme:value title:value visibility:value
+syntax	project field-create	-	data-type:value format:value name:value owner:value single-select-options:value
+syntax	project field-delete	-	format:value id:value
+syntax	project field-list	-	format:value limit/L:value owner:value
+syntax	project item-add	-	format:value owner:value url:value
+syntax	project item-archive	-	format:value id:value owner:value undo:bool
+syntax	project item-create	-	body:value format:value owner:value title:value
+syntax	project item-delete	-	format:value id:value owner:value
+syntax	project item-edit	-	body:value clear:bool date:value field:value field-id:value format:value id:value iteration-id:value number:value owner:value project-id:value single-select-option-id:value text:value title:value url:value value:value
+syntax	project item-list	-	field:value field-id:value format:value limit/L:value owner:value query:value
+syntax	project list	-	closed:bool format:value limit/L:value owner:value
+syntax	project mark-template	-	format:value owner:value undo:bool
+syntax	project view	-	format:value owner:value
+syntax	release create	-	discussion-category:value draft/d:bool fail-on-no-commits:bool generate-notes:bool latest:bool notes/n:value notes-file/F:value notes-start-tag:value prerelease/p:bool repo/R:value target:value title/t:value verify-tag:bool
+syntax	release download	-	allow-escape-sequences:bool archive/A:value output/O:value pattern/p:value repo/R:value
+syntax	release list	-	exclude-drafts:bool exclude-pre-releases:bool json:value limit/L:value order/O:value repo/R:value
+syntax	release verify	-	format:value repo/R:value
+syntax	release verify-asset	-	format:value repo/R:value
+syntax	release view	-	json:value repo/R:value
+syntax	repo autolink list	-	json:value repo/R:value
+syntax	repo autolink view	-	json:value repo/R:value
+syntax	repo create	-	add-readme:bool confirm/y:bool description/d:value disable-issues:bool disable-wiki:bool enable-issues:bool enable-wiki:bool gitignore/g:value homepage/h:value include-all-branches:bool internal:bool license/l:value private:bool public:bool team/t:value template/p:value
+syntax	repo deploy-key list	-	json:value repo/R:value
+syntax	repo fork	-	default-branch-only:bool fork-name:value org:value
+syntax	ruleset check	-	default:bool repo/R:value
+syntax	ruleset list	-	limit/L:value org/o:value parents/p:bool repo/R:value
+syntax	ruleset view	-	org/o:value parents/p:bool repo/R:value
+syntax	run list	-	all/a:bool branch/b:value commit/c:value created:value event/e:value json:value limit/L:value repo/R:value status/s:value user/u:value workflow/w:value
+syntax	run view	-	attempt/a:value exit-status:bool job/j:value json:value repo/R:value verbose/v:bool
+syntax	secret list	-	app/a:value env/e:value json:value org/o:value repo/R:value user/u:bool
+syntax	variable get	-	env/e:value json:value org/o:value repo/R:value
+syntax	variable list	-	env/e:value json:value org/o:value repo/R:value
+syntax	workflow list	-	all/a:bool json:value limit/L:value repo/R:value
+syntax	workflow view	-	ref/r:value repo/R:value yaml/y:bool

@@ -76,6 +76,44 @@ impl FromArgMatches for GhArgs {
 }
 impl Parser for GhArgs {}
 
+#[cfg(not(gh_foundation_fixture))]
+pub(crate) fn run_command(argv: &[String], stdin_piped: bool) -> String {
+    // Clap drops separators before external commands, so check them at the raw argv boundary.
+    if argv.iter().any(|word| word == "--") {
+        let grammar = supported_tree();
+        let mut group = &grammar;
+        for (index, word) in argv.iter().enumerate() {
+            if word == "--" {
+                if group.has_subcommands()
+                    && let Some(value) = argv.get(index + 1)
+                {
+                    let name = std::iter::once("gh")
+                        .chain(argv[..index].iter().map(String::as_str))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let mut command = group.clone().bin_name(name);
+                    let error = command.error(
+                        clap::error::ErrorKind::UnknownArgument,
+                        format!("unexpected argument '{value}' found"),
+                    );
+                    let outcome = dekopon_provider_sdk::CommandRunOutcome::Rendered {
+                        stdout: String::new(),
+                        stderr: error.render().to_string(),
+                        status: 2,
+                    };
+                    return serde_json::to_string(&outcome).unwrap_or_else(|_| r#"{"outcome":"failed","error":{"code":"serialization-failed","message":"command run could not be serialized"}}"#.to_owned());
+                }
+                break;
+            }
+            match group.find_subcommand(word) {
+                Some(child) => group = child,
+                None => break,
+            }
+        }
+    }
+    dekopon_provider_sdk::__typed_run_command::<crate::Gh>(argv, stdin_piped)
+}
+
 pub(crate) fn propose(args: GhArgs, stdin_piped: bool) -> Result<Proposal<crate::Gh>, Usage> {
     if let Some(refusal) = args.1 {
         return Err(refusal);
@@ -925,7 +963,9 @@ mod tests {
         }
     }
     fn run(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, ProviderError> {
-        match provider::command::<Gh>(argv, stdin.is_some()) {
+        match serde_json::from_str::<CommandRunOutcome>(&super::run_command(argv, stdin.is_some()))
+            .expect("command outcome JSON")
+        {
             CommandRunOutcome::Proposed {
                 capability, input, ..
             } => Ok(CommandRun::Proposal {
@@ -1237,6 +1277,8 @@ mod tests {
             &[][..],
             &["bogus"][..],
             &["pr"][..],
+            &["pr", "create", "-R", "o/r"][..],
+            &["--", "pr", "view", "7", "-R", "octo/hello"][..],
             &["pr", "view"][..],
             &["pr", "view", "7"][..],
             &["pr", "view", "seven", "-R", "o/r"][..],
@@ -1254,6 +1296,23 @@ mod tests {
                 "{words:?}: plain, never coloured"
             );
         }
+        let (_, stderr, _) = rendered(&["pr", "create", "-R", "o/r"]);
+        assert!(
+            stderr.starts_with("error: unrecognized subcommand 'create'"),
+            "{stderr:?}"
+        );
+        let (_, stderr, _) = rendered(&["pr", "view", "7"]);
+        assert!(stderr.contains("--repo <OWNER/REPO>"), "{stderr:?}");
+        let (_, stderr, _) = rendered(&["pr", "diff", "7", "-R", "o/r", "--approve"]);
+        assert!(
+            stderr.starts_with("error: unexpected argument '--approve'"),
+            "{stderr:?}"
+        );
+        let (_, stderr, _) = rendered(&["--", "pr", "view", "7", "-R", "octo/hello"]);
+        assert!(
+            stderr.starts_with("error: unexpected argument 'pr'"),
+            "{stderr:?}"
+        );
     }
 
     #[test]
@@ -1411,7 +1470,11 @@ mod tests {
     #[test]
     fn lying_flags_are_rejected_with_guidance() {
         for flag in ["--web", "--jq", "--template"] {
-            let failure = refuse(&["pr", "view", "7", "-R", "o/r", flag]);
+            let mut words = vec!["pr", "view", "7", "-R", "o/r", flag];
+            if flag != "--web" {
+                words.push(".");
+            }
+            let failure = refuse(&words);
             assert_eq!(failure.code(), "usage");
             let message = failure.message().to_owned();
             assert!(

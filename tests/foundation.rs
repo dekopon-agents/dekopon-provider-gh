@@ -92,7 +92,9 @@ fn valid_refusal_argv(command: &str) -> Vec<String> {
 fn whole_command(kind: unavailable::Kind) -> bool {
     match kind {
         unavailable::Kind::Command => true,
-        unavailable::Kind::Flag | unavailable::Kind::UnscopedSearch => false,
+        unavailable::Kind::Flag | unavailable::Kind::UnscopedSearch | unavailable::Kind::Syntax => {
+            false
+        }
     }
 }
 
@@ -106,27 +108,40 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
     ))?;
     let mut cases = 0;
     for entry in unavailable::entries() {
+        match entry.kind {
+            unavailable::Kind::Syntax => continue,
+            unavailable::Kind::Command
+            | unavailable::Kind::Flag
+            | unavailable::Kind::UnscopedSearch => {}
+        }
         let mut variants = vec![];
         if whole_command(entry.kind) {
             variants.push(None);
         }
-        for flag in entry.flags.split_whitespace() {
-            let mut parts = flag.split('/');
-            let name = parts.next().expect("long flag");
-            variants.push(Some((format!("--{name}"), name)));
-            if let Some(short) = parts.next() {
-                variants.push(Some((format!("-{short}"), name)));
+        for flag in entry.flags() {
+            let value = match flag.arity {
+                unavailable::Arity::Boolean => None,
+                unavailable::Arity::Value => Some("value"),
+            };
+            variants.push(Some((format!("--{}", flag.name), flag.name, value)));
+            if let Some(short) = flag.short {
+                variants.push(Some((format!("-{short}"), flag.name, value)));
             }
         }
         for flag in variants {
             let mut argv = valid_refusal_argv(entry.command);
             let subject = match &flag {
-                Some((spelling, name)) => {
+                Some((spelling, name, value)) => {
                     argv.push(spelling.clone());
+                    if let Some(value) = value {
+                        argv.push((*value).to_owned());
+                    }
                     match entry.kind {
                         unavailable::Kind::Command => String::new(),
                         unavailable::Kind::Flag => format!(" --{name}"),
-                        unavailable::Kind::UnscopedSearch => unreachable!(),
+                        unavailable::Kind::UnscopedSearch | unavailable::Kind::Syntax => {
+                            unreachable!()
+                        }
                     }
                 }
                 None => String::new(),
@@ -161,6 +176,19 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
         "every long and short refusal is exercised: {cases}"
     );
     for argv in [
+        vec!["--", "pr", "view", "7", "-R", "octo/hello"],
+        vec!["auth", "login", "--definitely-a-typo"],
+        vec![
+            "pr",
+            "create",
+            "--definitely-a-typo",
+            "--web",
+            "-R",
+            "octo/hello",
+        ],
+        vec!["pr", "create", "-wx", "-R", "octo/hello"],
+        vec!["--", "pr", "view", "--web", "7", "-R", "octo/hello"],
+        vec!["pr", "--", "create", "--web"],
         vec!["definitely-a-typo"],
         vec!["pr", "view", "--definitely-a-typo"],
     ] {
@@ -181,7 +209,97 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
         assert!(stdout.is_empty());
         assert!(stderr.contains("error:"));
     }
+    for value in ["true", "false"] {
+        let argv = vec![
+            "pr".into(),
+            "view".into(),
+            format!("--web={value}"),
+            "7".into(),
+            "-R".into(),
+            "octo/hello".into(),
+        ];
+        let CommandRunOutcome::Failed { error } =
+            runtime.block_on(registry.run_command("gh", &argv, false))?
+        else {
+            panic!("explicit boolean must refuse")
+        };
+        assert_eq!(
+            error.message,
+            "gh pr view --web: not available in this environment (needs a browser or local application)"
+        );
+    }
+    let argv = ["pr", "view", "7", "-R", "octo/hello", "--jq", "--web"].map(str::to_owned);
+    let CommandRunOutcome::Failed { error } =
+        runtime.block_on(registry.run_command("gh", &argv, false))?
+    else {
+        panic!("value-taking flag must consume its value")
+    };
+    assert_eq!(
+        error.message,
+        "gh pr view --jq: not available in this environment (by policy)"
+    );
     for (words, reason) in [
+        (
+            vec!["pr", "create", "-dw", "-R", "octo/hello"],
+            "needs a browser or local application",
+        ),
+        (
+            vec!["pr", "create", "--title", "--", "--web", "-R", "octo/hello"],
+            "needs a browser or local application",
+        ),
+        (
+            vec!["codespace", "ports", "forward", "8080:8080", "-c", "foo"],
+            "needs a dev tunnel or websocket",
+        ),
+        (
+            vec![
+                "codespace",
+                "ports",
+                "forward",
+                "8080:8080",
+                "-R",
+                "octo/hello",
+            ],
+            "needs a dev tunnel or websocket",
+        ),
+        (
+            vec![
+                "codespace",
+                "ports",
+                "visibility",
+                "8080:private",
+                "--repo-owner",
+                "octo",
+            ],
+            "needs a dev tunnel or websocket",
+        ),
+        (
+            vec!["pr", "view", "--web", "7", "-R", "octo/hello"],
+            "needs a browser or local application",
+        ),
+        (
+            vec!["pr", "checks", "--watch", "7", "-R", "octo/hello"],
+            "needs a long-lived invocation",
+        ),
+        (
+            vec!["pr", "create", "-R", "octo/hello", "--title", "x", "--web"],
+            "needs a browser or local application",
+        ),
+        (
+            vec![
+                "attestation",
+                "verify",
+                "f",
+                "-R",
+                "octo/hello",
+                "--bundle-from-oci",
+            ],
+            "needs an OCI registry token exchange",
+        ),
+        (
+            vec!["pr", "checkout", "7", "--worktree", "--web"],
+            "needs a local git checkout",
+        ),
         (
             vec!["pr", "checkout", "7", "-R", "octo/hello"],
             "needs a local git checkout",
@@ -218,6 +336,11 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
         let command = match words[0] {
             "repo" => "repo deploy-key add",
             "pr" if words[1] == "view" => "pr view --web",
+            "pr" if words[1] == "checks" => "pr checks --watch",
+            "pr" if words[1] == "create" => "pr create --web",
+            "attestation" => "attestation verify --bundle-from-oci",
+            "codespace" if words[2] == "forward" => "codespace ports forward",
+            "codespace" => "codespace ports visibility",
             "pr" => "pr checkout",
             "issue" => "issue create --editor",
             "project" => "project view --web",
@@ -635,6 +758,10 @@ fn upstream_shorthands_and_four_finite_routes_keep_their_typed_proposals_in_the_
     };
     assert_eq!(error.message, "gh api: invalid login");
     for words in [
+        vec!["pr", "create", "--title", "--web", "-R", "octo/hello"],
+        vec!["pr", "create", "-t", "--web", "-R", "octo/hello"],
+        vec!["pr", "create", "--title=--web", "-R", "octo/hello"],
+        vec!["pr", "create", "-tweb", "-R", "octo/hello"],
         vec!["release", "view", "--", "--web"],
         vec!["pr", "create"],
         vec!["pr", "close", "7", "-R", "octo/hello"],

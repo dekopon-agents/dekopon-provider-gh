@@ -6,6 +6,20 @@ pub(crate) enum Kind {
     Command,
     Flag,
     UnscopedSearch,
+    Syntax,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Arity {
+    Boolean,
+    Value,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Flag {
+    pub name: &'static str,
+    pub short: Option<char>,
+    pub arity: Arity,
 }
 
 pub(crate) struct Entry {
@@ -15,6 +29,25 @@ pub(crate) struct Entry {
     pub flags: &'static str,
 }
 
+impl Entry {
+    pub(crate) fn flags(&self) -> impl Iterator<Item = Flag> {
+        self.flags.split_whitespace().map(|token| {
+            let (spelling, arity) = token.split_once(':').expect("registry flag arity");
+            let arity = match arity {
+                "bool" => Arity::Boolean,
+                "value" => Arity::Value,
+                _ => unreachable!("closed registry arities"),
+            };
+            let (name, short) = spelling
+                .split_once('/')
+                .map_or((spelling, None), |(name, short)| {
+                    (name, short.chars().next())
+                });
+            Flag { name, short, arity }
+        })
+    }
+}
+
 pub(crate) fn entries() -> impl Iterator<Item = Entry> {
     include_str!("unavailable.tsv").lines().map(|line| {
         let mut fields = line.split('\t');
@@ -22,10 +55,12 @@ pub(crate) fn entries() -> impl Iterator<Item = Entry> {
             "command" => Kind::Command,
             "flag" => Kind::Flag,
             "scope" => Kind::UnscopedSearch,
+            "syntax" => Kind::Syntax,
             _ => unreachable!("closed entry kinds"),
         };
         let command = fields.next().expect("command");
         let reason = match fields.next().expect("reason") {
+            "-" => "",
             "W1" => "needs a local git checkout",
             "W2" => "needs an interactive terminal",
             "W3" => "needs a browser or device OAuth flow",
@@ -72,36 +107,23 @@ fn find_leaf<'a>(
     Some(command)
 }
 
-fn add_leaf<'a>(
-    root: &'a mut Command,
-    mut words: std::str::SplitWhitespace<'static>,
-) -> &'a mut Command {
-    let Some(word) = words.next() else {
-        return root;
-    };
-    if root.find_subcommand(word).is_none() {
-        *root = std::mem::take(root).subcommand(Command::new(word));
-    }
-    add_leaf(
-        root.find_subcommand_mut(word).expect("registered command"),
-        words,
-    )
-}
-
 fn flags(command: &mut Command, entries: &[Entry]) {
     for entry in entries {
         match entry.kind {
             Kind::Command | Kind::Flag => {}
-            Kind::UnscopedSearch => continue,
+            Kind::UnscopedSearch | Kind::Syntax => continue,
         }
-        for flag in entry.flags.split_whitespace() {
-            let (name, short) = split_flag(flag);
-            let mut arg = Arg::new(name)
-                .long(name)
-                .hide(true)
-                .num_args(0..=1)
-                .default_missing_value("");
-            if let Some(short) = short {
+        for flag in entry.flags() {
+            let mut arg = Arg::new(flag.name).long(flag.name).hide(true);
+            arg = match flag.arity {
+                Arity::Boolean => arg
+                    .action(clap::ArgAction::SetTrue)
+                    .num_args(0..=1)
+                    .require_equals(true)
+                    .default_missing_value("true"),
+                Arity::Value => arg.num_args(1).allow_hyphen_values(true),
+            };
+            if let Some(short) = flag.short {
                 if short == 'h' {
                     *command = std::mem::take(command)
                         .disable_help_flag(true)
@@ -112,11 +134,6 @@ fn flags(command: &mut Command, entries: &[Entry]) {
             *command = std::mem::take(command).arg(arg);
         }
     }
-}
-
-fn split_flag(flag: &'static str) -> (&'static str, Option<char>) {
-    flag.split_once('/')
-        .map_or((flag, None), |(name, short)| (name, short.chars().next()))
 }
 
 fn external_commands(mut command: Command) -> Command {
@@ -138,11 +155,14 @@ pub(crate) fn register(mut root: Command) -> Command {
     for (path, entries) in groups() {
         for entry in &entries {
             match entry.kind {
+                Kind::Syntax => {}
                 Kind::Command => help.push_str(&format!("  gh {path} ({})\n", entry.reason)),
                 Kind::Flag => {
-                    for flag in entry.flags.split_whitespace() {
-                        let (name, short) = split_flag(flag);
-                        let short = short.map_or(String::new(), |short| format!("/-{short}"));
+                    for flag in entry.flags() {
+                        let name = flag.name;
+                        let short = flag
+                            .short
+                            .map_or(String::new(), |short| format!("/-{short}"));
                         help.push_str(&format!("  gh {path} --{name}{short} ({})\n", entry.reason));
                     }
                 }
@@ -183,12 +203,15 @@ pub(crate) fn refusal(matches: &ArgMatches) -> Option<Usage> {
     let command = words.join(" ");
     for entry in entries().filter(|entry| entry.command == command) {
         match entry.kind {
+            Kind::Syntax => {}
             Kind::Command => return Some(Usage::new(message(&entry, ""))),
             Kind::Flag => {
-                for flag in entry.flags.split_whitespace() {
-                    let (name, _) = split_flag(flag);
-                    if current.try_get_one::<String>(name).ok().flatten().is_some() {
-                        return Some(Usage::new(message(&entry, &format!(" --{name}"))));
+                for flag in entry.flags() {
+                    if matches!(
+                        current.value_source(flag.name),
+                        Some(clap::parser::ValueSource::CommandLine)
+                    ) {
+                        return Some(Usage::new(message(&entry, &format!(" --{}", flag.name))));
                     }
                 }
             }
@@ -212,6 +235,66 @@ pub(crate) fn refusal(matches: &ArgMatches) -> Option<Usage> {
     None
 }
 
+enum RawFlag {
+    Known(Flag),
+    Unknown(String),
+    MissingValue(Flag),
+}
+
+fn raw_flags(args: &[std::ffi::OsString], known: &[Flag]) -> Vec<RawFlag> {
+    let mut output = Vec::new();
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        let arg = arg.to_string_lossy();
+        if arg == "--" {
+            break;
+        }
+        if let Some(long) = arg.strip_prefix("--") {
+            let (name, inline) = long
+                .split_once('=')
+                .map_or((long, false), |(name, _)| (name, true));
+            match known.iter().find(|flag| flag.name == name) {
+                Some(flag) => {
+                    output.push(RawFlag::Known(*flag));
+                    match flag.arity {
+                        Arity::Boolean => {}
+                        Arity::Value => {
+                            if !inline && args.next().is_none() {
+                                output.push(RawFlag::MissingValue(*flag));
+                            }
+                        }
+                    }
+                }
+                None => output.push(RawFlag::Unknown(arg.into_owned())),
+            }
+        } else if let Some(shorts) = arg.strip_prefix('-') {
+            for (index, short) in shorts.char_indices() {
+                match known.iter().find(|flag| flag.short == Some(short)) {
+                    Some(flag) => {
+                        output.push(RawFlag::Known(*flag));
+                        match flag.arity {
+                            Arity::Boolean => {
+                                if shorts[index + short.len_utf8()..].starts_with('=') {
+                                    break;
+                                }
+                            }
+                            Arity::Value => {
+                                if index + short.len_utf8() == shorts.len() && args.next().is_none()
+                                {
+                                    output.push(RawFlag::MissingValue(*flag));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    None => output.push(RawFlag::Unknown(format!("-{short}"))),
+                }
+            }
+        }
+    }
+    output
+}
+
 pub(crate) fn external_refusal(
     matches: &ArgMatches,
     base: impl FnOnce() -> Command,
@@ -233,71 +316,77 @@ pub(crate) fn external_refusal(
     let groups = groups();
     let candidate = groups
         .iter()
-        .filter(|(path, entries)| {
-            let words: Vec<_> = path.split_whitespace().collect();
-            argv[1..].starts_with(
-                &words
-                    .iter()
-                    .map(std::ffi::OsString::from)
-                    .collect::<Vec<_>>(),
-            ) && entries.iter().any(|entry| match entry.kind {
-                Kind::Command => true,
-                Kind::Flag => entry.flags.split_whitespace().any(|flag| {
-                    let (name, short) = split_flag(flag);
-                    argv.iter()
-                        .take_while(|arg| arg.as_os_str() != std::ffi::OsStr::new("--"))
-                        .any(|arg| {
-                            let arg = arg.to_string_lossy();
-                            arg == format!("--{name}")
-                                || arg.starts_with(&format!("--{name}="))
-                                || short.is_some_and(|short| {
-                                    arg.starts_with(&format!("-{short}")) && !arg.starts_with("--")
-                                })
-                        })
-                }),
-                Kind::UnscopedSearch => false,
-            })
+        .filter_map(|(path, entries)| {
+            let words: Vec<_> = path
+                .split_whitespace()
+                .map(std::ffi::OsString::from)
+                .collect();
+            let args = argv.get(1..)?.strip_prefix(words.as_slice())?;
+            Some((*path, entries, args))
         })
-        .max_by_key(|(path, _)| path.len());
-    let Some((path, entries)) = candidate else {
-        return Err(base()
-            .try_get_matches_from_mut(argv)
-            .expect_err("external command is absent from the supported tree"));
-    };
-    let mut parser = Command::new("gh");
-    let command = add_leaf(&mut parser, path.split_whitespace());
-    *command = std::mem::take(command).arg(
-        Arg::new("arguments")
-            .value_name("ARG")
-            .hide(true)
-            .num_args(0..),
-    );
-    flags(command, entries);
-    if (matches!(
-        path.split_whitespace().next(),
-        Some(
-            "pr" | "issue"
-                | "run"
-                | "release"
-                | "workflow"
-                | "label"
-                | "discussion"
-                | "cache"
-                | "secret"
-                | "variable"
-                | "ruleset"
-        )
-    ) || path.starts_with("repo deploy-key ")
-        || path.starts_with("repo autolink "))
-        && !command.get_arguments().any(|arg| arg.get_id() == "repo")
-    {
-        *command = std::mem::take(command).arg(Arg::new("repo").long("repo").short('R'));
+        .max_by_key(|(path, _, _)| path.len());
+    let mut command = base();
+    if let Some((path, entries, args)) = candidate {
+        let mut known: Vec<_> = entries.iter().flat_map(|entry| entry.flags()).collect();
+        known.push(Flag {
+            name: "help",
+            short: Some('h'),
+            arity: Arity::Boolean,
+        });
+        if matches!(
+            path,
+            "pr checkout" | "run download" | "run watch" | "repo deploy-key add"
+        ) {
+            known.push(Flag {
+                name: "repo",
+                short: Some('R'),
+                arity: Arity::Value,
+            });
+        }
+        let raw = raw_flags(args, &known);
+        let refusal = entries.iter().find_map(|entry| match entry.kind {
+            Kind::Command => Some(Usage::new(message(entry, ""))),
+            Kind::Flag => entry.flags().find_map(|flag| {
+                raw.iter()
+                    .any(|raw| match raw {
+                        RawFlag::Known(found) => found.name == flag.name,
+                        RawFlag::Unknown(_) | RawFlag::MissingValue(_) => false,
+                    })
+                    .then(|| Usage::new(message(entry, &format!(" --{}", flag.name))))
+            }),
+            Kind::UnscopedSearch | Kind::Syntax => None,
+        });
+        if let Some(refusal) = refusal {
+            for flag in raw {
+                match flag {
+                    RawFlag::Known(_) => {}
+                    RawFlag::Unknown(flag) => {
+                        return Err(command.error(
+                            clap::error::ErrorKind::UnknownArgument,
+                            format!("unexpected argument '{flag}' found"),
+                        ));
+                    }
+                    RawFlag::MissingValue(flag) => {
+                        return Err(command.error(
+                            clap::error::ErrorKind::InvalidValue,
+                            format!("a value is required for '--{} <VALUE>'", flag.name),
+                        ));
+                    }
+                }
+            }
+            return Ok(Some(refusal));
+        }
     }
-    let parsed = parser.try_get_matches_from(argv.clone())?;
-    match refusal(&parsed) {
-        Some(refusal) => Ok(Some(refusal)),
-        None => Err(base()
-            .try_get_matches_from_mut(argv)
-            .expect_err("external command is absent from the supported tree")),
+    match command.try_get_matches_from_mut(&argv) {
+        Err(error) => Err(error),
+        Ok(_) => Err(command.error(
+            clap::error::ErrorKind::UnknownArgument,
+            format!(
+                "unexpected argument '{}'",
+                argv.get(1)
+                    .map(|arg| arg.to_string_lossy())
+                    .unwrap_or_default()
+            ),
+        )),
     }
 }
