@@ -1,3 +1,4 @@
+use clap::builder::TypedValueParser;
 use clap::{Arg, ArgMatches, Command};
 use dekopon_provider_sdk::provider::Usage;
 
@@ -143,6 +144,12 @@ fn flag_arg(flag: Flag) -> Arg {
     arg = match flag.arity {
         Arity::Boolean => arg
             .action(clap::ArgAction::SetTrue)
+            .value_parser(
+                clap::builder::PossibleValuesParser::new([
+                    "1", "t", "T", "true", "TRUE", "True", "0", "f", "F", "false", "FALSE", "False",
+                ])
+                .map(|value| matches!(value.as_str(), "1" | "t" | "T" | "true" | "TRUE" | "True")),
+            )
             .num_args(0..=1)
             .require_equals(true)
             .default_missing_value("true"),

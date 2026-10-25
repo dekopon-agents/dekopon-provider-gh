@@ -391,24 +391,36 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
             format!("gh {subject}: not available in this environment ({reason})")
         );
     }
-    for value in ["true", "false"] {
-        let argv = vec![
-            "pr".into(),
-            "view".into(),
-            format!("--web={value}"),
-            "7".into(),
-            "-R".into(),
-            "octo/hello".into(),
-        ];
-        let CommandRunOutcome::Failed { error } =
-            runtime.block_on(registry.run_command("gh", &argv, false))?
-        else {
-            panic!("explicit boolean must refuse")
-        };
-        assert_eq!(
-            error.message,
-            "gh pr view --web: not available in this environment (needs a browser or local application)"
-        );
+    for value in [
+        "true", "false", "1", "t", "T", "TRUE", "True", "0", "f", "F", "FALSE", "False",
+    ] {
+        for (words, flag, expected) in [
+            (
+                vec!["pr", "view", "7", "-R", "octo/hello"],
+                "--web",
+                "gh pr view --web: not available in this environment (needs a browser or local application)",
+            ),
+            (
+                vec!["pr", "view", "7", "-R", "octo/hello"],
+                "-w",
+                "gh pr view --web: not available in this environment (needs a browser or local application)",
+            ),
+            (
+                vec!["auth", "status"],
+                "--show-token",
+                "gh auth status --show-token: not available in this environment (by policy)",
+            ),
+        ] {
+            let mut argv: Vec<_> = words.into_iter().map(str::to_owned).collect();
+            argv.push(format!("{flag}={value}"));
+            let CommandRunOutcome::Failed { error } =
+                runtime.block_on(registry.run_command("gh", &argv, false))?
+            else {
+                panic!("explicit boolean must refuse: {argv:?}")
+            };
+            assert_eq!(error.code, "usage", "{argv:?}");
+            assert_eq!(error.message, expected, "{argv:?}");
+        }
     }
     let argv = ["pr", "view", "7", "-R", "octo/hello", "--jq", "--web"].map(str::to_owned);
     let CommandRunOutcome::Failed { error } =
