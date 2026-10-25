@@ -26,6 +26,7 @@ pub(crate) enum Parsing {
     Flags,
     PassThrough,
     NoPositionals,
+    Group,
 }
 
 pub(crate) struct Entry {
@@ -35,6 +36,7 @@ pub(crate) struct Entry {
     pub flags: &'static str,
     pub parsing: Parsing,
     pub aliases: &'static str,
+    pub inherited: &'static str,
 }
 
 impl Entry {
@@ -91,6 +93,7 @@ pub(crate) fn entries() -> impl Iterator<Item = Entry> {
             None | Some("") => Parsing::Flags,
             Some("pass-through") => Parsing::PassThrough,
             Some("no-positionals") => Parsing::NoPositionals,
+            Some("group") => Parsing::Group,
             Some(_) => unreachable!("closed registry parsing modes"),
         };
         Entry {
@@ -100,6 +103,7 @@ pub(crate) fn entries() -> impl Iterator<Item = Entry> {
             flags,
             parsing,
             aliases: fields.next().unwrap_or_default(),
+            inherited: fields.next().unwrap_or_default(),
         }
     })
 }
@@ -114,56 +118,73 @@ fn groups() -> Groups {
     groups
 }
 
-fn find_leaf<'a>(
-    root: &'a mut Command,
-    words: std::str::SplitWhitespace<'static>,
-) -> Option<&'a mut Command> {
+fn leaf<'a>(root: &'a mut Command, path: &'static str) -> &'a mut Command {
     let mut command = root;
-    for word in words {
-        command = command.find_subcommand_mut(word)?;
+    for word in path.split_whitespace() {
+        if command.find_subcommand(word).is_none() {
+            *command = std::mem::take(command).subcommand(
+                Command::new(word)
+                    .hide(true)
+                    .subcommand_required(true)
+                    .disable_help_flag(true)
+                    .disable_help_subcommand(true),
+            );
+        }
+        command = command.find_subcommand_mut(word).expect("declared command");
     }
-    Some(command)
+    command
 }
 
-fn flags(command: &mut Command, entries: &[Entry]) {
-    for entry in entries {
-        match entry.kind {
-            Kind::Command | Kind::Flag => {}
-            Kind::UnscopedSearch | Kind::Syntax => continue,
-        }
-        for flag in entry.flags() {
-            let mut arg = Arg::new(flag.name).long(flag.name).hide(true);
-            arg = match flag.arity {
-                Arity::Boolean => arg
-                    .action(clap::ArgAction::SetTrue)
-                    .num_args(0..=1)
-                    .require_equals(true)
-                    .default_missing_value("true"),
-                Arity::Value => arg.num_args(1).allow_hyphen_values(true),
-            };
-            if let Some(short) = flag.short {
-                if short == 'h' {
-                    *command = std::mem::take(command)
-                        .disable_help_flag(true)
-                        .arg(Arg::new("help").long("help").action(clap::ArgAction::Help));
-                }
-                arg = arg.short(short);
-            }
-            *command = std::mem::take(command).arg(arg);
-        }
+fn flag_arg(flag: Flag) -> Arg {
+    let mut arg = Arg::new(flag.name).long(flag.name).hide(true);
+    arg = match flag.arity {
+        Arity::Boolean => arg
+            .action(clap::ArgAction::SetTrue)
+            .num_args(0..=1)
+            .require_equals(true)
+            .default_missing_value("true"),
+        Arity::Value => arg.num_args(1).allow_hyphen_values(true),
+    };
+    if let Some(short) = flag.short {
+        arg = arg.short(short);
     }
+    arg
 }
 
-fn external_commands(mut command: Command) -> Command {
+fn required_globals(mut command: Command, inherited: &[clap::Id], path: String) -> Command {
+    let mut globals = inherited.to_vec();
+    globals.extend(
+        command
+            .get_arguments()
+            .filter(|arg| arg.is_global_set())
+            .map(|arg| arg.get_id().clone()),
+    );
+    let required: Vec<_> = command
+        .get_arguments()
+        .filter(|arg| arg.is_required_set() && globals.contains(arg.get_id()))
+        .map(|arg| arg.get_id().clone())
+        .collect();
+    if !required.is_empty() {
+        let usage = command
+            .clone()
+            .bin_name(path.clone())
+            .render_usage()
+            .to_string();
+        command =
+            command.override_usage(usage.strip_prefix("Usage: ").unwrap_or(&usage).to_owned());
+        // Clap validates required flags before propagating globals, so validate these from completed ArgMatches.
+        for id in required {
+            command = command.mut_arg(id, |arg| arg.required(false));
+        }
+    }
     let children: Vec<_> = command
         .get_subcommands()
         .map(|child| child.get_name().to_owned())
         .collect();
-    if !children.is_empty() {
-        command = command.allow_external_subcommands(true);
-        for child in children {
-            command = command.mut_subcommand(child, external_commands);
-        }
+    for name in children {
+        let child_path = format!("{path} {name}");
+        command =
+            command.mut_subcommand(name, |child| required_globals(child, &globals, child_path));
     }
     command
 }
@@ -171,7 +192,23 @@ fn external_commands(mut command: Command) -> Command {
 pub(crate) fn register(mut root: Command) -> Command {
     let mut help = String::from("Not available in this environment:\n");
     for (path, entries) in groups() {
+        let existing = {
+            let mut node = Some(&root);
+            for word in path.split_whitespace() {
+                node = node.and_then(|node| node.find_subcommand(word));
+            }
+            node.is_some()
+        };
+        let command = leaf(&mut root, path);
+        let mut parsing = Parsing::Flags;
         for entry in &entries {
+            *command = std::mem::take(command).aliases(entry.aliases.split_whitespace());
+            match entry.parsing {
+                Parsing::Flags => {}
+                Parsing::PassThrough => parsing = Parsing::PassThrough,
+                Parsing::NoPositionals => parsing = Parsing::NoPositionals,
+                Parsing::Group => parsing = Parsing::Group,
+            }
             match entry.kind {
                 Kind::Syntax => {}
                 Kind::Command => help.push_str(&format!("  gh {path} ({})\n", entry.reason)),
@@ -189,15 +226,67 @@ pub(crate) fn register(mut root: Command) -> Command {
                     entry.reason
                 )),
             }
-        }
-        if let Some(command) = find_leaf(&mut root, path.split_whitespace()) {
-            for entry in &entries {
-                *command = std::mem::take(command).aliases(entry.aliases.split_whitespace());
+            for flag in entry.flags() {
+                if command.get_arguments().any(|arg| arg.get_id() == flag.name) {
+                    continue;
+                }
+                if flag.short == Some('h') {
+                    *command = std::mem::take(command)
+                        .disable_help_flag(true)
+                        .arg(Arg::new("help").long("help").action(clap::ArgAction::Help));
+                }
+                let inherited = entry
+                    .inherited
+                    .split_whitespace()
+                    .any(|name| name == flag.name);
+                *command = std::mem::take(command).arg(flag_arg(flag).global(inherited));
             }
-            flags(command, &entries);
+        }
+        if !existing {
+            *command = std::mem::take(command)
+                .disable_help_flag(true)
+                .disable_help_subcommand(true);
+            if command.get_arguments().any(|arg| arg.get_id() == "help") {
+                *command = std::mem::take(command).mut_arg("help", |arg| {
+                    arg.action(clap::ArgAction::SetTrue)
+                        .num_args(0..=1)
+                        .require_equals(true)
+                        .default_missing_value("true")
+                });
+            } else {
+                let short = (!command
+                    .get_arguments()
+                    .any(|arg| arg.get_short() == Some('h')))
+                .then_some('h');
+                *command = std::mem::take(command).arg(flag_arg(Flag {
+                    name: "help",
+                    short,
+                    arity: Arity::Boolean,
+                }));
+            }
+            match parsing {
+                Parsing::Flags => {
+                    *command = std::mem::take(command)
+                        .subcommand_required(false)
+                        .arg(Arg::new("arguments").hide(true).num_args(0..));
+                }
+                Parsing::PassThrough => {
+                    *command = std::mem::take(command).subcommand_required(false).arg(
+                        Arg::new("arguments")
+                            .hide(true)
+                            .num_args(0..)
+                            .allow_hyphen_values(true)
+                            .trailing_var_arg(true),
+                    );
+                }
+                Parsing::NoPositionals => {
+                    *command = std::mem::take(command).subcommand_required(false);
+                }
+                Parsing::Group => {}
+            }
         }
     }
-    external_commands(root.after_help(help))
+    required_globals(root.after_help(help), &[], "gh".to_owned())
 }
 
 fn message(entry: &Entry, subject: &str) -> String {
@@ -254,269 +343,4 @@ pub(crate) fn refusal(matches: &ArgMatches) -> Option<Usage> {
         }
     }
     None
-}
-
-enum RawFlag {
-    Known(Flag),
-    Unknown(String),
-    MissingValue(Flag),
-    Positional(String),
-}
-
-fn raw_flags(args: &[std::ffi::OsString], known: &[Flag]) -> Vec<RawFlag> {
-    let mut output = Vec::new();
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        let arg = arg.to_string_lossy();
-        if arg == "--" {
-            output.extend(args.map(|arg| RawFlag::Positional(arg.to_string_lossy().into_owned())));
-            break;
-        }
-        if let Some(long) = arg.strip_prefix("--") {
-            let (name, inline) = long
-                .split_once('=')
-                .map_or((long, false), |(name, _)| (name, true));
-            match known.iter().find(|flag| flag.name == name) {
-                Some(flag) => {
-                    output.push(RawFlag::Known(*flag));
-                    match flag.arity {
-                        Arity::Boolean => {}
-                        Arity::Value => {
-                            if !inline && args.next().is_none() {
-                                output.push(RawFlag::MissingValue(*flag));
-                            }
-                        }
-                    }
-                }
-                None => output.push(RawFlag::Unknown(arg.into_owned())),
-            }
-        } else if let Some(shorts) = arg.strip_prefix('-') {
-            for (index, short) in shorts.char_indices() {
-                match known.iter().find(|flag| flag.short == Some(short)) {
-                    Some(flag) => {
-                        output.push(RawFlag::Known(*flag));
-                        match flag.arity {
-                            Arity::Boolean => {
-                                if shorts[index + short.len_utf8()..].starts_with('=') {
-                                    break;
-                                }
-                            }
-                            Arity::Value => {
-                                if index + short.len_utf8() == shorts.len() && args.next().is_none()
-                                {
-                                    output.push(RawFlag::MissingValue(*flag));
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    None => output.push(RawFlag::Unknown(format!("-{short}"))),
-                }
-            }
-        } else {
-            output.push(RawFlag::Positional(arg.into_owned()));
-        }
-    }
-    output
-}
-
-fn inherited_option_len(args: &[std::ffi::OsString], known: &[Flag]) -> Option<usize> {
-    let arg = args.first()?.to_str()?;
-    if let Some(long) = arg.strip_prefix("--") {
-        let (name, inline) = long
-            .split_once('=')
-            .map_or((long, false), |(name, _)| (name, true));
-        let flag = known.iter().find(|flag| flag.name == name)?;
-        return Some(match flag.arity {
-            Arity::Boolean => 1,
-            Arity::Value => {
-                if inline {
-                    1
-                } else {
-                    2
-                }
-            }
-        });
-    }
-    let shorts = arg.strip_prefix('-')?;
-    for (index, short) in shorts.char_indices() {
-        let flag = known.iter().find(|flag| flag.short == Some(short))?;
-        match flag.arity {
-            Arity::Boolean => {
-                if shorts[index + short.len_utf8()..].starts_with('=') {
-                    return Some(1);
-                }
-            }
-            Arity::Value => {
-                return Some(if index + short.len_utf8() == shorts.len() {
-                    2
-                } else {
-                    1
-                });
-            }
-        }
-    }
-    (!shorts.is_empty()).then_some(1)
-}
-
-fn command_args(
-    path: &str,
-    argv: &[std::ffi::OsString],
-    groups: &Groups,
-) -> Option<Vec<std::ffi::OsString>> {
-    let mut args = argv;
-    let mut retained = Vec::new();
-    let mut prefix = String::new();
-    for word in path.split_whitespace() {
-        let inherited: Vec<_> = groups
-            .get(prefix.as_str())
-            .into_iter()
-            .flatten()
-            .flat_map(|entry| entry.flags())
-            .collect();
-        while let Some(count) = inherited_option_len(args, &inherited) {
-            retained.extend_from_slice(args.get(..count)?);
-            args = args.get(count..)?;
-        }
-        if !prefix.is_empty() {
-            prefix.push(' ');
-        }
-        prefix.push_str(word);
-        let actual = args.first()?.to_str()?;
-        if actual != word
-            && !groups
-                .get(prefix.as_str())
-                .into_iter()
-                .flatten()
-                .any(|entry| {
-                    entry
-                        .aliases
-                        .split_whitespace()
-                        .any(|alias| alias == actual)
-                })
-        {
-            return None;
-        }
-        args = &args[1..];
-    }
-    retained.extend_from_slice(args);
-    Some(retained)
-}
-
-pub(crate) fn external_refusal(
-    matches: &ArgMatches,
-    base: impl FnOnce() -> Command,
-) -> Result<Option<Usage>, clap::Error> {
-    let mut current = matches;
-    let mut argv = vec![std::ffi::OsString::from("gh")];
-    while let Some((name, child)) = current.subcommand() {
-        argv.push(name.into());
-        current = child;
-    }
-    let Some(raw) = current
-        .try_get_many::<std::ffi::OsString>("")
-        .ok()
-        .flatten()
-    else {
-        return Ok(None);
-    };
-    argv.extend(raw.cloned());
-    let groups = groups();
-    let candidate = groups
-        .iter()
-        .filter_map(|(path, entries)| {
-            let args = command_args(path, argv.get(1..)?, &groups)?;
-            Some((*path, entries, args))
-        })
-        .max_by_key(|(path, _, _)| path.len());
-    let mut command = base();
-    if let Some((path, entries, args)) = candidate {
-        for entry in entries {
-            match entry.parsing {
-                Parsing::Flags | Parsing::NoPositionals => {}
-                Parsing::PassThrough => return Ok(Some(Usage::new(message(entry, "")))),
-            }
-        }
-        let mut known: Vec<_> = entries.iter().flat_map(|entry| entry.flags()).collect();
-        known.push(Flag {
-            name: "help",
-            short: Some('h'),
-            arity: Arity::Boolean,
-        });
-        if matches!(
-            path,
-            "pr checkout" | "run download" | "run watch" | "repo deploy-key add"
-        ) {
-            known.push(Flag {
-                name: "repo",
-                short: Some('R'),
-                arity: Arity::Value,
-            });
-        }
-        let raw = raw_flags(&args, &known);
-        for entry in entries {
-            match entry.parsing {
-                Parsing::Flags | Parsing::PassThrough => {}
-                Parsing::NoPositionals => {
-                    for arg in &raw {
-                        match arg {
-                            RawFlag::Known(_) | RawFlag::Unknown(_) | RawFlag::MissingValue(_) => {}
-                            RawFlag::Positional(word) => {
-                                return Err(command.error(
-                                    clap::error::ErrorKind::UnknownArgument,
-                                    format!("unexpected argument '{word}' found"),
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let refusal = entries.iter().find_map(|entry| match entry.kind {
-            Kind::Command => Some(Usage::new(message(entry, ""))),
-            Kind::Flag => entry.flags().find_map(|flag| {
-                raw.iter()
-                    .any(|raw| match raw {
-                        RawFlag::Known(found) => found.name == flag.name,
-                        RawFlag::Unknown(_) | RawFlag::MissingValue(_) | RawFlag::Positional(_) => {
-                            false
-                        }
-                    })
-                    .then(|| Usage::new(message(entry, &format!(" --{}", flag.name))))
-            }),
-            Kind::UnscopedSearch | Kind::Syntax => None,
-        });
-        if let Some(refusal) = refusal {
-            for flag in raw {
-                match flag {
-                    RawFlag::Known(_) | RawFlag::Positional(_) => {}
-                    RawFlag::Unknown(flag) => {
-                        return Err(command.error(
-                            clap::error::ErrorKind::UnknownArgument,
-                            format!("unexpected argument '{flag}' found"),
-                        ));
-                    }
-                    RawFlag::MissingValue(flag) => {
-                        return Err(command.error(
-                            clap::error::ErrorKind::InvalidValue,
-                            format!("a value is required for '--{} <VALUE>'", flag.name),
-                        ));
-                    }
-                }
-            }
-            return Ok(Some(refusal));
-        }
-    }
-    match command.try_get_matches_from_mut(&argv) {
-        Err(error) => Err(error),
-        Ok(_) => Err(command.error(
-            clap::error::ErrorKind::UnknownArgument,
-            format!(
-                "unexpected argument '{}'",
-                argv.get(1)
-                    .map(|arg| arg.to_string_lossy())
-                    .unwrap_or_default()
-            ),
-        )),
-    }
 }

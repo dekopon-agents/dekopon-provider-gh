@@ -9,7 +9,7 @@ command	codespace code	W5	codespace/c:value repo/R:value repo-owner:value inside
 command	codespace cp	W7	recursive/r:bool expand/e:bool codespace/c:value repo/R:value repo-owner:value profile/p:value
 command	codespace jupyter	W7	codespace/c:value repo/R:value repo-owner:value
 command	codespace logs	W7	codespace/c:value repo/R:value repo-owner:value follow/f:bool
-command	codespace ports	W7	codespace/c:value repo/R:value repo-owner:value jq/q:value json:value template/t:value	no-positionals
+command	codespace ports	W7	codespace/c:value repo/R:value repo-owner:value jq/q:value json:value template/t:value	no-positionals		codespace repo repo-owner
 command	codespace ports forward	W7	all-interfaces:bool codespace/c:value repo/R:value repo-owner:value
 command	codespace ports visibility	W7	codespace/c:value repo/R:value repo-owner:value
 command	codespace rebuild	W7	codespace/c:value repo/R:value repo-owner:value full:bool
@@ -247,9 +247,20 @@ syntax	variable get	-	env/e:value json:value org/o:value repo/R:value
 syntax	variable list	-	env/e:value json:value org/o:value repo/R:value
 syntax	workflow list	-	all/a:bool json:value limit/L:value repo/R:value
 syntax	workflow view	-	ref/r:value repo/R:value yaml/y:bool
-syntax	codespace	-			cs
-syntax	extension	-			extensions ext
-syntax	skill	-			skills
-syntax	attestation	-			at
-syntax	agent-task	-			agent-tasks agent agents
-syntax	ruleset	-			rs
+syntax	codespace	-		group	cs
+syntax	extension	-		group	extensions ext
+syntax	skill	-		group	skills
+syntax	attestation	-		group	at
+syntax	agent-task	-		group	agent-tasks agent agents
+syntax	ruleset	-	repo/R:value	group	rs	repo
+syntax	pr	-	repo/R:value	group		repo
+syntax	issue	-	repo/R:value	group		repo
+syntax	release	-	repo/R:value	group		repo
+syntax	run	-	repo/R:value	group		repo
+syntax	workflow	-	repo/R:value	group		repo
+syntax	cache	-	repo/R:value	group		repo
+syntax	secret	-	repo/R:value	group		repo
+syntax	variable	-	repo/R:value	group		repo
+syntax	label	-	repo/R:value	group		repo
+syntax	repo autolink	-	repo/R:value	group		repo
+syntax	repo deploy-key	-	repo/R:value	group		repo

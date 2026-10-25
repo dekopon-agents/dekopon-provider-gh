@@ -50,7 +50,8 @@ impl CommandFactory for GhArgs {
 }
 impl FromArgMatches for GhArgs {
     fn from_arg_matches(matches: &ArgMatches) -> Result<Self, clap::Error> {
-        let external = crate::unavailable::external_refusal(matches, supported_tree)?;
+        let external = crate::unavailable::refusal(matches);
+        validate_supported_arguments(matches, external.as_ref())?;
         if external.is_none()
             && let Some((name, _)) = matches.subcommand()
             && let Some(text) = pure_text(name)
@@ -76,42 +77,47 @@ impl FromArgMatches for GhArgs {
 }
 impl Parser for GhArgs {}
 
-#[cfg(not(gh_foundation_fixture))]
-pub(crate) fn run_command(argv: &[String], stdin_piped: bool) -> String {
-    // Clap drops separators before external commands, so check them at the raw argv boundary.
-    if argv.iter().any(|word| word == "--") {
-        let grammar = supported_tree();
-        let mut group = &grammar;
-        for (index, word) in argv.iter().enumerate() {
-            if word == "--" {
-                if group.has_subcommands()
-                    && let Some(value) = argv.get(index + 1)
-                {
-                    let name = std::iter::once("gh")
-                        .chain(argv[..index].iter().map(String::as_str))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    let mut command = group.clone().bin_name(name);
-                    let error = command.error(
-                        clap::error::ErrorKind::UnknownArgument,
-                        format!("unexpected argument '{value}' found"),
-                    );
-                    let outcome = dekopon_provider_sdk::CommandRunOutcome::Rendered {
-                        stdout: String::new(),
-                        stderr: error.render().to_string(),
-                        status: 2,
-                    };
-                    return serde_json::to_string(&outcome).unwrap_or_else(|_| r#"{"outcome":"failed","error":{"code":"serialization-failed","message":"command run could not be serialized"}}"#.to_owned());
+fn validate_supported_arguments(
+    matches: &ArgMatches,
+    refusal: Option<&Usage>,
+) -> Result<(), clap::Error> {
+    let mut grammar = supported_tree();
+    grammar.build();
+    let mut command = &grammar;
+    let mut matches = matches;
+    let mut path = String::from("gh");
+    while let Some((name, child)) = matches.subcommand() {
+        match command.find_subcommand(name) {
+            Some(next) => command = next,
+            None => {
+                if refusal.is_some() {
+                    return Ok(());
                 }
-                break;
-            }
-            match group.find_subcommand(word) {
-                Some(child) => group = child,
-                None => break,
+                return Err(command.clone().bin_name(path).error(
+                    clap::error::ErrorKind::InvalidSubcommand,
+                    format!("unrecognized subcommand '{name}'"),
+                ));
             }
         }
+        path.push(' ');
+        path.push_str(name);
+        matches = child;
     }
-    dekopon_provider_sdk::__typed_run_command::<crate::Gh>(argv, stdin_piped)
+    let missing: Vec<_> = command
+        .get_arguments()
+        .filter(|arg| arg.is_required_set() && !matches.contains_id(arg.get_id().as_str()))
+        .map(ToString::to_string)
+        .collect();
+    if !missing.is_empty() {
+        return Err(command.clone().bin_name(path).error(
+            clap::error::ErrorKind::MissingRequiredArgument,
+            format!(
+                "the following required arguments were not provided:\n  {}",
+                missing.join("\n  ")
+            ),
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn propose(args: GhArgs, stdin_piped: bool) -> Result<Proposal<crate::Gh>, Usage> {
@@ -963,8 +969,10 @@ mod tests {
         }
     }
     fn run(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, ProviderError> {
-        match serde_json::from_str::<CommandRunOutcome>(&super::run_command(argv, stdin.is_some()))
-            .expect("command outcome JSON")
+        match serde_json::from_str::<CommandRunOutcome>(
+            &dekopon_provider_sdk::__typed_run_command::<crate::Gh>(argv, stdin.is_some()),
+        )
+        .expect("command outcome JSON")
         {
             CommandRunOutcome::Proposed {
                 capability, input, ..

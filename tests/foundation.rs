@@ -181,6 +181,7 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
         vec!["--", "pr", "view", "7", "-R", "octo/hello"],
         vec!["auth", "login", "--definitely-a-typo"],
         vec!["codespace", "ports", "bogus"],
+        vec!["codespace", "ports", "-", "-c", "demo"],
         vec!["cs", "ports", "-c", "demo", "bogus"],
         vec![
             "pr",
@@ -214,6 +215,41 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
         assert!(stderr.contains("error:"));
     }
     for (argv, subject, reason) in [
+        (
+            vec!["pr", "-R", "octo/hello", "view", "7", "--web"],
+            "pr view --web",
+            "needs a browser or local application",
+        ),
+        (
+            vec!["pr", "-R", "octo/hello", "ls", "--web"],
+            "pr list --web",
+            "needs a browser or local application",
+        ),
+        (
+            vec!["pr", "-R", "octo/hello", "checkout", "7"],
+            "pr checkout",
+            "needs a local git checkout",
+        ),
+        (
+            vec!["pr", "-R", "octo/hello", "co", "7"],
+            "pr checkout",
+            "needs a local git checkout",
+        ),
+        (
+            vec!["pr", "co", "7", "-R", "octo/hello"],
+            "pr checkout",
+            "needs a local git checkout",
+        ),
+        (
+            vec!["run", "-R", "octo/hello", "watch", "7"],
+            "run watch",
+            "needs a long-lived invocation",
+        ),
+        (
+            vec!["run", "watch", "7", "-R", "octo/hello"],
+            "run watch",
+            "needs a long-lived invocation",
+        ),
         (
             vec![
                 "codespace",
@@ -705,6 +741,14 @@ fn upstream_shorthands_and_four_finite_routes_keep_their_typed_proposals_in_the_
         BrokerHostLimits::default(),
     ))?;
     for (short, long) in [
+        (
+            vec!["pr", "-R", "octo/hello", "ls"],
+            vec!["pr", "list", "-R", "octo/hello"],
+        ),
+        (
+            vec!["pr", "--repo=octo/hello", "view", "7"],
+            vec!["pr", "view", "7", "-R", "octo/hello"],
+        ),
         (
             vec!["issue", "comment", "7", "-R", "octo/hello", "-F", "-"],
             vec![

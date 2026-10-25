@@ -64,10 +64,10 @@ clap usage errors. Unbuilt Buildable commands retain their base clap usage error
 refused flag is present alongside valid upstream options. Required arguments on supported
 commands stay required; flag refusals name the canonical long flag and scope refusals name the
 missing `--owner` or `-R` scope. Registry arities distinguish booleans from value-taking options.
-Syntax-only rows describe upstream options on unbuilt commands solely to recognize real refused
-flags among values and shorthand clusters; they expose no new commands or capability inputs.
-The guest checks group-leading `--` separators before clap discards their raw position, using
-the same SDK WIT bindings and unchanged describe/invoke handlers.
+Syntax rows supply clap's closed option grammar for unbuilt commands. Hidden command and
+flag declarations let clap resolve aliases, inherited options, values, shorthand clusters, and
+separators before selecting a refusal. They expose no new capability inputs or HTTP authority.
+The component uses the standard SDK export and clap parser, with no second argv tokenizer.
 Supported upstream shorthands include `-F` for `--body-file`, review `-a/-c/-r`, merge `-m/-r/-s`,
 list `-s`, and PR-list `-A`, alongside `-R`, `-L`, and `-b`. The four finite `gh api` reads
 return bounded upstream JSON objects. Direct typed invocation retains JSON output; failures
