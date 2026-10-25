@@ -646,6 +646,8 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "dekopon-broker-host",
+ "dekopon-capability",
+ "dekopon-core",
  "dekopon-provider-sdk",
  "dekopon-provider-sdk-testkit",
  "schemars",
