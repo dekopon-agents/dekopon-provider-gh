@@ -1,7 +1,7 @@
 # Guidance for coding agents
 
 The GitHub provider for Dekopon: one Wasm component, twenty-four narrow capabilities, no arbitrary
-`gh api` passthrough. [README.md](README.md) is the design; read the section your change touches.
+`gh api` passthrough. Foundation helpers add no production capability; the count remains twenty-four. [README.md](README.md) is the design; read the section your change touches.
 
 ## Contract
 
@@ -33,6 +33,7 @@ A PR passes `ci / validate` before merge, the shared job in
 git clone --depth 1 https://github.com/dekopon-agents/provider-workflows ../provider-workflows
 cargo fmt --all --check
 cargo deny --all-features check bans licenses sources advisories
+cargo deny --manifest-path tests/fixtures/Cargo.toml --config deny.toml --all-features check bans licenses sources advisories
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo clippy --locked --package dekopon-gh-provider --lib --target wasm32-unknown-unknown -- -D warnings
 ../provider-workflows/build.sh
@@ -40,7 +41,9 @@ DEKOPON_PROVIDER_COMPONENT="$PWD/gh-provider.wasm" cargo test --locked --workspa
 ```
 
 Pins are exact (`rust-toolchain.toml`, wasm-tools 1.259.0) because `build.sh` asserts
-reproducible bytes. Nothing in the suite contacts GitHub.
+reproducible bytes. Nothing in the suite contacts GitHub. The foundation component tests build an isolated GraphQL
+fixture with the same pinned Rust and wasm-tools; its lock is also gated by cargo deny in CI.
+The fixture uses a test-build-only cfg, not a Cargo feature; its capability is never exported by the production build.
 
 ## Change rules
 

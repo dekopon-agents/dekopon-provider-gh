@@ -20,6 +20,7 @@ pub(crate) const CHECKS: &str =
 
 pub(crate) fn fields(area: &str, verb: &str) -> Option<String> {
     let common = match (area, verb) {
+        ("auth", "status") => "limit,remaining,reset,tokenExpiration,scopes",
         ("pr", "list" | "view") => PR,
         ("issue", "list" | "view") => ISSUE,
         ("repo", "view" | "list") => REPO,
@@ -57,6 +58,7 @@ pub(crate) fn validate_selection(
         return Err(crate::invalid_input());
     };
     let (area, verb) = match (id, kind.and_then(Value::as_str)) {
+        ("gh.auth.status", None) => ("auth", "status"),
         ("gh.repo.read", None) => ("repo", "view"),
         ("gh.repo.list", None) => ("repo", "list"),
         ("gh.content.read", Some("read-file")) => ("repo", "read-file"),
@@ -185,6 +187,11 @@ pub(crate) fn render(
     }
     if !selection.is_empty() {
         return serde_json::to_string(&select(source, selection, list))
+            .map(|text| format!("{text}\n"))
+            .map_err(|_| crate::invalid_response());
+    }
+    if id == crate::ids::AUTH_STATUS {
+        return serde_json::to_string(source)
             .map(|text| format!("{text}\n"))
             .map_err(|_| crate::invalid_response());
     }

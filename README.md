@@ -23,11 +23,13 @@ gh issue comment 3 -R owner/repo --body "..."
 echo "ship it" | gh pr review 7 -R owner/repo --comment --body-file -
 ```
 
+`gh version`, `gh licenses`, `gh actions`, and `gh accessibility` print local component information without a capability or HTTP call.
+
 `gh --help` and `gh pr view --help` render on stdout at status 0; `gh bogus` and a missing argument
 render a usage error on stderr at status 2, so `$(gh bogus)` captures nothing while the error still
 reaches the model. Neither renders from the network or grants anything.
 
-Every other argv maps to exactly one `gh.*` capability. The rewrite is a pure function that
+Every supported operation maps to exactly one `gh.*` capability. The rewrite is a pure function that
 *proposes*: the broker then authorizes it on the identical path a direct
 `gh.pull-request.read --number 7` takes. Naming a capability the caller was not granted produces a
 denial, not an escalation.
@@ -54,7 +56,20 @@ paths may use the requested owner/repository or `/repositories/ID` with the ID f
 the metadata response’s `base.repo.id`. Only the consecutive `page` changes. Reviews and comments retain their existing one-page bounds.
 A text field cut at its byte bound ends, in JSON and text alike, with the line
 `[dekopon: truncated to N bytes of M]`.
-`--jq`, `--template`, `--web` and `--checkout` still refuse. The four finite `gh api` reads
+Upstream commands and flags classified as Backburner or Excluded refuse before HTTP with
+`gh <cmd> [flag or scope]: not available in this environment (<reason>)`. The registry in
+[`src/unavailable.tsv`](src/unavailable.tsv) supplies both refusals and the single
+“Not available in this environment” section in `gh --help`. Unknown commands and flags retain
+clap usage errors. Unbuilt Buildable commands retain their base clap usage errors unless an actual
+refused flag is present alongside valid upstream options. Required arguments on supported
+commands stay required; flag refusals name the canonical long flag and scope refusals name the
+missing `--owner` or `-R` scope. Registry arities distinguish booleans from value-taking options.
+Syntax rows supply clap's closed option grammar for unbuilt commands. Hidden command and
+flag declarations let clap resolve aliases, inherited options, values, shorthand clusters, and
+separators before selecting a refusal. They expose no new capability inputs or HTTP authority.
+The component uses the standard SDK export and clap parser, with no second argv tokenizer.
+Supported upstream shorthands include `-F` for `--body-file`, review `-a/-c/-r`, merge `-m/-r/-s`,
+list `-s`, and PR-list `-A`, alongside `-R`, `-L`, and `-b`. The four finite `gh api` reads
 return bounded upstream JSON objects. Direct typed invocation retains JSON output; failures
 write to stderr with a nonzero status. Filter stdout with the shell's
 `jq` builtin.
@@ -131,7 +146,16 @@ before the pre-read; GitHub's merge SHA guard also checks the subsequent write.
 The [reviewer example](examples/pr-summarizer-linter/README.md)
 shows the broker grant steps. `gh.auth.status` is read-only, Low risk, and needs one allowed GET.
 It reports quota and available credential-header metadata, not repository visibility or credential
-kind.
+kind. `gh auth status --active` (`-a`) is a no-op for the single broker-bound credential.
+`--json limit,remaining,reset,tokenExpiration,scopes` selects a closed subset of those fields;
+`{}` and plain `gh auth status` retain their existing full JSON response. The optional internal
+`_cliOutput` selection follows the existing command convention; it adds no HTTP authority.
+
+GraphQL-backed reads need `POST` in `allowedMethods`, even though their capability effect is
+read-only. The HTTP grant cannot distinguish a query from a mutation: fixed component-owned
+documents and typed variables provide that guarantee. No existing read in this batch switches
+from REST to GraphQL or changes its grant. The foundation helper is exercised by an isolated
+component fixture; it exposes no new production capability. There remain twenty-four capabilities.
 
 For fine-grained PATs and GitHub App installations, grant repository permissions for the
 capabilities you enable (Read unless marked Write):
@@ -213,6 +237,10 @@ same two pins, it lands on the same bytes on any machine. CI runs the same scrip
 
 `DEKOPON_PROVIDER_COMPONENT="$PWD/gh-provider.wasm" cargo test --locked --workspace` runs native
 contract tests and real-component conformance against the built artifact; nothing contacts GitHub.
+The foundation suite builds an isolated GraphQL fixture using the pinned toolchain and
+`wasm-tools`; its test-only `gh.foundation.read-repository-node` capability is absent from the production manifest.
+The fixture is selected only by the test build cfg `gh_foundation_fixture`, not a default or
+published Cargo feature. CI applies the root deny policy to both Cargo lockfiles.
 
 `tests/cassettes/gh/` holds GitHub exchanges recorded with `cassette record --upstream
 gh=https://api.github.com` and `baseUrl: http://127.0.0.1:<port>/gh`, the port you pass to

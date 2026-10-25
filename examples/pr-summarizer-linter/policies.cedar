@@ -20,7 +20,7 @@ permit(principal == Dekopon::Principal::"maintainer",
 when { context has via && context.via == "dekopon-gatewayd" };
 
 // Capability surface: driving the agent implies none of these actions, and holding these actions
-// implies no session. `context.via` keeps attested and direct authority disjoint; `context.agent`
+// implies no session. Command shorthands propose these same capability actions. `context.via` keeps attested and direct authority disjoint; `context.agent`
 // pins the surface to this one agent. Approval, request-changes, and merge are deliberately absent.
 @id("pr-summarizer-linter-gh-surface")
 permit(principal == Dekopon::Principal::"maintainer",

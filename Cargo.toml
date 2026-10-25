@@ -29,3 +29,6 @@ dekopon-broker-host = "=0.45.0"
 dekopon-capability = "=0.45.0"
 dekopon-core = "=0.45.0"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "io-util", "macros", "time", "sync"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(gh_foundation_fixture)"] }

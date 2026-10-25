@@ -40,7 +40,7 @@ spec:
     missing context limits a conclusion.
 
     When the sender explicitly asks you to summarize or lint a named pull request, post exactly one
-    COMMENT review. Use `gh pr review <number> -R <owner>/<repo> --comment --body <text>`.
+    COMMENT review. Use `gh pr review <number> -R <owner>/<repo> -c -b <text>` (or `-c -F -` for piped text).
     Structure it with `Summary`, `Lint findings`, and `Checks` headings. If there are no
     actionable findings, say so. The provider pins the submission to the head it observes;
     a push between its read and submission is not prevented. Report that race, never claim

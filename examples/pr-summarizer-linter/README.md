@@ -5,10 +5,17 @@ answer while the pull request gets one `COMMENT` review containing the summary, 
 findings, and check status.
 
 The gateway authenticates the message and vouches for the sender; it decides nothing. The broker
-maps that Slack subject to the principal `maintainer`, checks Cedar policy, exposes six narrow
+maps that Slack subject to the principal `maintainer`, checks Cedar policy, exposes five narrow
 capabilities, injects a GitHub token bound to `api.github.com`, executes the `gh` WebAssembly
 component, and hash-links every decision and result into an audit chain naming the person who
 asked. The token is never visible to the model, shell session, agent, or component that uses it.
+
+The provider still exports twenty-four production capabilities; this example grants five.
+Upstream shorthands select the same grants: `gh pr review ... -c -b <text>` is equivalent to
+`--comment --body <text>`, and `-F -` reads a piped body. Unsupported upstream operations refuse
+before HTTP; `gh --help` lists their reasons. `gh version`, `licenses`, `actions`, and
+`accessibility` are pure local output. Future GraphQL-backed reads need an explicit POST grant;
+this example's existing REST read grants stay GET-only.
 
 This workflow can comment. It cannot approve, request changes, or merge. Those are separate `gh`
 capabilities absent from the catalog, policy, and broker constraint sets, and tests prove the
@@ -70,7 +77,7 @@ provider input paths and therefore cannot restrict `owner/repo` itself.
 
 Classic PAT and GitHub App installation-token setup, plus the credential error messages, are
 covered in the [provider authentication guide](../../README.md#credentials-and-authentication-status).
-`gh auth status` is the separate read-only `gh.auth.status` capability. This five-capability reviewer
+`gh auth status --json limit,remaining,reset` uses the separate read-only `gh.auth.status` capability. This five-capability reviewer
 does not grant it: to enable it, an owner must add it to the catalog and policy and give it its own
 Low-risk, read-only constraint set with the same credential and one GET request. A successful
 quota check does not establish access to a particular repository.
@@ -145,7 +152,7 @@ dekopon-gatewayd --config gatewayd.yaml
 ```
 
 `capability.count: 0` is intentional. The startup probe asks what the gateway’s own direct identity
-may do; both Cedar statements require an attested sender and agent. The gateway reaches the six
+may do; both Cedar statements require an attested sender and agent. The gateway reaches the five
 capabilities only while vouching for an allowed Slack subject. `gh repo list OWNER` is a separate
 `gh.repo.list` read grant; this example does not grant it.
 

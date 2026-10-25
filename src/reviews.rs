@@ -213,9 +213,14 @@ pub(crate) fn merge(
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
     validate_expected_sha(input.expected_head_sha.as_deref())?;
-    let pull = fetch_pull(send, base, &input.owner, &input.repo, input.number)?;
-    require_open(&pull)?;
-    require_expected_head(&pull, input.expected_head_sha.as_deref())?;
+    let pull = pinned_pull(
+        send,
+        base,
+        &input.owner,
+        &input.repo,
+        input.number,
+        input.expected_head_sha.as_deref(),
+    )?;
 
     let uri = url(
         base,
@@ -260,6 +265,20 @@ pub(crate) fn merge(
         "headSha": pull.head.sha,
         "message": message,
     }))
+}
+
+pub(crate) fn pinned_pull(
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+    base: &Base,
+    owner: &str,
+    repo: &str,
+    number: u32,
+    expected: Option<&str>,
+) -> Result<RawPull, ProviderError> {
+    let pull = fetch_pull(send, base, owner, repo, number)?;
+    require_open(&pull)?;
+    require_expected_head(&pull, expected)?;
+    Ok(pull)
 }
 
 /// Refuses closed or merged pull requests before any write is constructed.

@@ -39,7 +39,7 @@ const API_HELP: &str = "gh api accepts only user, users/LOGIN, repos/OWNER/REPO/
 /// `stdin` is the value piped into the word, `None` when nothing was piped. It is read by
 /// `--body-file -`, the one place text of unbounded length is an argument; the rest of the
 /// surface is flags and identifiers.
-pub struct GhArgs(ArgMatches);
+pub struct GhArgs(ArgMatches, Option<Usage>);
 impl CommandFactory for GhArgs {
     fn command() -> Command {
         tree()
@@ -50,7 +50,19 @@ impl CommandFactory for GhArgs {
 }
 impl FromArgMatches for GhArgs {
     fn from_arg_matches(matches: &ArgMatches) -> Result<Self, clap::Error> {
-        Ok(Self(matches.clone()))
+        let external = crate::unavailable::refusal(matches);
+        validate_supported_arguments(matches, external.as_ref())?;
+        if external.is_none()
+            && let Some((name, _)) = matches.subcommand()
+            && let Some(text) = pure_text(name)
+            && crate::unavailable::refusal(matches).is_none()
+        {
+            return Err(Command::new("gh")
+                .override_help(format!("{text}\n"))
+                .try_get_matches_from(["gh", "--help"])
+                .expect_err("pure commands render help"));
+        }
+        Ok(Self(matches.clone(), external))
     }
     fn from_arg_matches_mut(matches: &mut ArgMatches) -> Result<Self, clap::Error> {
         Self::from_arg_matches(matches)
@@ -65,16 +77,55 @@ impl FromArgMatches for GhArgs {
 }
 impl Parser for GhArgs {}
 
-pub(crate) fn propose(args: GhArgs, stdin_piped: bool) -> Result<Proposal<crate::Gh>, Usage> {
-    for (flag, reason) in REJECTED_FLAGS {
-        if args.0.contains_id(flag.trim_start_matches('-'))
-            && args
-                .0
-                .get_one::<String>(flag.trim_start_matches('-'))
-                .is_some()
-        {
-            return Err(Usage::new(format!("gh: {flag} is not supported: {reason}")));
+fn validate_supported_arguments(
+    matches: &ArgMatches,
+    refusal: Option<&Usage>,
+) -> Result<(), clap::Error> {
+    let mut grammar = supported_tree();
+    grammar.build();
+    let mut command = &grammar;
+    let mut matches = matches;
+    let mut path = String::from("gh");
+    while let Some((name, child)) = matches.subcommand() {
+        match command.find_subcommand(name) {
+            Some(next) => command = next,
+            None => {
+                if refusal.is_some() {
+                    return Ok(());
+                }
+                return Err(command.clone().bin_name(path).error(
+                    clap::error::ErrorKind::InvalidSubcommand,
+                    format!("unrecognized subcommand '{name}'"),
+                ));
+            }
         }
+        path.push(' ');
+        path.push_str(name);
+        matches = child;
+    }
+    let missing: Vec<_> = command
+        .get_arguments()
+        .filter(|arg| arg.is_required_set() && !matches.contains_id(arg.get_id().as_str()))
+        .map(ToString::to_string)
+        .collect();
+    if !missing.is_empty() {
+        return Err(command.clone().bin_name(path).error(
+            clap::error::ErrorKind::MissingRequiredArgument,
+            format!(
+                "the following required arguments were not provided:\n  {}",
+                missing.join("\n  ")
+            ),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn propose(args: GhArgs, stdin_piped: bool) -> Result<Proposal<crate::Gh>, Usage> {
+    if let Some(refusal) = args.1 {
+        return Err(refusal);
+    }
+    if let Some(refusal) = crate::unavailable::refusal(&args.0) {
+        return Err(refusal);
     }
     let (capability, input) =
         dispatch(args.0, stdin_piped).map_err(|error| Usage::new(error.message().to_owned()))?;
@@ -86,17 +137,6 @@ fn usage(message: impl Into<String>) -> ProviderError {
     ProviderError::new("usage", message)
 }
 
-/// Flags real `gh` accepts that this command refuses by name, with the reason.
-const REJECTED_FLAGS: &[(&str, &str)] = &[
-    ("--web", "there is no browser to open"),
-    ("--jq", "pipe the output to the jq builtin instead"),
-    ("--template", "format the JSON output with jq instead"),
-    ("--checkout", "there is no working tree to check out into"),
-    ("--editor", "there is no editor; pass text with --body"),
-    ("--fill", "there is no commit context to fill from"),
-    ("--required", "required-check data is GraphQL-only"),
-];
-
 // ---------------------------------------------------------------------------
 // The command tree
 // ---------------------------------------------------------------------------
@@ -106,20 +146,15 @@ const REJECTED_FLAGS: &[(&str, &str)] = &[
 /// A command word runs in a fresh store under a fuel bound, so there is no process-lifetime
 /// static to construct this into; the bound is what caps the work.
 fn tree() -> Command {
+    crate::unavailable::register(supported_tree())
+}
+
+fn supported_tree() -> Command {
     Command::new("gh")
         .about("Narrow GitHub operations, each mapping to exactly one gh.* capability")
-        .after_help(API_HELP)
+        .before_help(API_HELP)
         .version(env!("CARGO_PKG_VERSION"))
         .subcommand_required(true)
-        .args(REJECTED_FLAGS.iter().map(|(flag, _)| {
-            let name = flag.trim_start_matches('-');
-            Arg::new(name)
-                .long(name)
-                .global(true)
-                .hide(true)
-                .num_args(0..=1)
-                .default_missing_value("")
-        }))
         .subcommand(
             Command::new("api")
                 .about("Read one of four finite GitHub REST routes")
@@ -130,7 +165,7 @@ fn tree() -> Command {
                 .about("Inspect the broker-bound GitHub credential")
                 .subcommand_required(true)
                 .subcommand(
-                    Command::new("status").about("Read quota, token expiration, and scopes"),
+                    Command::new("status").about("Read quota, token expiration, and scopes").arg(json_arg()).arg(Arg::new("active").long("active").short('a').action(ArgAction::SetTrue)),
                 ),
         )
         .subcommand(pull_requests())
@@ -168,6 +203,32 @@ fn tree() -> Command {
         )
         .subcommand(issues())
         .subcommand(search_tree())
+        .subcommand(pure_command("version", concat!("dekopon-provider-gh ", env!("CARGO_PKG_VERSION"))))
+        .subcommand(pure_command("licenses", "Show component licenses (MIT OR Apache-2.0)"))
+        .subcommand(pure_command("actions", "GitHub Actions: workflows define automation; runs show workflow execution."))
+        .subcommand(pure_command("accessibility", "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser."))
+}
+
+fn pure_text(name: &str) -> Option<&'static str> {
+    match name {
+        "version" => Some(concat!("dekopon-provider-gh ", env!("CARGO_PKG_VERSION"))),
+        "licenses" => Some(concat!(
+            include_str!("../LICENSE-MIT"),
+            "\n",
+            include_str!("../LICENSE-APACHE")
+        )),
+        "actions" => {
+            Some("GitHub Actions: workflows define automation; runs show workflow execution.")
+        }
+        "accessibility" => Some(
+            "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser.",
+        ),
+        _ => None,
+    }
+}
+
+fn pure_command(name: &'static str, text: &'static str) -> Command {
+    Command::new(name).about(text)
 }
 
 fn search_tree() -> Command {
@@ -212,6 +273,7 @@ fn pull_requests() -> Command {
                 .arg(
                     Arg::new("state")
                         .long("state")
+                        .short('s')
                         .value_name("STATE")
                         .value_parser(["open", "closed", "merged"])
                         .help("open, closed or merged"),
@@ -219,6 +281,7 @@ fn pull_requests() -> Command {
                 .arg(
                     Arg::new("author")
                         .long("author")
+                        .short('A')
                         .value_name("LOGIN")
                         .help("Match author across bounded pages"),
                 )
@@ -243,7 +306,13 @@ fn pull_requests() -> Command {
                 .about("Read real check runs and statuses at the pull's head")
                 .arg(number_arg("Pull-request number"))
                 .arg(repo_arg(true))
-                .arg(json_arg()),
+                .arg(json_arg())
+                .arg(
+                    Arg::new("required")
+                        .long("required")
+                        .hide(true)
+                        .action(ArgAction::SetTrue),
+                ),
         )
         .subcommand(
             Command::new("review")
@@ -298,6 +367,7 @@ fn issues() -> Command {
                 .arg(
                     Arg::new("state")
                         .long("state")
+                        .short('s')
                         .value_name("STATE")
                         .value_parser(["open", "closed"])
                         .help("open or closed"),
@@ -362,6 +432,7 @@ fn body() -> [Arg; 2] {
             .help("Body text"),
         Arg::new("body-file")
             .long("body-file")
+            .short('F')
             .value_name("-")
             .value_parser(["-"])
             .conflicts_with("body")
@@ -379,6 +450,14 @@ fn match_head_commit() -> Arg {
 /// One member of a mutually exclusive group, which is how `gh` spells a choice.
 fn event_flag(name: &'static str, help: &'static str) -> Arg {
     Arg::new(name)
+        .short(match name {
+            "approve" => 'a',
+            "comment" => 'c',
+            "request-changes" | "rebase" => 'r',
+            "merge" => 'm',
+            "squash" => 's',
+            _ => unreachable!(),
+        })
         .long(name)
         .action(ArgAction::SetTrue)
         .help(help)
@@ -405,7 +484,7 @@ fn dispatch(
     }
     let (verb, matches) = area_matches
         .subcommand()
-        .expect("the tree requires a subcommand");
+        .expect("the supported tree requires a subcommand");
     let command = format!("{area} {verb}");
     let mut input = Map::new();
 
@@ -428,6 +507,11 @@ fn dispatch(
             ids::PR_DIFF
         }
         ("pr", "checks") => {
+            if matches.get_flag("required") {
+                return Err(usage(
+                    "gh: --required is not supported: required-check data is GraphQL-only",
+                ));
+            }
             insert_repo_and_number(&mut input, matches)?;
             ids::PR_STATUS
         }
@@ -584,7 +668,7 @@ fn dispatch(
             }
         }
         ("auth", "status") => ids::AUTH_STATUS,
-        _ => unreachable!("the tree has no other subcommand than {command}"),
+        _ => unreachable!("the supported tree has no other command"),
     };
 
     if matches!(area, "search")
@@ -595,7 +679,9 @@ fn dispatch(
             Value::from(matches.get_one::<u64>("limit").copied().unwrap_or(30)),
         );
     }
-    if let Some(fields) = crate::output::fields(area, verb) {
+    if let Some(fields) =
+        crate::output::fields(area, verb).filter(|_| area != "auth" || matches.contains_id("json"))
+    {
         let selection = match matches.get_one::<String>("json") {
             Some(value) if value.is_empty() => {
                 return Err(usage(format!(
@@ -650,7 +736,9 @@ fn api_route(matches: &ArgMatches) -> Result<(&'static str, Value), ProviderErro
                 serde_json::json!({"owner": owner, "repo": repo, "ref": reference}),
             )
         }
-        _ => return Err(usage(API_HELP)),
+        _ => {
+            return Err(usage(crate::unavailable::api_refusal()));
+        }
     };
     Ok((id, input))
 }
@@ -881,7 +969,11 @@ mod tests {
         }
     }
     fn run(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, ProviderError> {
-        match provider::command::<Gh>(argv, stdin.is_some()) {
+        match serde_json::from_str::<CommandRunOutcome>(
+            &dekopon_provider_sdk::__typed_run_command::<crate::Gh>(argv, stdin.is_some()),
+        )
+        .expect("command outcome JSON")
+        {
             CommandRunOutcome::Proposed {
                 capability, input, ..
             } => Ok(CommandRun::Proposal {
@@ -1168,7 +1260,7 @@ mod tests {
             );
         }
         let (stdout, _, _) = rendered(&["--help"]);
-        assert!(stdout.starts_with("Narrow GitHub operations"), "{stdout:?}");
+        assert!(stdout.contains("Narrow GitHub operations"), "{stdout:?}");
         assert!(stdout.contains("<COMMAND>\n"), "{stdout:?}");
         assert!(stdout.contains("no raw API passthrough"), "{stdout:?}");
         let (stdout, _, _) = rendered(&["pr", "view", "-h"]);
@@ -1194,6 +1286,7 @@ mod tests {
             &["bogus"][..],
             &["pr"][..],
             &["pr", "create", "-R", "o/r"][..],
+            &["--", "pr", "view", "7", "-R", "octo/hello"][..],
             &["pr", "view"][..],
             &["pr", "view", "7"][..],
             &["pr", "view", "seven", "-R", "o/r"][..],
@@ -1216,12 +1309,16 @@ mod tests {
             stderr.starts_with("error: unrecognized subcommand 'create'"),
             "{stderr:?}"
         );
-        // A subcommand's usage line carries the word the model typed, not the bare subcommand.
         let (_, stderr, _) = rendered(&["pr", "view", "7"]);
         assert!(stderr.contains("--repo <OWNER/REPO>"), "{stderr:?}");
         let (_, stderr, _) = rendered(&["pr", "diff", "7", "-R", "o/r", "--approve"]);
         assert!(
             stderr.starts_with("error: unexpected argument '--approve'"),
+            "{stderr:?}"
+        );
+        let (_, stderr, _) = rendered(&["--", "pr", "view", "7", "-R", "octo/hello"]);
+        assert!(
+            stderr.starts_with("error: unexpected argument 'pr'"),
             "{stderr:?}"
         );
     }
@@ -1380,11 +1477,20 @@ mod tests {
 
     #[test]
     fn lying_flags_are_rejected_with_guidance() {
-        for flag in ["--web", "--jq", "--template", "--checkout"] {
-            let failure = refuse(&["pr", "view", "7", "-R", "o/r", flag]);
+        for flag in ["--web", "--jq", "--template"] {
+            let mut words = vec!["pr", "view", "7", "-R", "o/r", flag];
+            if flag != "--web" {
+                words.push(".");
+            }
+            let failure = refuse(&words);
             assert_eq!(failure.code(), "usage");
             let message = failure.message().to_owned();
-            assert!(message.contains(flag), "{message}");
+            assert!(
+                message.contains(&format!(
+                    "gh pr view {flag}: not available in this environment"
+                )),
+                "{flag}: {message}"
+            );
         }
         let (id, input) = dispatch(&["pr", "view", "7", "-R", "o/r", "--json=number,title"]);
         assert_eq!(id, "gh.pull-request.read");
@@ -1485,8 +1591,17 @@ mod tests {
             &["api", "users/a", "-f", "x=y"],
             &["api", "users/a", "--method", "POST"],
         ] {
-            let (_, _, status) = rendered(words);
-            assert_eq!(status, 2, "{words:?}");
+            assert_eq!(
+                refuse(words).message(),
+                format!(
+                    "gh api --{}: not available in this environment (by policy)",
+                    if words[2] == "-f" {
+                        "raw-field"
+                    } else {
+                        "method"
+                    }
+                )
+            );
         }
     }
 
@@ -1496,15 +1611,13 @@ mod tests {
         assert!(required.message().contains("GraphQL-only"));
         assert_eq!(refuse(&["pr", "view", "7", "-R", "o?/r"]).code(), "usage");
         for words in [
-            &["pr", "status", "7", "-R", "o/r"][..],
-            &["pr", "files", "7", "-R", "o/r"],
+            &["pr", "files", "7", "-R", "o/r"][..],
             &["pr", "reviews", "7", "-R", "o/r"],
             &["issue", "comments", "7", "-R", "o/r"],
             &["content", "view", "x", "-R", "o/r"],
             &["user", "view", "alice"],
             &["branch", "view", "main", "-R", "o/r"],
             &["commit", "view", "main", "-R", "o/r"],
-            &["pr", "checks", "7", "-R", "o/r", "--watch"],
             &["pr", "list", "-R", "o/r", "--page", "2"],
             &["issue", "list", "-R", "o/r", "--per-page", "5"],
             &["pr", "files", "7", "-R", "o/r", "--no-patch"],
