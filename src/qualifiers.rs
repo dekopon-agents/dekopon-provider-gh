@@ -1263,7 +1263,13 @@ pub(crate) fn validate(command: &str, input: &Value) -> Result<(), ValidationErr
     let terms = terms(command, input);
     let list = command == "pr list" || command == "issue list";
     let list_search = list
-        && (input.get("search").is_some_and(|v| !v.is_null())
+        && ((command == "issue list"
+            && input["label"].as_array().is_some_and(|labels| {
+                labels
+                    .iter()
+                    .any(|label| label.as_str().is_some_and(|label| label.contains(',')))
+            }))
+            || input.get("search").is_some_and(|v| !v.is_null())
             || input.get("app").is_some_and(|v| !v.is_null())
             || input["milestone"]
                 .as_str()

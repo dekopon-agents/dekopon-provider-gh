@@ -58,7 +58,12 @@ pub(crate) fn run(
     if !["open", "closed", "all"].contains(&state) && !(pr && state == "merged") {
         return Err(invalid_input());
     }
-    let search = input.search.is_some()
+    let search = (!pr
+        && input
+            .label
+            .as_ref()
+            .is_some_and(|labels| labels.iter().any(|label| label.contains(','))))
+        || input.search.is_some()
         || input.app.is_some()
         || input
             .milestone

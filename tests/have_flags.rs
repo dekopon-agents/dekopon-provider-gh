@@ -1219,6 +1219,8 @@ async fn query_budgets_count_supplied_terms_without_tightening_legacy_searches()
     )
     .await;
     assert_eq!(status, 0, "{stderr}");
+    let (status,stderr,_) = invoke("gh.issue.list",json!({"owner":"o","repo":"r","label":["a,b"],"_cliOutput":"","_cliLimit":30}),vec![exchange("/search/issues?q=label%3A%22a%2Cb%22%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=100","GET",Value::Null,json!({"total_count":0,"incomplete_results":false,"items":[]}))]).await;
+    assert_eq!(status, 0, "{stderr}");
     for (id, input) in [
         (
             "gh.search.prs",
