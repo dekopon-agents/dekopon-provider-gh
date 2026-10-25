@@ -173,7 +173,7 @@ impl Provider for Gh {
     }
 }
 
-#[cfg(not(feature = "foundation-fixture"))]
+#[cfg(not(gh_foundation_fixture))]
 #[allow(unsafe_code)]
 mod export {
     dekopon_provider_sdk::export!(super::Gh);

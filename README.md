@@ -51,10 +51,12 @@ private repositories inaccessible there. An interrupted collection prints no par
 A text field cut at its byte bound ends, in JSON and text alike, with the line
 `[dekopon: truncated to N bytes of M]`.
 Upstream commands and flags classified as Backburner or Excluded refuse before HTTP with
-`gh <cmd>: not available in this environment (<reason>)`. The registry in
+`gh <cmd> [flag or scope]: not available in this environment (<reason>)`. The registry in
 [`src/unavailable.tsv`](src/unavailable.tsv) supplies both refusals and the single
 “Not available in this environment” section in `gh --help`. Unknown commands and flags retain
-clap usage errors. Buildable operations scheduled for later parity batches remain unimplemented.
+clap usage errors. Unbuilt Buildable commands retain their base clap usage errors. Required arguments on supported
+commands stay required; flag refusals name the canonical long flag and scope refusals name the
+missing `--owner` or `-R` scope.
 Supported upstream shorthands include `-F` for `--body-file`, review `-a/-c/-r`, merge `-m/-r/-s`,
 list `-s`, and PR-list `-A`, alongside `-R`, `-L`, and `-b`. The four finite `gh api` reads
 return bounded upstream JSON objects. Direct typed invocation retains JSON output; failures
@@ -226,6 +228,8 @@ same two pins, it lands on the same bytes on any machine. CI runs the same scrip
 contract tests and real-component conformance against the built artifact; nothing contacts GitHub.
 The foundation suite builds an isolated GraphQL fixture using the pinned toolchain and
 `wasm-tools`; its test-only `gh.foundation.read-repository-node` capability is absent from the production manifest.
+The fixture is selected only by the test build cfg `gh_foundation_fixture`, not a default or
+published Cargo feature. CI applies the root deny policy to both Cargo lockfiles.
 
 `tests/cassettes/gh/` holds GitHub exchanges recorded with `cassette record --upstream
 gh=https://api.github.com` and `baseUrl: http://127.0.0.1:<port>/gh`, the port you pass to

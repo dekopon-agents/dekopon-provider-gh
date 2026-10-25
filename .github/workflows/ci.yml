@@ -11,3 +11,14 @@ permissions:
 jobs:
   ci:
     uses: dekopon-agents/provider-workflows/.github/workflows/ci.yml@main
+
+  fixture-deny:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install the pinned toolchain and cargo-deny
+        run: |
+          rustup show
+          cargo install cargo-deny --version 0.20.2 --locked
+      - name: Check the GraphQL fixture lock with the provider policy
+        run: cargo deny --manifest-path tests/fixtures/Cargo.toml --config deny.toml --all-features check bans licenses sources advisories

@@ -10,9 +10,6 @@ description = "GitHub repository, pull-request, and issue capabilities for Dekop
 repository = "https://github.com/dekopon-agents/dekopon-provider-gh"
 publish = false
 
-[features]
-foundation-fixture = []
-
 [lib]
 crate-type = ["cdylib", "rlib"]
 
@@ -29,3 +26,6 @@ time = { version = "=0.3.55", features = ["parsing"] }
 tokio = { version = "1.53.1", features = ["rt-multi-thread"] }
 dekopon-provider-sdk-testkit = "=0.45.0"
 dekopon-broker-host = "=0.45.0"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(gh_foundation_fixture)"] }

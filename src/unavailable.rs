@@ -1,7 +1,7 @@
 use clap::{Arg, ArgMatches, Command};
 use dekopon_provider_sdk::provider::Usage;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub(crate) enum Kind {
     Command,
     Flag,
@@ -51,7 +51,28 @@ pub(crate) fn entries() -> impl Iterator<Item = Entry> {
     })
 }
 
-fn leaf<'a>(
+type Groups = std::collections::BTreeMap<&'static str, Vec<Entry>>;
+
+fn groups() -> Groups {
+    let mut groups = Groups::new();
+    for entry in entries() {
+        groups.entry(entry.command).or_default().push(entry);
+    }
+    groups
+}
+
+fn find_leaf<'a>(
+    root: &'a mut Command,
+    words: std::str::SplitWhitespace<'static>,
+) -> Option<&'a mut Command> {
+    let mut command = root;
+    for word in words {
+        command = command.find_subcommand_mut(word)?;
+    }
+    Some(command)
+}
+
+fn add_leaf<'a>(
     root: &'a mut Command,
     mut words: std::str::SplitWhitespace<'static>,
 ) -> &'a mut Command {
@@ -59,92 +80,22 @@ fn leaf<'a>(
         return root;
     };
     if root.find_subcommand(word).is_none() {
-        *root = std::mem::take(root).subcommand(Command::new(word).hide(true));
+        *root = std::mem::take(root).subcommand(Command::new(word));
     }
-    leaf(
-        root.find_subcommand_mut(word)
-            .expect("registered subcommand"),
+    add_leaf(
+        root.find_subcommand_mut(word).expect("registered command"),
         words,
     )
 }
 
-pub(crate) fn register(mut root: Command) -> Command {
-    let mut help = String::from("Not available in this environment:\n");
-    for entry in entries() {
-        if entry.kind == Kind::UnscopedSearch {
-            help.push_str(&format!(
-                "  gh {} without --owner or -R ({})\n",
-                entry.command, entry.reason
-            ));
-            continue;
-        }
-        let command = leaf(&mut root, entry.command.split_whitespace());
-        if entry.kind == Kind::Flag
-            && command.is_hide_set()
-            && !command
-                .get_arguments()
-                .any(|arg| arg.get_id() == "_unavailable_args")
-        {
-            *command = std::mem::take(command).arg(Arg::new("_unavailable_args").num_args(0..));
-        }
-        if (matches!(
-            entry.command.split_whitespace().next(),
-            Some(
-                "pr" | "issue"
-                    | "release"
-                    | "run"
-                    | "workflow"
-                    | "cache"
-                    | "secret"
-                    | "variable"
-                    | "ruleset"
-                    | "label"
-                    | "discussion"
-            )
-        ) || matches!(
-            entry.command,
-            "repo autolink list"
-                | "repo autolink view"
-                | "repo deploy-key add"
-                | "repo deploy-key list"
-        )) && !command.get_arguments().any(|arg| arg.get_id() == "repo")
-        {
-            *command = std::mem::take(command).arg(Arg::new("repo").short('R').long("repo"));
-        }
-        if entry.kind == Kind::Command {
-            *command = std::mem::take(command)
-                .hide(true)
-                .arg(Arg::new("_unavailable_args").num_args(0..));
-            help.push_str(&format!("  gh {} ({})\n", entry.command, entry.reason));
-        } else {
-            help.push_str(&format!(
-                "  gh {}: {} ({})\n",
-                entry.command, entry.flags, entry.reason
-            ));
-        }
-        let rejected: Vec<_> = entries()
-            .filter(|other| other.command == entry.command && other.kind == Kind::Flag)
-            .flat_map(|other| {
-                other
-                    .flags
-                    .split_whitespace()
-                    .map(|flag| flag.split('/').next().expect("flag"))
-            })
-            .collect();
-        let required: Vec<_> = command
-            .get_arguments()
-            .filter(|arg| arg.is_required_set())
-            .map(|arg| arg.get_id().clone())
-            .collect();
-        for id in required {
-            *command = std::mem::take(command).mut_arg(id, |arg| {
-                arg.required(false).required_unless_present_any(&rejected)
-            });
+fn flags(command: &mut Command, entries: &[Entry]) {
+    for entry in entries {
+        match entry.kind {
+            Kind::Command | Kind::Flag => {}
+            Kind::UnscopedSearch => continue,
         }
         for flag in entry.flags.split_whitespace() {
-            let (name, short) = flag
-                .split_once('/')
-                .map_or((flag, None), |(name, short)| (name, short.chars().next()));
+            let (name, short) = split_flag(flag);
             let mut arg = Arg::new(name)
                 .long(name)
                 .hide(true)
@@ -161,22 +112,65 @@ pub(crate) fn register(mut root: Command) -> Command {
             *command = std::mem::take(command).arg(arg);
         }
     }
-    root.after_help(help)
 }
 
-fn message(entry: &Entry) -> String {
+fn split_flag(flag: &'static str) -> (&'static str, Option<char>) {
+    flag.split_once('/')
+        .map_or((flag, None), |(name, short)| (name, short.chars().next()))
+}
+
+fn external_commands(mut command: Command) -> Command {
+    let children: Vec<_> = command
+        .get_subcommands()
+        .map(|child| child.get_name().to_owned())
+        .collect();
+    if !children.is_empty() {
+        command = command.allow_external_subcommands(true);
+        for child in children {
+            command = command.mut_subcommand(child, external_commands);
+        }
+    }
+    command
+}
+
+pub(crate) fn register(mut root: Command) -> Command {
+    let mut help = String::from("Not available in this environment:\n");
+    for (path, entries) in groups() {
+        for entry in &entries {
+            match entry.kind {
+                Kind::Command => help.push_str(&format!("  gh {path} ({})\n", entry.reason)),
+                Kind::Flag => {
+                    for flag in entry.flags.split_whitespace() {
+                        let (name, short) = split_flag(flag);
+                        let short = short.map_or(String::new(), |short| format!("/-{short}"));
+                        help.push_str(&format!("  gh {path} --{name}{short} ({})\n", entry.reason));
+                    }
+                }
+                Kind::UnscopedSearch => help.push_str(&format!(
+                    "  gh {path} without --owner or -R ({})\n",
+                    entry.reason
+                )),
+            }
+        }
+        if let Some(command) = find_leaf(&mut root, path.split_whitespace()) {
+            flags(command, &entries);
+        }
+    }
+    external_commands(root.after_help(help))
+}
+
+fn message(entry: &Entry, subject: &str) -> String {
     format!(
-        "gh {}: not available in this environment ({})",
+        "gh {}{subject}: not available in this environment ({})",
         entry.command, entry.reason
     )
 }
 
 pub(crate) fn api_refusal() -> String {
-    message(
-        &entries()
-            .find(|entry| entry.command == "api")
-            .expect("API policy entry"),
-    )
+    let entry = entries()
+        .find(|entry| entry.command == "api")
+        .expect("API policy entry");
+    message(&entry, "")
 }
 
 pub(crate) fn refusal(matches: &ArgMatches) -> Option<Usage> {
@@ -188,26 +182,122 @@ pub(crate) fn refusal(matches: &ArgMatches) -> Option<Usage> {
     }
     let command = words.join(" ");
     for entry in entries().filter(|entry| entry.command == command) {
-        let unscoped = entry.kind == Kind::UnscopedSearch
-            && current
-                .try_get_one::<String>("owner")
-                .ok()
-                .flatten()
-                .is_none()
-            && current
-                .try_get_one::<String>("repo")
-                .ok()
-                .flatten()
-                .is_none();
-        if entry.kind == Kind::Command
-            || unscoped
-            || entry.flags.split_whitespace().any(|flag| {
-                let name = flag.split('/').next().expect("flag name");
-                current.try_get_one::<String>(name).ok().flatten().is_some()
-            })
-        {
-            return Some(Usage::new(message(&entry)));
+        match entry.kind {
+            Kind::Command => return Some(Usage::new(message(&entry, ""))),
+            Kind::Flag => {
+                for flag in entry.flags.split_whitespace() {
+                    let (name, _) = split_flag(flag);
+                    if current.try_get_one::<String>(name).ok().flatten().is_some() {
+                        return Some(Usage::new(message(&entry, &format!(" --{name}"))));
+                    }
+                }
+            }
+            Kind::UnscopedSearch => {
+                if current
+                    .try_get_one::<String>("owner")
+                    .ok()
+                    .flatten()
+                    .is_none()
+                    && current
+                        .try_get_one::<String>("repo")
+                        .ok()
+                        .flatten()
+                        .is_none()
+                {
+                    return Some(Usage::new(message(&entry, " without --owner or -R")));
+                }
+            }
         }
     }
     None
+}
+
+pub(crate) fn external_refusal(
+    matches: &ArgMatches,
+    base: impl FnOnce() -> Command,
+) -> Result<Option<Usage>, clap::Error> {
+    let mut current = matches;
+    let mut argv = vec![std::ffi::OsString::from("gh")];
+    while let Some((name, child)) = current.subcommand() {
+        argv.push(name.into());
+        current = child;
+    }
+    let Some(raw) = current
+        .try_get_many::<std::ffi::OsString>("")
+        .ok()
+        .flatten()
+    else {
+        return Ok(None);
+    };
+    argv.extend(raw.cloned());
+    let groups = groups();
+    let candidate = groups
+        .iter()
+        .filter(|(path, entries)| {
+            let words: Vec<_> = path.split_whitespace().collect();
+            argv[1..].starts_with(
+                &words
+                    .iter()
+                    .map(std::ffi::OsString::from)
+                    .collect::<Vec<_>>(),
+            ) && entries.iter().any(|entry| match entry.kind {
+                Kind::Command => true,
+                Kind::Flag => entry.flags.split_whitespace().any(|flag| {
+                    let (name, short) = split_flag(flag);
+                    argv.iter()
+                        .take_while(|arg| arg.as_os_str() != std::ffi::OsStr::new("--"))
+                        .any(|arg| {
+                            let arg = arg.to_string_lossy();
+                            arg == format!("--{name}")
+                                || arg.starts_with(&format!("--{name}="))
+                                || short.is_some_and(|short| {
+                                    arg.starts_with(&format!("-{short}")) && !arg.starts_with("--")
+                                })
+                        })
+                }),
+                Kind::UnscopedSearch => false,
+            })
+        })
+        .max_by_key(|(path, _)| path.len());
+    let Some((path, entries)) = candidate else {
+        return Err(base()
+            .try_get_matches_from_mut(argv)
+            .expect_err("external command is absent from the supported tree"));
+    };
+    let mut parser = Command::new("gh");
+    let command = add_leaf(&mut parser, path.split_whitespace());
+    *command = std::mem::take(command).arg(
+        Arg::new("arguments")
+            .value_name("ARG")
+            .hide(true)
+            .num_args(0..),
+    );
+    flags(command, entries);
+    if (matches!(
+        path.split_whitespace().next(),
+        Some(
+            "pr" | "issue"
+                | "run"
+                | "release"
+                | "workflow"
+                | "label"
+                | "discussion"
+                | "cache"
+                | "secret"
+                | "variable"
+                | "ruleset"
+        )
+    ) || path.starts_with("repo deploy-key ")
+        || path.starts_with("repo autolink "))
+        && !command.get_arguments().any(|arg| arg.get_id() == "repo")
+    {
+        *command = std::mem::take(command).arg(Arg::new("repo").long("repo").short('R'));
+    }
+    let parsed = parser.try_get_matches_from(argv.clone())?;
+    match refusal(&parsed) {
+        Some(refusal) => Ok(Some(refusal)),
+        None => Err(base()
+            .try_get_matches_from_mut(argv)
+            .expect_err("external command is absent from the supported tree")),
+    }
 }

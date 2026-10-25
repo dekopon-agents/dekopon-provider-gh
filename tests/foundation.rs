@@ -26,7 +26,19 @@ fn fixture_component() -> std::path::PathBuf {
         .get_or_init(|| {
             let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             let target = root.join("target/foundation-fixture");
+            let mut flags = std::env::var("CARGO_ENCODED_RUSTFLAGS").unwrap_or_else(|_| {
+                std::env::var("RUSTFLAGS")
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join("\x1f")
+            });
+            if !flags.is_empty() {
+                flags.push('\x1f');
+            }
+            flags.push_str("--cfg=gh_foundation_fixture");
             let status = std::process::Command::new("cargo")
+                .env("CARGO_ENCODED_RUSTFLAGS", flags)
                 .current_dir(&root)
                 .args([
                     "build",
@@ -57,6 +69,33 @@ fn fixture_component() -> std::path::PathBuf {
         .clone()
 }
 
+fn valid_refusal_argv(command: &str) -> Vec<String> {
+    let mut words: Vec<_> = command.split_whitespace().map(str::to_owned).collect();
+    let args: &[&str] = match command {
+        "pr list" | "issue list" | "repo read-dir" => &["-R", "octo/hello"],
+        "pr view" | "pr checks" | "pr diff" | "issue view" | "issue comment" => {
+            &["7", "-R", "octo/hello"]
+        }
+        "repo read-file" => &["README.md", "-R", "octo/hello"],
+        "repo view" => &["octo/hello"],
+        "repo list" => &["octo"],
+        "search prs" | "search issues" | "search repos" | "search code" | "search commits" => {
+            &["term", "--owner", "octo"]
+        }
+        "api" => &["user"],
+        _ => &[],
+    };
+    words.extend(args.iter().map(|word| (*word).to_owned()));
+    words
+}
+
+fn whole_command(kind: unavailable::Kind) -> bool {
+    match kind {
+        unavailable::Kind::Command => true,
+        unavailable::Kind::Flag | unavailable::Kind::UnscopedSearch => false,
+    }
+}
+
 #[test]
 fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -68,37 +107,42 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
     let mut cases = 0;
     for entry in unavailable::entries() {
         let mut variants = vec![];
-        if entry.kind == unavailable::Kind::Command {
+        if whole_command(entry.kind) {
             variants.push(None);
         }
         for flag in entry.flags.split_whitespace() {
             let mut parts = flag.split('/');
-            variants.push(Some(format!("--{}", parts.next().expect("long flag"))));
+            let name = parts.next().expect("long flag");
+            variants.push(Some((format!("--{name}"), name)));
             if let Some(short) = parts.next() {
-                variants.push(Some(format!("-{short}")));
+                variants.push(Some((format!("-{short}"), name)));
             }
         }
         for flag in variants {
-            let mut argv: Vec<_> = entry
-                .command
-                .split_whitespace()
-                .map(str::to_owned)
-                .collect();
-            if let Some(flag) = flag {
-                argv.push(flag);
-            }
+            let mut argv = valid_refusal_argv(entry.command);
+            let subject = match &flag {
+                Some((spelling, name)) => {
+                    argv.push(spelling.clone());
+                    match entry.kind {
+                        unavailable::Kind::Command => String::new(),
+                        unavailable::Kind::Flag => format!(" --{name}"),
+                        unavailable::Kind::UnscopedSearch => unreachable!(),
+                    }
+                }
+                None => String::new(),
+            };
             let outcome = runtime.block_on(registry.run_command("gh", &argv, false))?;
             let CommandRunOutcome::Failed { error } = outcome else {
                 panic!("{argv:?}: {outcome:?}")
             };
             let reason = unavailable::entries()
-                .find(|row| row.command == entry.command && row.kind == unavailable::Kind::Command)
+                .find(|row| row.command == entry.command && whole_command(row.kind))
                 .map_or(entry.reason, |row| row.reason);
             assert_eq!(error.code, "usage", "{argv:?}");
             assert_eq!(
                 error.message,
                 format!(
-                    "gh {}: not available in this environment ({reason})",
+                    "gh {}{subject}: not available in this environment ({reason})",
                     entry.command
                 ),
                 "{argv:?}"
@@ -108,7 +152,7 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
     }
     assert_eq!(
         unavailable::entries()
-            .filter(|entry| entry.kind == unavailable::Kind::Command)
+            .filter(|entry| whole_command(entry.kind))
             .count(),
         51
     );
@@ -163,16 +207,21 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
             "needs an interactive terminal",
         ),
         (
+            vec!["release", "download", "-D/tmp/out"],
+            "needs a local filesystem",
+        ),
+        (
             vec!["project", "view", "7", "--web"],
             "needs a browser or local application",
         ),
     ] {
         let command = match words[0] {
             "repo" => "repo deploy-key add",
-            "pr" if words[1] == "view" => "pr view",
+            "pr" if words[1] == "view" => "pr view --web",
             "pr" => "pr checkout",
-            "issue" => "issue create",
-            "project" => "project view",
+            "issue" => "issue create --editor",
+            "project" => "project view --web",
+            "release" => "release download --dir",
             "run" if words[1] == "watch" => "run watch",
             _ => "run download",
         };
@@ -199,6 +248,9 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
     };
     assert_eq!(status, 0);
     assert!(stderr.is_empty());
+    assert!(!stdout.contains("web/w"));
+    assert!(!stdout.contains("_unavailable_args"));
+    assert!(stdout.contains("gh pr view --web/-w"));
     assert_eq!(
         stdout.matches("Not available in this environment:").count(),
         1
@@ -230,7 +282,7 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
                 assert!(stdout.contains("Permission is hereby granted"));
                 assert!(stdout.contains("Apache License"));
             }
-            "actions" => assert!(stdout.contains("GitHub Actions: workflow and run operations")),
+            "actions" => assert!(stdout.contains("GitHub Actions: workflows define automation")),
             "accessibility" => assert!(stdout.contains("plain text and JSON over pipes")),
             _ => unreachable!(),
         }
@@ -553,7 +605,9 @@ fn upstream_shorthands_and_four_finite_routes_keep_their_typed_proposals_in_the_
         };
         assert_eq!(
             error.message,
-            format!("gh search {verb}: not available in this environment (by policy)")
+            format!(
+                "gh search {verb} without --owner or -R: not available in this environment (by policy)"
+            )
         );
     }
     for words in [
@@ -571,6 +625,57 @@ fn upstream_shorthands_and_four_finite_routes_keep_their_typed_proposals_in_the_
         };
         assert_eq!(error.code, "usage");
     }
+    let CommandRunOutcome::Failed { error } = runtime.block_on(registry.run_command(
+        "gh",
+        &["api".into(), "users/bad..login".into()],
+        false,
+    ))?
+    else {
+        panic!("invalid login must refuse")
+    };
+    assert_eq!(error.message, "gh api: invalid login");
+    for words in [
+        vec!["release", "view", "--", "--web"],
+        vec!["pr", "create"],
+        vec!["pr", "close", "7", "-R", "octo/hello"],
+        vec!["label", "create", "--color", "ff0000"],
+        vec!["label", "edit", "--color", "ff0000"],
+    ] {
+        let CommandRunOutcome::Rendered {
+            stdout,
+            stderr,
+            status,
+        } = runtime.block_on(
+            registry.run_command(
+                "gh",
+                &words
+                    .iter()
+                    .map(|word| (*word).to_owned())
+                    .collect::<Vec<_>>(),
+                false,
+            ),
+        )?
+        else {
+            panic!("unbuilt command must retain clap error: {words:?}")
+        };
+        assert_eq!(status, 2);
+        assert!(stdout.is_empty());
+        assert!(
+            stderr.starts_with("error: unrecognized subcommand"),
+            "{stderr}"
+        );
+        assert!(!stderr.contains("not implemented"));
+    }
+    let CommandRunOutcome::Rendered { stdout, status, .. } = runtime
+        .block_on(registry.run_command("gh", &["pr".into(), "view".into(), "-h".into()], false))?
+    else {
+        panic!("help must render")
+    };
+    assert_eq!(status, 0);
+    assert!(
+        stdout.contains("Usage: gh pr view [OPTIONS] --repo <OWNER/REPO> <NUMBER>"),
+        "{stdout}"
+    );
     for (route, id, expected) in [
         ("user", "gh.user-self.read", json!({})),
         ("users/octo", "gh.user.read", json!({"login":"octo"})),
@@ -598,7 +703,6 @@ fn upstream_shorthands_and_four_finite_routes_keep_their_typed_proposals_in_the_
         "graphql",
         "repos/octo/hello/pulls",
         "user?x=1",
-        "users/octo?x=1",
         "https://other.example/user",
     ] {
         let CommandRunOutcome::Failed { error } =

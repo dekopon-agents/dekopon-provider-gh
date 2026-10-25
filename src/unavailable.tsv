@@ -72,8 +72,6 @@ flag	issue list	X7	jq/q template/t
 flag	issue status	X7	jq/q template/t
 flag	issue view	W5	web/w
 flag	issue view	X7	jq/q template/t
-flag	label create	W2	color/c
-flag	label edit	W2	color/c
 flag	label list	W5	web/w
 flag	label list	X7	jq/q template/t
 flag	pr checks	W5	web/w

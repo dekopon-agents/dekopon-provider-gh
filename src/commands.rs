@@ -39,7 +39,7 @@ const API_HELP: &str = "gh api accepts only user, users/LOGIN, repos/OWNER/REPO/
 /// `stdin` is the value piped into the word, `None` when nothing was piped. It is read by
 /// `--body-file -`, the one place text of unbounded length is an argument; the rest of the
 /// surface is flags and identifiers.
-pub struct GhArgs(ArgMatches);
+pub struct GhArgs(ArgMatches, Option<Usage>);
 impl CommandFactory for GhArgs {
     fn command() -> Command {
         tree()
@@ -50,16 +50,18 @@ impl CommandFactory for GhArgs {
 }
 impl FromArgMatches for GhArgs {
     fn from_arg_matches(matches: &ArgMatches) -> Result<Self, clap::Error> {
-        if crate::unavailable::refusal(matches).is_none()
+        let external = crate::unavailable::external_refusal(matches, supported_tree)?;
+        if external.is_none()
             && let Some((name, _)) = matches.subcommand()
             && let Some(text) = pure_text(name)
+            && crate::unavailable::refusal(matches).is_none()
         {
             return Err(Command::new("gh")
                 .override_help(format!("{text}\n"))
                 .try_get_matches_from(["gh", "--help"])
                 .expect_err("pure commands render help"));
         }
-        Ok(Self(matches.clone()))
+        Ok(Self(matches.clone(), external))
     }
     fn from_arg_matches_mut(matches: &mut ArgMatches) -> Result<Self, clap::Error> {
         Self::from_arg_matches(matches)
@@ -75,6 +77,9 @@ impl FromArgMatches for GhArgs {
 impl Parser for GhArgs {}
 
 pub(crate) fn propose(args: GhArgs, stdin_piped: bool) -> Result<Proposal<crate::Gh>, Usage> {
+    if let Some(refusal) = args.1 {
+        return Err(refusal);
+    }
     if let Some(refusal) = crate::unavailable::refusal(&args.0) {
         return Err(refusal);
     }
@@ -97,7 +102,11 @@ fn usage(message: impl Into<String>) -> ProviderError {
 /// A command word runs in a fresh store under a fuel bound, so there is no process-lifetime
 /// static to construct this into; the bound is what caps the work.
 fn tree() -> Command {
-    crate::unavailable::register(Command::new("gh")
+    crate::unavailable::register(supported_tree())
+}
+
+fn supported_tree() -> Command {
+    Command::new("gh")
         .about("Narrow GitHub operations, each mapping to exactly one gh.* capability")
         .before_help(API_HELP)
         .version(env!("CARGO_PKG_VERSION"))
@@ -152,8 +161,8 @@ fn tree() -> Command {
         .subcommand(search_tree())
         .subcommand(pure_command("version", concat!("dekopon-provider-gh ", env!("CARGO_PKG_VERSION"))))
         .subcommand(pure_command("licenses", "Show component licenses (MIT OR Apache-2.0)"))
-        .subcommand(pure_command("actions", "GitHub Actions: workflow and run operations are not implemented in this provider yet."))
-        .subcommand(pure_command("accessibility", "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser.")))
+        .subcommand(pure_command("actions", "GitHub Actions: workflows define automation; runs show workflow execution."))
+        .subcommand(pure_command("accessibility", "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser."))
 }
 
 fn pure_text(name: &str) -> Option<&'static str> {
@@ -164,9 +173,9 @@ fn pure_text(name: &str) -> Option<&'static str> {
             "\n",
             include_str!("../LICENSE-APACHE")
         )),
-        "actions" => Some(
-            "GitHub Actions: workflow and run operations are not implemented in this provider yet.",
-        ),
+        "actions" => {
+            Some("GitHub Actions: workflows define automation; runs show workflow execution.")
+        }
         "accessibility" => Some(
             "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser.",
         ),
@@ -431,7 +440,7 @@ fn dispatch(
     }
     let (verb, matches) = area_matches
         .subcommand()
-        .ok_or_else(|| usage(format!("gh {area}: command is not implemented yet")))?;
+        .expect("the supported tree requires a subcommand");
     let command = format!("{area} {verb}");
     let mut input = Map::new();
 
@@ -456,7 +465,7 @@ fn dispatch(
         ("pr", "checks") => {
             if matches.get_flag("required") {
                 return Err(usage(
-                    "gh pr checks: --required is GraphQL-only and not implemented yet",
+                    "gh: --required is not supported: required-check data is GraphQL-only",
                 ));
             }
             insert_repo_and_number(&mut input, matches)?;
@@ -615,11 +624,7 @@ fn dispatch(
             }
         }
         ("auth", "status") => ids::AUTH_STATUS,
-        _ => {
-            return Err(usage(format!(
-                "gh {command}: command is not implemented yet"
-            )));
-        }
+        _ => unreachable!("the supported tree has no other command"),
     };
 
     if matches!(area, "search")
@@ -666,22 +671,22 @@ fn api_route(matches: &ArgMatches) -> Result<(&'static str, Value), ProviderErro
     let (id, input) = match parts.as_slice() {
         ["user"] => (ids::USER_SELF_READ, serde_json::json!({})),
         ["users", login] => {
-            crate::validate_login(login).map_err(|_| usage(crate::unavailable::api_refusal()))?;
+            crate::validate_login(login).map_err(|_| usage("gh api: invalid login"))?;
             (ids::USER_READ, serde_json::json!({"login": login}))
         }
         ["repos", owner, repo, "branches", branch] => {
-            crate::validate_login(owner).map_err(|_| usage(crate::unavailable::api_refusal()))?;
-            crate::validate_repo(repo).map_err(|_| usage(crate::unavailable::api_refusal()))?;
-            crate::validate_ref(branch).map_err(|_| usage(crate::unavailable::api_refusal()))?;
+            crate::validate_login(owner).map_err(|_| usage("gh api: invalid owner"))?;
+            crate::validate_repo(repo).map_err(|_| usage("gh api: invalid repository"))?;
+            crate::validate_ref(branch).map_err(|_| usage("gh api: invalid branch"))?;
             (
                 ids::BRANCH_READ,
                 serde_json::json!({"owner": owner, "repo": repo, "branch": branch}),
             )
         }
         ["repos", owner, repo, "commits", reference] => {
-            crate::validate_login(owner).map_err(|_| usage(crate::unavailable::api_refusal()))?;
-            crate::validate_repo(repo).map_err(|_| usage(crate::unavailable::api_refusal()))?;
-            crate::validate_ref(reference).map_err(|_| usage(crate::unavailable::api_refusal()))?;
+            crate::validate_login(owner).map_err(|_| usage("gh api: invalid owner"))?;
+            crate::validate_repo(repo).map_err(|_| usage("gh api: invalid repository"))?;
+            crate::validate_ref(reference).map_err(|_| usage("gh api: invalid ref"))?;
             (
                 ids::COMMIT_READ,
                 serde_json::json!({"owner": owner, "repo": repo, "ref": reference}),
@@ -1211,7 +1216,10 @@ mod tests {
         assert!(stdout.contains("<COMMAND>\n"), "{stdout:?}");
         assert!(stdout.contains("no raw API passthrough"), "{stdout:?}");
         let (stdout, _, _) = rendered(&["pr", "view", "-h"]);
-        assert!(stdout.contains("Usage: gh pr view"), "{stdout:?}");
+        assert!(
+            stdout.contains("\nUsage: gh pr view [OPTIONS] --repo <OWNER/REPO> <NUMBER>\n"),
+            "{stdout:?}"
+        );
     }
 
     #[test]
@@ -1407,7 +1415,9 @@ mod tests {
             assert_eq!(failure.code(), "usage");
             let message = failure.message().to_owned();
             assert!(
-                message.contains("gh pr view: not available in this environment"),
+                message.contains(&format!(
+                    "gh pr view {flag}: not available in this environment"
+                )),
                 "{flag}: {message}"
             );
         }
@@ -1512,7 +1522,14 @@ mod tests {
         ] {
             assert_eq!(
                 refuse(words).message(),
-                "gh api: not available in this environment (by policy)"
+                format!(
+                    "gh api --{}: not available in this environment (by policy)",
+                    if words[2] == "-f" {
+                        "raw-field"
+                    } else {
+                        "method"
+                    }
+                )
             );
         }
     }
