@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document POST grants for fixed-document GraphQL reads.
 - Identify unavailable flags and scopes while preserving required arguments, readable help and base clap errors.
 - Preserve upstream flag arity, option values, shorthand clusters and usage errors in gh refusal handling.
+- Add scoped PR and issue list filters and state all.
+- Add all typed search qualifier flags with closed validation.
+- Add public-endpoint repository filters and escape-sequence no-op flags.
+- Add single-request patch, name-only and glob exclusions to PR diffs.
+- Render PR and issue comments in text.
+- Support review head guards, bounded line comments and merge commit text.
+- Add separate issue comment edit, delete and edit-or-create capabilities.
+- Keep a typed issue label containing a comma as one scoped search term.
+- Preserve legacy search query errors and accounting while bounding complete typed queries on new search paths.
 
 ### Fixed
 
