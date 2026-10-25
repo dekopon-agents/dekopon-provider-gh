@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-25
+
+### Added
+
+- Inventory-backed unavailable command and flag refusals with matching help and preserved clap typo errors.
+- Upstream flag shorthands and closed JSON selection for auth status.
+- Local version, licenses, actions and accessibility output.
+
+### Changed
+
+- Document POST grants for fixed-document GraphQL reads.
+- Identify unavailable flags and scopes while preserving required arguments, readable help and base clap errors.
+- Preserve upstream flag arity, option values, shorthand clusters and usage errors in gh refusal handling.
+
+### Fixed
+
+- Read complete pull-request file lists through validated GitHub pagination without partial output on failure.
+
 ## [0.10.0] - 2026-10-16
 
 ### Changed
