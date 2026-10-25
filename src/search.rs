@@ -244,7 +244,7 @@ pub(crate) fn run(
     };
     if id == crate::ids::SEARCH_PRS {
         q.push_str(" is:pr");
-    } else if id == crate::ids::SEARCH_ISSUES {
+    } else if id == crate::ids::SEARCH_ISSUES && input.include_prs != Some(true) {
         q.push_str(" is:issue");
     }
     if let Some(state) = &input.state {
@@ -252,9 +252,6 @@ pub(crate) fn run(
     }
     if let Some(author) = &input.author {
         q.push_str(&format!(" author:{author}"));
-    }
-    if id == crate::ids::SEARCH_ISSUES && input.include_prs == Some(true) {
-        q = q.replace(" is:issue", "");
     }
     for term in crate::qualifiers::terms(command, &extra) {
         q.push(' ');

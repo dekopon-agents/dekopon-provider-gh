@@ -1241,3 +1241,119 @@ async fn query_budgets_count_supplied_terms_without_tightening_legacy_searches()
         assert!(stdout.is_empty());
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn filtered_lists_reject_out_of_contract_limits_before_http() {
+    for id in ["gh.issue.list", "gh.pull-request.list"] {
+        for limit in [0, 101] {
+            let (status, stderr, stdout) = invoke(id, json!({"owner":"o","repo":"r","label":["bug"],"_cliOutput":"number","_cliLimit":limit}), vec![]).await;
+            assert_eq!(status, 2);
+            assert_eq!(stderr, "input does not match the capability contract\n");
+            assert!(stdout.is_empty());
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn filtered_lists_refuse_incomplete_searches_in_direct_and_cli_calls() {
+    for id in ["gh.issue.list", "gh.pull-request.list"] {
+        for cli in [false, true] {
+            let mut input = json!({"owner":"o","repo":"r","search":"bug"});
+            if cli {
+                input["_cliOutput"] = json!("number");
+            }
+            let kind = if id == "gh.issue.list" { "issue" } else { "pr" };
+            let page_size = if cli { 100 } else { 20 };
+            let path = format!(
+                "/search/issues?q=bug%20repo%3Ao%2Fr%20is%3A{kind}%20is%3Aopen&page=1&per_page={page_size}"
+            );
+            let (status, stderr, stdout) = invoke(
+                id,
+                input,
+                vec![exchange(
+                    &path,
+                    "GET",
+                    Value::Null,
+                    json!({"incomplete_results":true,"total_count":0,"items":[]}),
+                )],
+            )
+            .await;
+            assert_eq!(status, 3);
+            assert_eq!(
+                stderr,
+                "search indexing is incomplete; results are not exhaustive\n"
+            );
+            assert!(stdout.is_empty());
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn include_prs_preserves_explicit_and_quoted_caller_issue_terms() {
+    for (query, encoded) in [
+        ("bug is:issue", "bug%20is%3Aissue"),
+        (
+            "bug \"literal is:issue\"",
+            "bug%20%22literal%20is%3Aissue%22",
+        ),
+    ] {
+        let path = format!("/search/issues?q={encoded}%20repo%3Ao%2Fr&page=1&per_page=100");
+        let (status, stderr, _) = invoke(
+            "gh.search.issues",
+            json!({"owner":"o","repo":"r","query":query,"includePrs":true,"_cliOutput":"number"}),
+            vec![exchange(
+                &path,
+                "GET",
+                Value::Null,
+                json!({"incomplete_results":false,"total_count":0,"items":[]}),
+            )],
+        )
+        .await;
+        assert_eq!(status, 0, "{stderr}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn numeric_milestones_filter_search_results_by_number_without_title_qualifiers() {
+    for (filter, term) in [
+        (json!({"search":"bug"}), "bug"),
+        (json!({"app":"bot"}), "author%3A%22app%2Fbot%22"),
+        (json!({"label":["a,b"]}), "label%3A%22a%2Cb%22"),
+    ] {
+        for cli in [false, true] {
+            let mut input = json!({"owner":"o","repo":"r","milestone":"1"});
+            input
+                .as_object_mut()
+                .unwrap()
+                .extend(filter.as_object().unwrap().clone());
+            if cli {
+                input["_cliOutput"] = json!("number");
+                input["_cliLimit"] = json!(1);
+            }
+            let row = |number, milestone| json!({"id":number,"number":number,"title":"issue","state":"open","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","milestone":{"number":milestone,"title":"1"}});
+            let size = if cli { 100 } else { 20 };
+            let path = format!(
+                "/search/issues?q={term}%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page={size}"
+            );
+            let (status, stderr, stdout) = invoke(
+                "gh.issue.list",
+                input,
+                vec![exchange(
+                    &path,
+                    "GET",
+                    Value::Null,
+                    json!({"incomplete_results":false,"total_count":2,"items":[row(2,2),row(1,1)]}),
+                )],
+            )
+            .await;
+            assert_eq!(status, 0, "{stderr}");
+            let output: Value = serde_json::from_slice(&stdout).expect("JSON output");
+            if cli {
+                assert_eq!(output, json!([{"number":1}]));
+            } else {
+                assert_eq!(output["issues"].as_array().unwrap().len(), 1);
+                assert_eq!(output["issues"][0]["number"], 1);
+            }
+        }
+    }
+}

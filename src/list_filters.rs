@@ -44,7 +44,11 @@ pub(crate) fn run(
     if let Some(author) = &input.author {
         crate::validate_login(author)?;
     }
-    if input.limit.is_some() && input.cli.is_none() {
+    if (input.limit.is_some() && input.cli.is_none())
+        || input
+            .limit
+            .is_some_and(|limit| !(1..=crate::MAX_CLI_LIMIT).contains(&limit))
+    {
         return Err(invalid_input());
     }
     let pr = command == "pr list";
@@ -69,10 +73,21 @@ pub(crate) fn run(
             .milestone
             .as_deref()
             .is_some_and(|v| v.parse::<u64>().is_err());
+    let numeric_milestone = input
+        .milestone
+        .as_deref()
+        .and_then(|value| value.parse::<u64>().ok());
+    let mut query_filters = value.clone();
+    if numeric_milestone.is_some() {
+        query_filters
+            .as_object_mut()
+            .ok_or_else(invalid_input)?
+            .remove("milestone");
+    }
     let mut path;
     if search {
         let mut q = input.search.clone().unwrap_or_default();
-        for term in crate::qualifiers::terms(command, &value) {
+        for term in crate::qualifiers::terms(command, &query_filters) {
             if !q.is_empty() {
                 q.push(' ');
             }
@@ -125,6 +140,12 @@ pub(crate) fn run(
     let fields = input.cli.as_deref().unwrap_or("");
     let project = |raw: Value| -> Result<Option<Value>, ProviderError> {
         if !pr && !raw["pull_request"].is_null() {
+            return Ok(None);
+        }
+        if search
+            && numeric_milestone
+                .is_some_and(|number| raw["milestone"]["number"].as_u64() != Some(number))
+        {
             return Ok(None);
         }
         if !search && pr {
@@ -197,20 +218,7 @@ pub(crate) fn run(
             input.limit.unwrap_or(30),
             |body| {
                 let raw: Value = crate::decode(body)?;
-                if search {
-                    if raw["incomplete_results"] != false {
-                        return Err(ProviderError::new(
-                            "incomplete-results",
-                            "search indexing is incomplete; results are not exhaustive",
-                        ));
-                    }
-                    raw["items"]
-                        .as_array()
-                        .cloned()
-                        .ok_or_else(invalid_response)
-                } else {
-                    raw.as_array().cloned().ok_or_else(invalid_response)
-                }
+                response_items(raw, search)
             },
             |row| row["id"].as_u64().map(|id| id.to_string()),
             project,
@@ -223,13 +231,9 @@ pub(crate) fn run(
         )?;
         let response = crate::send_get(send, uri, crate::ACCEPT_JSON)?;
         let raw: Value = crate::decode(&response.body)?;
-        let items = if search { &raw["items"] } else { &raw };
-        items
-            .as_array()
-            .ok_or_else(invalid_response)?
-            .iter()
+        response_items(raw, search)?
+            .into_iter()
             .take(crate::MAX_LIST_ITEMS)
-            .cloned()
             .map(project)
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
@@ -241,4 +245,21 @@ pub(crate) fn run(
     } else {
         json!({"issues":rows})
     })
+}
+
+fn response_items(raw: Value, search: bool) -> Result<Vec<Value>, ProviderError> {
+    if search {
+        if raw["incomplete_results"] != false {
+            return Err(ProviderError::new(
+                "incomplete-results",
+                "search indexing is incomplete; results are not exhaustive",
+            ));
+        }
+        raw["items"]
+            .as_array()
+            .cloned()
+            .ok_or_else(invalid_response)
+    } else {
+        raw.as_array().cloned().ok_or_else(invalid_response)
+    }
 }
