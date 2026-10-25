@@ -1,7 +1,7 @@
 # Guidance for coding agents
 
-The GitHub provider for Dekopon: one Wasm component, twenty-four narrow capabilities, no arbitrary
-`gh api` passthrough. Foundation helpers add no production capability; the count remains twenty-four. [README.md](README.md) is the design; read the section your change touches.
+The GitHub provider for Dekopon: one Wasm component, twenty-seven narrow capabilities, no arbitrary
+`gh api` passthrough. Foundation helpers add no production capability; batch 1 adds three issue-comment lifecycle capabilities. [README.md](README.md) is the design; read the section your change touches.
 
 ## Contract
 

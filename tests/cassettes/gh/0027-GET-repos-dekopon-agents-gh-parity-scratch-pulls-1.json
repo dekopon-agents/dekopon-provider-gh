@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "request": {
+    "method": "GET",
+    "path": "/repos/dekopon-agents/gh-parity-scratch/pulls/1",
+    "query": null,
+    "headers": {
+      "accept": "application/vnd.github.diff",
+      "accept-encoding": "identity",
+      "authorization": "[redacted]",
+      "connection": "close",
+      "host": "127.0.0.1:8787",
+      "user-agent": "dekopon-gh-provider/0.1",
+      "x-github-api-version": "2022-11-28"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+      "cache-control": "private, max-age=60, s-maxage=60",
+      "content-security-policy": "default-src 'none'",
+      "content-type": "application/vnd.github.diff; charset=utf-8",
+      "date": "Sun, 25 Oct 2026 07:39:17 GMT",
+      "etag": "\"6c87ae5501403992f019bd589e4352d74b2b2f851852bea5c9beeb6fb8114359\"",
+      "github-authentication-token-expiration": "2026-10-25 12:09:47 UTC",
+      "last-modified": "Sun, 25 Oct 2026 07:37:55 GMT",
+      "referrer-policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+      "server": "envoy",
+      "strict-transport-security": "max-age=31536000; includeSubdomains; preload",
+      "vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+      "x-accepted-github-permissions": "pull_requests=read; contents=read",
+      "x-accepted-oauth-scopes": "repo",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "364",
+      "x-frame-options": "deny",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-github-edge-region": "iad",
+      "x-github-media-type": "github.v3; param=diff",
+      "x-github-request-id": "C0FC:128078:15073D8:45040F3:6ADDB225",
+      "x-oauth-client-id": [
+        "Iv23liVemv8A9if9v0F2",
+        "Iv23liVemv8A9if9v0F2"
+      ],
+      "x-oauth-scopes": "",
+      "x-ratelimit-limit": "15000",
+      "x-ratelimit-remaining": "14725",
+      "x-ratelimit-reset": "1792917229",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "275",
+      "x-xss-protection": "0"
+    },
+    "body": {
+      "text": "diff --git a/parity-batch1.txt b/parity-batch1.txt\nnew file mode 100644\nindex 0000000..5a9e790\n--- /dev/null\n+++ b/parity-batch1.txt\n@@ -0,0 +1,2 @@\n+batch 1 parity\n+recorded line comments\n"
+    }
+  }
+}

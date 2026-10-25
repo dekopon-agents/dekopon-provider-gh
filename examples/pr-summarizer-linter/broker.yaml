@@ -92,7 +92,7 @@ constraintSets:
       http:
         allowedHosts: [api.github.com]
         allowedMethods: [GET]
-        maxRequests: 1
+        maxRequests: 2
         maxRequestBytes: 16384
         maxResponseBytes: 262144
         allowPlaintextLoopback: false

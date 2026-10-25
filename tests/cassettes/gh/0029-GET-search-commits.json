@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "request": {
+    "method": "GET",
+    "path": "/search/commits",
+    "query": "q=parity%20repo%3Adekopon-agents%2Fgh-parity-scratch%20author-date%3A%3E%3D2020-01-01%20author-email%3A%22batch1%40example.test%22%20author-name%3A%22Batch%201%22%20committer-date%3A%3C%3D2030-01-01%20merge%3Afalse&sort=author-date&order=asc&page=1&per_page=100",
+    "headers": {
+      "accept": "application/vnd.github+json",
+      "accept-encoding": "identity",
+      "authorization": "[redacted]",
+      "connection": "close",
+      "host": "127.0.0.1:8787",
+      "user-agent": "dekopon-gh-provider/0.1",
+      "x-github-api-version": "2022-11-28"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+      "cache-control": "no-cache",
+      "content-security-policy": "default-src 'none'",
+      "content-type": "application/json; charset=utf-8",
+      "date": "Sun, 25 Oct 2026 07:39:18 GMT",
+      "github-authentication-token-expiration": "2026-10-25 12:09:47 UTC",
+      "referrer-policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+      "server": "envoy",
+      "strict-transport-security": "max-age=31536000; includeSubdomains; preload",
+      "vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+      "x-accepted-github-permissions": "allows_permissionless_access=true",
+      "x-accepted-oauth-scopes": "",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "223",
+      "x-frame-options": "deny",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-github-edge-region": "iad",
+      "x-github-media-type": "github.v3; format=json",
+      "x-github-request-id": "B9EE:18E9CA:1270C33:3C17AE2:6ADDB226",
+      "x-oauth-client-id": "Iv23liVemv8A9if9v0F2",
+      "x-oauth-scopes": "",
+      "x-ratelimit-limit": "30",
+      "x-ratelimit-remaining": "30",
+      "x-ratelimit-reset": "1792914013",
+      "x-ratelimit-resource": "search",
+      "x-ratelimit-used": "3",
+      "x-xss-protection": "0"
+    },
+    "body": {
+      "json": {
+        "total_count": 0,
+        "incomplete_results": false,
+        "items": []
+      }
+    }
+  }
+}

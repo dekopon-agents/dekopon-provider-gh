@@ -2,7 +2,7 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Twenty-four narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
+Twenty-seven narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
 output projections, and SHA-pinned review/merge writes. There is deliberately no arbitrary
 `gh api` passthrough: a path-level escape hatch would collapse per-capability policy into
 "everything the credential can reach".
@@ -43,11 +43,27 @@ Nothing piped is a usage error rather than an empty comment. `gh api` accepts on
 Supported `gh pr list/view`, `gh issue list/view`, `gh repo view/list/read-file/read-dir` commands
 accept closed, comma-separated `--json FIELDS`; bare, unknown and repeated fields refuse as usage.
 Without `--json`, these commands print tab-separated rows (files print decoded content).
-`gh pr list` also accepts `--state merged`, filtering closed pulls to merged results.
+`gh pr list` accepts `--state merged`, filtering closed pulls to merged results, and both
+PR and issue lists accept `--state all`. PR lists accept base/head, label, assignee, draft,
+app-author and scoped search filters. Issue lists accept assignee, label, author, mention,
+milestone, app-author, issue type and scoped search filters. New fields are optional;
+legacy inputs retain their requests and output. Filters collect matching rows within the existing
+ten-request bound. A search-backed PR list uses the search result's issue-shaped projection;
+GitHub does not include head/base refs in that response, so those selected fields are null.
+`pr view --comments` and `issue view --comments` render the existing bounded comments page in text.
+`pr diff --patch` selects the patch Accept header; `--name-only` extracts names from the same
+single diff GET. They cannot be combined. Repeated/comma-separated `--exclude` globs filter
+file sections, matching a full path or basename. Diff commands retain their JSON result envelope.
+`--allow-escape-sequences` on `pr diff` and `repo read-file` is a documented no-op:
+base output already preserves ESC, so output bytes are identical with or without the flag.
+`pr merge --body` (or `--body-file -`) and `--subject` set the merge commit message/title.
 `gh pr list`, `gh issue list`, and `gh repo list OWNER` collect up to 100 matching rows
 (default 30) across at most ten REST pages; an exhausted list may return fewer rows.
 `repo list` uses GitHub's public `/users/OWNER/repos` endpoint and cannot enumerate
-private repositories inaccessible there. An interrupted collection prints no partial rows.
+private repositories inaccessible there. `--source`/`--fork`, `--language`, repeated `--topic`,
+`--archived`/`--no-archived`, and `--visibility` filter that public list. Deprecated `--private`
+and `--public` select visibility; they do not enable private enumeration. Source/fork,
+archived/no-archived, private/public, and visibility with either deprecated alias are mutually exclusive. An interrupted collection prints no partial rows.
 `gh pr view --json files` collects all file pages, up to GitHub's 3,000-file cap.
 It needs one metadata GET plus up to 30 file GETs under the same grant. Each response
 uses the grant's per-response byte limit; a failed page emits no partial JSON.
@@ -85,6 +101,7 @@ write to stderr with a nonzero status. Filter stdout with the shell's
 | `gh.repo.read` / `gh.repo.list` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` / `gh.user-self.read` | read-only |
 | `gh.issue.read` / `.list` | read-only |
 | `gh.issue.comment` | external-write |
+| `gh.issue.comment-edit` / `.comment-delete` / `.comment-edit-or-create` | external-write |
 | `gh.search.prs` / `.issues` / `.repos` / `.code` / `.commits` | read-only |
 
 `gh.pull-request.status` backs numbered `gh pr checks` with real check runs (including third-party
@@ -95,6 +112,32 @@ pending, 1 for failed or empty checks, and 3 for upstream, broker HTTP or ceilin
 selected `--json` checks exit 0 and expose the verdict in `bucket`.
 
 Scoped search requires exactly one `--owner OWNER` or `-R OWNER/REPO` (`search repos` requires `--owner`). `--owner` matches personal and organization owners. Searches are bounded to ten REST requests and at most 100 matches. A shorter response can reflect GitHub's indexing delay; incomplete results and an inconsistent index count fail rather than being presented as a complete array. GitHub exposes at most the first 1,000 indexed matches. Query terms cannot set a repository or owner scope.
+
+Search qualifier flags are closed typed fields: logins, SHAs, dates/ISO times, counts/ranges,
+enums and quoted free text. Counts and dates support `>`, `>=`, `<`, `<=`, closed `N..M`
+and open `N..*`/`*..N` ranges. A free-text value becomes one quoted term, so a label such as
+`area:db` or `x repo:elsewhere/repo` cannot change scope. Quotes, backslashes and controls in
+these values refuse before HTTP. Raw list `--search` text retains the shipped scope-word rule;
+its text plus supplied typed terms on new search paths must fit 512 bytes, excluding
+provider-appended scope/kind terms. Existing queries without new query terms retain their
+legacy author/state accounting. REST-only filters do not acquire a search-query length limit.
+Issue semantic/hybrid searches use the fixed `search_type` REST parameter and return at most one
+page, up to 100 results. They exclude `--include-prs`, explicit `--sort` and explicit `--order`.
+An app filter and author filter are mutually exclusive on issue/PR lists and searches.
+
+`issue comment --edit-last` edits the current user's latest comment; `--delete-last --yes`
+deletes it. `--edit-last --create-if-none` selects the distinct edit-or-create capability.
+Lookup walks at most ten backward pages of 100 comments, followed by at most one mutation.
+All three new capabilities need POST to the fixed GraphQL endpoint, up to eleven requests;
+only edit and edit-or-create accept a body or piped body. Delete cannot include a body.
+`--yes` requires delete-last, and create-if-none requires edit-last. These operate on issue
+comments even for PR numbers and do not depend on the PR head. With no matching comment,
+plain edit/delete return `not-found`; edit-or-create posts one new comment.
+
+`pr checks --required`, `pr merge --author-email`, `repo view --branch` and
+`repo read-file --output` remain unbuilt: their implementations would exceed the corresponding
+base grant. Required checks retain the existing GraphQL-only refusal. Batch 2 merge modes,
+new commands, local uploads and arbitrary API access remain unavailable as before.
 
 ## Using it
 
@@ -141,8 +184,23 @@ input, model text, or provider settings.
 Grant each capability separately. `gh pr merge N -R owner/repo` requires exactly one of
 `--merge`, `--squash`, or `--rebase`; the typed merge input requires `mergeMethod`.
 Review submission pins the head observed by the provider but cannot prevent a push between
-its pre-read and submission. `--match-head-commit SHA` on merge refuses a head that moved
+its pre-read and submission. `--match-head-commit SHA` on merge and all three review events refuses a head that moved
 before the pre-read; GitHub's merge SHA guard also checks the subsequent write.
+Only `gh.pull-request.comment` accepts an optional `comments` array of 1–50
+`{path, line, side?, startLine?, body}` items. Paths use the content-path validation;
+line is positive, side defaults to RIGHT (LEFT is also accepted), and an optional positive
+startLine must be below line on that same side. Each body retains the 4 KiB review-body bound.
+The review body is required without comments and optional with comments. The entire serialized
+line-comment review request must fit 16384 bytes, including the pinned commit ID; validation
+and the size check run before any HTTP. The POST uses `start_line` and `start_side` for ranges.
+Approval and request-changes do not accept this array. Their existing grants stay unchanged.
+
+Grant request counts for the operations actually used: PR read permits up to 33 provider requests
+(metadata, 30 file pages, reviews and comments), while issue read permits two, diff/content one,
+and lists/search/checks ten each. The broker's default 32-call ceiling can refuse the final
+combined PR-read expansion; this existing behavior is unchanged. Examples are deployment choices,
+not capability bounds. Hosts remain the existing GitHub authority or the owner-set baseUrl.
+
 The [reviewer example](examples/pr-summarizer-linter/README.md)
 shows the broker grant steps. `gh.auth.status` is read-only, Low risk, and needs one allowed GET.
 It reports quota and available credential-header metadata, not repository visibility or credential
@@ -155,7 +213,7 @@ GraphQL-backed reads need `POST` in `allowedMethods`, even though their capabili
 read-only. The HTTP grant cannot distinguish a query from a mutation: fixed component-owned
 documents and typed variables provide that guarantee. No existing read in this batch switches
 from REST to GraphQL or changes its grant. The foundation helper is exercised by an isolated
-component fixture; it exposes no new production capability. There remain twenty-four capabilities.
+component fixture; it exposes no new production capability. There are now twenty-seven production capabilities.
 
 For fine-grained PATs and GitHub App installations, grant repository permissions for the
 capabilities you enable (Read unless marked Write):
@@ -171,9 +229,13 @@ capabilities you enable (Read unless marked Write):
 | `gh.pull-request.merge` | Pull requests: Write; Contents: Write |
 | `gh.issue.read`, `.list` | Issues: Read |
 | `gh.issue.comment` | Issues: Write |
+| `gh.issue.comment-edit` | Issues: Write; Pull requests: Read when targeting a PR number |
+| `gh.issue.comment-delete` | Issues: Write; Pull requests: Read when targeting a PR number |
+| `gh.issue.comment-edit-or-create` | Issues: Write; Pull requests: Read when targeting a PR number |
 
 | Error code | Message | What to do |
 |---|---|---|
+| `request-too-large` | `the review request would exceed 16384 bytes` | Shorten the line-comment bodies or submit fewer comments; no request was sent (exit 2). |
 | `unauthorized` | `credential rejected: expired, revoked or malformed` | Replace or renew the broker-bound token and restart the broker to load it. |
 | `forbidden` | `credential lacks a permission this call needs; GitHub accepts: <permissions>` | Check the fine-grained PAT or App permissions GitHub names, repository selection, and organization approval. |
 | `forbidden` | `credential lacks a scope; GitHub accepts: <scopes>; credential has: <scopes>` | Compare accepted classic PAT scopes with held scopes; grant only what this call needs. Missing held-scope metadata is reported as `not reported`. |
@@ -245,7 +307,10 @@ published Cargo feature. CI applies the root deny policy to both Cargo lockfiles
 `tests/cassettes/gh/` holds GitHub exchanges recorded with `cassette record --upstream
 gh=https://api.github.com` and `baseUrl: http://127.0.0.1:<port>/gh`, the port you pass to
 `--listen`; `tests/cassette.rs` replays them through the `baseUrl` setting. The recorder saves
-`authorization` as `[redacted]`.
+`authorization` as `[redacted]`. `tests/cassettes/have-flags.json` maps the batch 1 exchanges to
+production-capability replays; setup-only recordings are excluded. The batch used 46 authenticated
+calls, including scratch setup. The redaction test always checks authorization and, when
+`GH_CASSETTE_TOKEN` is set, rejects every eight-byte token window without printing the token.
 
 ## License
 

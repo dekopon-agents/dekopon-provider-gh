@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "request": {
+    "method": "PUT",
+    "path": "/repos/dekopon-agents/gh-parity-scratch/pulls/1/merge",
+    "query": null,
+    "headers": {
+      "accept": "application/vnd.github+json",
+      "accept-encoding": "identity",
+      "authorization": "[redacted]",
+      "connection": "close",
+      "content-length": "169",
+      "content-type": "application/json",
+      "host": "127.0.0.1:8787",
+      "user-agent": "dekopon-gh-provider/0.1",
+      "x-github-api-version": "2022-11-28"
+    },
+    "body": {
+      "json": {
+        "sha": "90f22eb6e5f6c8642250016d67d199e7a76f608e",
+        "merge_method": "squash",
+        "commit_message": "Batch 1 recorded merge body",
+        "commit_title": "Batch 1 recorded merge subject"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+      "cache-control": "private, max-age=60, s-maxage=60",
+      "content-security-policy": "default-src 'none'",
+      "content-type": "application/json; charset=utf-8",
+      "date": "Sun, 25 Oct 2026 07:39:26 GMT",
+      "etag": "\"f2ced6521299b095c86bb10e10907b8eb49d03199bfa7ff871c2a23fc2460de6\"",
+      "github-authentication-token-expiration": "2026-10-25 12:09:47 UTC",
+      "referrer-policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+      "server": "envoy",
+      "strict-transport-security": "max-age=31536000; includeSubdomains; preload",
+      "vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+      "x-accepted-github-permissions": "contents=write",
+      "x-accepted-oauth-scopes": "",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "2423",
+      "x-frame-options": "deny",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-github-edge-region": "iad",
+      "x-github-media-type": "github.v3; format=json",
+      "x-github-request-id": "D8BB:28A6DD:67E8739:1510BDFA:6ADDB22B",
+      "x-oauth-client-id": "Iv23liVemv8A9if9v0F2",
+      "x-oauth-scopes": "",
+      "x-ratelimit-limit": "15000",
+      "x-ratelimit-remaining": "14912",
+      "x-ratelimit-reset": "1792914298",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "88",
+      "x-xss-protection": "0"
+    },
+    "body": {
+      "json": {
+        "sha": "7e59a0bb4c368092ca5e4294858535b6586edf4c",
+        "merged": true,
+        "message": "Pull Request successfully merged"
+      }
+    }
+  }
+}

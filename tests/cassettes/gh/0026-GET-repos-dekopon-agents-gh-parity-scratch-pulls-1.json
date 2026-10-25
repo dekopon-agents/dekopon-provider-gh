@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "request": {
+    "method": "GET",
+    "path": "/repos/dekopon-agents/gh-parity-scratch/pulls/1",
+    "query": null,
+    "headers": {
+      "accept": "application/vnd.github.patch",
+      "accept-encoding": "identity",
+      "authorization": "[redacted]",
+      "connection": "close",
+      "host": "127.0.0.1:8787",
+      "user-agent": "dekopon-gh-provider/0.1",
+      "x-github-api-version": "2022-11-28"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+      "cache-control": "private, max-age=60, s-maxage=60",
+      "content-security-policy": "default-src 'none'",
+      "content-type": "application/vnd.github.patch; charset=utf-8",
+      "date": "Sun, 25 Oct 2026 07:39:17 GMT",
+      "etag": "\"e907721b21ede80929a353098a875826b3670a0db1c7c7469119467230afa84c\"",
+      "github-authentication-token-expiration": "2026-10-25 12:09:47 UTC",
+      "last-modified": "Sun, 25 Oct 2026 07:37:55 GMT",
+      "referrer-policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+      "server": "envoy",
+      "strict-transport-security": "max-age=31536000; includeSubdomains; preload",
+      "vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+      "x-accepted-github-permissions": "pull_requests=read; contents=read",
+      "x-accepted-oauth-scopes": "repo",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "362",
+      "x-frame-options": "deny",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-github-edge-region": "iad",
+      "x-github-media-type": "github.v3; param=patch",
+      "x-github-request-id": "B9EE:18E9CA:12704E6:3C1625F:6ADDB224",
+      "x-oauth-client-id": "Iv23liVemv8A9if9v0F2",
+      "x-oauth-scopes": "",
+      "x-ratelimit-limit": "15000",
+      "x-ratelimit-remaining": "14727",
+      "x-ratelimit-reset": "1792917229",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "273",
+      "x-xss-protection": "0"
+    },
+    "body": {
+      "text": "From 90f22eb6e5f6c8642250016d67d199e7a76f608e Mon Sep 17 00:00:00 2001\nFrom: Xavier Lange <xrlange@gmail.com>\nDate: Sun, 25 Oct 2026 00:35:54 -0700\nSubject: [PATCH] test: batch 1 parity recording\n\n---\n parity-batch1.txt | 2 ++\n 1 file changed, 2 insertions(+)\n create mode 100644 parity-batch1.txt\n\ndiff --git a/parity-batch1.txt b/parity-batch1.txt\nnew file mode 100644\nindex 0000000..5a9e790\n--- /dev/null\n+++ b/parity-batch1.txt\n@@ -0,0 +1,2 @@\n+batch 1 parity\n+recorded line comments\n"
+    }
+  }
+}

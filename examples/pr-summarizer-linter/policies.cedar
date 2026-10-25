@@ -21,7 +21,8 @@ when { context has via && context.via == "dekopon-gatewayd" };
 
 // Capability surface: driving the agent implies none of these actions, and holding these actions
 // implies no session. Command shorthands propose these same capability actions. `context.via` keeps attested and direct authority disjoint; `context.agent`
-// pins the surface to this one agent. Approval, request-changes, and merge are deliberately absent.
+// pins the surface to this one agent. Approval, request-changes, merge, and issue-comment lifecycle writes are deliberately absent.
+// The COMMENT action includes optional pinned line comments under the same two-request grant.
 @id("pr-summarizer-linter-gh-surface")
 permit(principal == Dekopon::Principal::"maintainer",
        action in [Dekopon::Action::"gh.content.read",

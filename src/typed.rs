@@ -155,6 +155,9 @@ fn has_piped_body(id: &str) -> bool {
     matches!(
         id,
         "gh.issue.comment"
+            | "gh.issue.comment-edit"
+            | "gh.issue.comment-edit-or-create"
+            | "gh.pull-request.merge"
             | "gh.pull-request.approve"
             | "gh.pull-request.comment"
             | "gh.pull-request.request-changes"
@@ -402,6 +405,37 @@ capability!(
     RiskLevel::Medium
 );
 
+capability!(
+    IssueCommentEdit,
+    IssueCommentEditInput,
+    crate::ids::ISSUE_COMMENT_EDIT,
+    "issue.comment-edit",
+    "Edits the current user's last issue comment",
+    crate::issue_comments::edit,
+    EffectKind::ExternalWrite,
+    RiskLevel::Medium
+);
+capability!(
+    IssueCommentDelete,
+    IssueCommentDeleteInput,
+    crate::ids::ISSUE_COMMENT_DELETE,
+    "issue.comment-delete",
+    "Deletes the current user's last issue comment",
+    crate::issue_comments::delete,
+    EffectKind::ExternalWrite,
+    RiskLevel::Medium
+);
+capability!(
+    IssueCommentEditOrCreate,
+    IssueCommentEditOrCreateInput,
+    crate::ids::ISSUE_COMMENT_EDIT_OR_CREATE,
+    "issue.comment-edit-or-create",
+    "Edits the current user's last issue comment or creates one",
+    crate::issue_comments::edit_or_create,
+    EffectKind::ExternalWrite,
+    RiskLevel::Medium
+);
+
 pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
     match id {
         crate::ids::AUTH_STATUS => Proposal::to::<AuthStatus>(AuthStatusInput(input)),
@@ -429,6 +463,15 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
         crate::ids::USER_SELF_READ => Proposal::to::<UserSelfRead>(UserSelfReadInput(input)),
         "gh.issue.read" => Proposal::to::<IssueRead>(IssueReadInput(input)),
         "gh.issue.list" => Proposal::to::<IssueList>(IssueListInput(input)),
+        crate::ids::ISSUE_COMMENT_EDIT => {
+            Proposal::to::<IssueCommentEdit>(IssueCommentEditInput(input))
+        }
+        crate::ids::ISSUE_COMMENT_DELETE => {
+            Proposal::to::<IssueCommentDelete>(IssueCommentDeleteInput(input))
+        }
+        crate::ids::ISSUE_COMMENT_EDIT_OR_CREATE => {
+            Proposal::to::<IssueCommentEditOrCreate>(IssueCommentEditOrCreateInput(input))
+        }
         "gh.issue.comment" => Proposal::to::<IssueComment>(IssueCommentInput(input)),
         _ => unreachable!("the command dispatch uses only declared IDs"),
     }

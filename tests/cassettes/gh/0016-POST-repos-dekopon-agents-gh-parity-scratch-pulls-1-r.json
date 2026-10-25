@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "request": {
+    "method": "POST",
+    "path": "/repos/dekopon-agents/gh-parity-scratch/pulls/1/reviews",
+    "query": null,
+    "headers": {
+      "accept": "application/vnd.github+json",
+      "accept-encoding": "identity",
+      "authorization": "[redacted]",
+      "connection": "close",
+      "content-length": "179",
+      "content-type": "application/json",
+      "host": "127.0.0.1:8787",
+      "user-agent": "dekopon-gh-provider/0.1",
+      "x-github-api-version": "2022-11-28"
+    },
+    "body": {
+      "json": {
+        "event": "COMMENT",
+        "commit_id": "90f22eb6e5f6c8642250016d67d199e7a76f608e",
+        "comments": [
+          {
+            "path": "parity-batch1.txt",
+            "line": 1,
+            "side": "RIGHT",
+            "body": "Batch 1 line-comment evidence"
+          }
+        ]
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+      "cache-control": "private, max-age=60, s-maxage=60",
+      "content-security-policy": "default-src 'none'",
+      "content-type": "application/json; charset=utf-8",
+      "date": "Sun, 25 Oct 2026 07:37:55 GMT",
+      "etag": "\"8588f3a3d22e698f0d47380f677380d1926282042f3edec16d554285e8863540\"",
+      "github-authentication-token-expiration": "2026-10-25 12:09:47 UTC",
+      "referrer-policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+      "server": "envoy",
+      "strict-transport-security": "max-age=31536000; includeSubdomains; preload",
+      "vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+      "x-accepted-github-permissions": "pull_requests=write",
+      "x-accepted-oauth-scopes": "",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "1441",
+      "x-frame-options": "deny",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-github-edge-region": "iad",
+      "x-github-media-type": "github.v3; format=json",
+      "x-github-request-id": "33EF:2E11CD:6A0C178:15630884:6ADDB1D2",
+      "x-oauth-client-id": "Iv23liVemv8A9if9v0F2",
+      "x-oauth-scopes": "",
+      "x-ratelimit-limit": "15000",
+      "x-ratelimit-remaining": "14915",
+      "x-ratelimit-reset": "1792914298",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "85",
+      "x-xss-protection": "0"
+    },
+    "body": {
+      "json": {
+        "id": 5642094027,
+        "node_id": "PRR_kwDOVPPmV88AAAABUEuFyw",
+        "user": {
+          "login": "xrl",
+          "id": 693059,
+          "node_id": "MDQ6VXNlcjY5MzA1OQ==",
+          "avatar_url": "https://avatars.githubusercontent.com/u/693059?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/xrl",
+          "html_url": "https://github.com/xrl",
+          "followers_url": "https://api.github.com/users/xrl/followers",
+          "following_url": "https://api.github.com/users/xrl/following{/other_user}",
+          "gists_url": "https://api.github.com/users/xrl/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/xrl/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/xrl/subscriptions",
+          "organizations_url": "https://api.github.com/users/xrl/orgs",
+          "repos_url": "https://api.github.com/users/xrl/repos",
+          "events_url": "https://api.github.com/users/xrl/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/xrl/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "body": "",
+        "state": "COMMENTED",
+        "html_url": "https://github.com/dekopon-agents/gh-parity-scratch/pull/1#pullrequestreview-5642094027",
+        "pull_request_url": "https://api.github.com/repos/dekopon-agents/gh-parity-scratch/pulls/1",
+        "author_association": "MEMBER",
+        "_links": {
+          "html": {
+            "href": "https://github.com/dekopon-agents/gh-parity-scratch/pull/1#pullrequestreview-5642094027"
+          },
+          "pull_request": {
+            "href": "https://api.github.com/repos/dekopon-agents/gh-parity-scratch/pulls/1"
+          }
+        },
+        "is_copilot_code_review": false,
+        "copilot_code_review_effort": null,
+        "submitted_at": "2026-10-25T07:37:54Z",
+        "commit_id": "90f22eb6e5f6c8642250016d67d199e7a76f608e"
+      }
+    }
+  }
+}

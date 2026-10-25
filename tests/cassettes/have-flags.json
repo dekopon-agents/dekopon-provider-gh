@@ -1,0 +1,515 @@
+[
+  {
+    "name": "create last comment",
+    "capability": "gh.issue.comment-edit-or-create",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 2,
+      "body": "Batch 1 recorded comment"
+    },
+    "files": [
+      "0009-POST-graphql.json",
+      "0010-POST-graphql.json"
+    ]
+  },
+  {
+    "name": "edit last comment",
+    "capability": "gh.issue.comment-edit",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 2,
+      "body": "Batch 1 edited comment"
+    },
+    "files": [
+      "0011-POST-graphql.json",
+      "0012-POST-graphql.json"
+    ]
+  },
+  {
+    "name": "delete last comment",
+    "capability": "gh.issue.comment-delete",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 2
+    },
+    "files": [
+      "0013-POST-graphql.json",
+      "0014-POST-graphql.json"
+    ]
+  },
+  {
+    "name": "line comments",
+    "capability": "gh.pull-request.comment",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 1,
+      "expectedHeadSha": "90f22eb6e5f6c8642250016d67d199e7a76f608e",
+      "comments": [
+        {
+          "path": "parity-batch1.txt",
+          "line": 1,
+          "side": "RIGHT",
+          "body": "Batch 1 line-comment evidence"
+        }
+      ]
+    },
+    "files": [
+      "0015-GET-repos-dekopon-agents-gh-parity-scratch-pulls-1.json",
+      "0016-POST-repos-dekopon-agents-gh-parity-scratch-pulls-1-r.json"
+    ]
+  },
+  {
+    "name": "PR REST list filters",
+    "capability": "gh.pull-request.list",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "state": "all",
+      "base": "main",
+      "head": "gh-parity-batch1-20261025",
+      "draft": false,
+      "label": [
+        "batch1"
+      ],
+      "assignee": "octocat",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0017-GET-repos-dekopon-agents-gh-parity-scratch-pulls.json"
+    ]
+  },
+  {
+    "name": "issue REST list filters",
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "state": "all",
+      "assignee": "octocat",
+      "author": "octocat",
+      "mention": "octocat",
+      "label": [
+        "batch1"
+      ],
+      "type": "Bug",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0018-GET-repos-dekopon-agents-gh-parity-scratch-issues.json"
+    ]
+  },
+  {
+    "name": "PR search filters",
+    "capability": "gh.pull-request.list",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "search": "parity",
+      "label": [
+        "batch1"
+      ],
+      "app": "github-actions",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0019-GET-search-issues.json"
+    ]
+  },
+  {
+    "name": "issue milestone search",
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "search": "parity",
+      "milestone": "Batch 1",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0020-GET-search-issues.json"
+    ]
+  },
+  {
+    "name": "public repository filters",
+    "capability": "gh.repo.list",
+    "input": {
+      "owner": "dekopon-agents",
+      "source": true,
+      "language": "Rust",
+      "topic": [
+        "batch1"
+      ],
+      "visibility": "public",
+      "archived": false,
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0021-GET-users-dekopon-agents-repos.json"
+    ]
+  },
+  {
+    "name": "pulls text comments",
+    "capability": "gh.pull-request.read",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 1,
+      "comments": true,
+      "_cliOutput": ""
+    },
+    "files": [
+      "0022-GET-repos-dekopon-agents-gh-parity-scratch-pulls-1.json",
+      "0023-GET-repos-dekopon-agents-gh-parity-scratch-issues-1.json"
+    ]
+  },
+  {
+    "name": "issues text comments",
+    "capability": "gh.issue.read",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 2,
+      "comments": true,
+      "_cliOutput": ""
+    },
+    "files": [
+      "0024-GET-repos-dekopon-agents-gh-parity-scratch-issues-2.json",
+      "0025-GET-repos-dekopon-agents-gh-parity-scratch-issues-2.json"
+    ]
+  },
+  {
+    "name": "diff patch",
+    "capability": "gh.pull-request.diff",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 1,
+      "patch": true,
+      "exclude": [
+        "*.md"
+      ],
+      "allowEscapeSequences": true
+    },
+    "files": [
+      "0026-GET-repos-dekopon-agents-gh-parity-scratch-pulls-1.json"
+    ]
+  },
+  {
+    "name": "diff nameOnly",
+    "capability": "gh.pull-request.diff",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 1,
+      "nameOnly": true,
+      "exclude": [
+        "*.md"
+      ],
+      "allowEscapeSequences": true
+    },
+    "files": [
+      "0027-GET-repos-dekopon-agents-gh-parity-scratch-pulls-1.json"
+    ]
+  },
+  {
+    "name": "search code",
+    "capability": "gh.search.code",
+    "input": {
+      "query": "parity",
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "extension": "txt",
+      "filename": "parity-batch1.txt",
+      "match": [
+        "file"
+      ],
+      "language": "text",
+      "size": ">0",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0028-GET-search-code.json"
+    ],
+    "status": 3
+  },
+  {
+    "name": "search commits",
+    "capability": "gh.search.commits",
+    "input": {
+      "query": "parity",
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "authorDate": ">=2020-01-01",
+      "authorEmail": "batch1@example.test",
+      "authorName": "Batch 1",
+      "committerDate": "<=2030-01-01",
+      "merge": false,
+      "sort": "author-date",
+      "order": "asc",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0029-GET-search-commits.json"
+    ]
+  },
+  {
+    "name": "search prs",
+    "capability": "gh.search.prs",
+    "input": {
+      "query": "parity",
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "created": ">=2020-01-01T10:00:00Z",
+      "label": [
+        "batch1"
+      ],
+      "base": "main",
+      "draft": false,
+      "checks": "success",
+      "sort": "updated",
+      "order": "desc",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0030-GET-search-issues.json"
+    ]
+  },
+  {
+    "name": "search issues",
+    "capability": "gh.search.issues",
+    "input": {
+      "query": "parity",
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "comments": ">=0",
+      "label": [
+        "x repo:dekopon-agents/other"
+      ],
+      "_cliOutput": "number,repository",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0031-GET-search-issues.json"
+    ]
+  },
+  {
+    "name": "search repos",
+    "capability": "gh.search.repos",
+    "input": {
+      "query": "parity",
+      "owner": "dekopon-agents",
+      "includeForks": "true",
+      "language": "Rust",
+      "stars": ">=0",
+      "topic": [
+        "batch1"
+      ],
+      "sort": "stars",
+      "order": "desc",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0032-GET-search-repositories.json"
+    ]
+  },
+  {
+    "name": "comparison >0",
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "dekopon-agents",
+      "query": "parity",
+      "stars": ">0",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0033-GET-search-repositories.json"
+    ]
+  },
+  {
+    "name": "comparison >=0",
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "dekopon-agents",
+      "query": "parity",
+      "stars": ">=0",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0034-GET-search-repositories.json"
+    ]
+  },
+  {
+    "name": "comparison <1000000",
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "dekopon-agents",
+      "query": "parity",
+      "stars": "<1000000",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0035-GET-search-repositories.json"
+    ]
+  },
+  {
+    "name": "comparison <=1000000",
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "dekopon-agents",
+      "query": "parity",
+      "stars": "<=1000000",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0036-GET-search-repositories.json"
+    ]
+  },
+  {
+    "name": "comparison 0..1000000",
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "dekopon-agents",
+      "query": "parity",
+      "stars": "0..1000000",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0037-GET-search-repositories.json"
+    ]
+  },
+  {
+    "name": "comparison 0..*",
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "dekopon-agents",
+      "query": "parity",
+      "stars": "0..*",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0038-GET-search-repositories.json"
+    ]
+  },
+  {
+    "name": "comparison *..1000000",
+    "capability": "gh.search.repos",
+    "input": {
+      "owner": "dekopon-agents",
+      "query": "parity",
+      "stars": "*..1000000",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0039-GET-search-repositories.json"
+    ]
+  },
+  {
+    "name": "merge text fields",
+    "capability": "gh.pull-request.merge",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 1,
+      "expectedHeadSha": "90f22eb6e5f6c8642250016d67d199e7a76f608e",
+      "mergeMethod": "squash",
+      "body": "Batch 1 recorded merge body",
+      "subject": "Batch 1 recorded merge subject"
+    },
+    "files": [
+      "0040-GET-repos-dekopon-agents-gh-parity-scratch-pulls-1.json",
+      "0041-PUT-repos-dekopon-agents-gh-parity-scratch-pulls-1-m.json"
+    ]
+  },
+  {
+    "name": "semantic issue search",
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "query": "parity",
+      "searchType": "semantic",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0042-GET-search-issues.json"
+    ]
+  },
+  {
+    "name": "hybrid issue search",
+    "capability": "gh.search.issues",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "query": "parity",
+      "searchType": "hybrid",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0043-GET-search-issues.json"
+    ]
+  },
+  {
+    "name": "numeric milestone filter",
+    "capability": "gh.issue.list",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "milestone": "1",
+      "_cliOutput": "",
+      "_cliLimit": 30
+    },
+    "files": [
+      "0045-GET-repos-dekopon-agents-gh-parity-scratch-issues.json"
+    ]
+  },
+  {
+    "name": "issue comment on merged PR",
+    "capability": "gh.issue.comment-edit-or-create",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 1,
+      "body": "Batch 1 issue-comment lifecycle on a merged PR"
+    },
+    "files": [
+      "0046-POST-graphql.json",
+      "0047-POST-graphql.json"
+    ]
+  },
+  {
+    "name": "edit-or-create existing comment",
+    "capability": "gh.issue.comment-edit-or-create",
+    "input": {
+      "owner": "dekopon-agents",
+      "repo": "gh-parity-scratch",
+      "number": 2,
+      "body": "Batch 1 edited comment"
+    },
+    "files": [
+      "0011-POST-graphql.json",
+      "0012-POST-graphql.json"
+    ]
+  }
+]

@@ -247,6 +247,20 @@ pub(crate) fn render(
             }
         }
         output.push('\n');
+        if input["comments"] == true && matches!(id, "gh.pull-request.read" | "gh.issue.read") {
+            for comment in row["comments"]
+                .as_array()
+                .ok_or_else(crate::invalid_response)?
+            {
+                output.push_str(comment["author"]["login"].as_str().unwrap_or(""));
+                output.push('\t');
+                output.push_str(&crate::marked_text(
+                    comment["body"].as_str().unwrap_or(""),
+                    crate::MAX_PR_BODY_OUT_BYTES,
+                ));
+                output.push('\n');
+            }
+        }
     }
     Ok(output)
 }

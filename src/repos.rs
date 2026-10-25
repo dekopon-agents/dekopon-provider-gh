@@ -29,6 +29,15 @@ struct RepoListInput {
     cli: Option<String>,
     #[serde(default, rename = "_cliLimit")]
     cli_limit: Option<usize>,
+    source: Option<bool>,
+    fork: Option<bool>,
+    language: Option<String>,
+    topic: Option<Vec<String>>,
+    visibility: Option<String>,
+    archived: Option<bool>,
+    no_archived: Option<bool>,
+    private: Option<bool>,
+    public: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,6 +162,31 @@ pub(crate) fn list(
     if input.cli.is_none() && input.cli_limit.is_some() {
         return Err(invalid_input());
     }
+    if (input.source == Some(true) && input.fork == Some(true))
+        || (input.archived == Some(true) && input.no_archived == Some(true))
+        || (input.private == Some(true) && input.public == Some(true))
+        || (input.visibility.is_some()
+            && (input.private == Some(true) || input.public == Some(true)))
+        || input
+            .visibility
+            .as_deref()
+            .is_some_and(|v| !["public", "private", "internal"].contains(&v))
+    {
+        return Err(invalid_input());
+    }
+    for value in input.language.iter().chain(input.topic.iter().flatten()) {
+        crate::qualifiers::free_text(value)?;
+    }
+    let visibility = input
+        .visibility
+        .as_deref()
+        .or(if input.private == Some(true) {
+            Some("private")
+        } else if input.public == Some(true) {
+            Some("public")
+        } else {
+            None
+        });
     let path = format!("/users/{}/repos?type=owner", percent_encode(&input.owner));
     let rows = crate::collect_pages(send, base, &path, input.cli_limit.unwrap_or(30), |raw| {
         let repo =
@@ -169,6 +203,36 @@ pub(crate) fn list(
             })
         {
             return Err(invalid_response());
+        }
+        if (input.source == Some(true) && repo.fork)
+            || (input.fork == Some(true) && !repo.fork)
+            || (input.archived == Some(true) && !repo.archived)
+            || (input.no_archived == Some(true) && repo.archived)
+            || visibility.is_some_and(|visibility| {
+                repo.visibility.as_deref().unwrap_or(if repo.private {
+                    "private"
+                } else {
+                    "public"
+                }) != visibility
+            })
+            || input.language.as_deref().is_some_and(|language| {
+                !raw["language"]
+                    .as_str()
+                    .is_some_and(|value| value.eq_ignore_ascii_case(language))
+            })
+            || input.topic.as_ref().is_some_and(|topics| {
+                topics.iter().any(|topic| {
+                    !raw["topics"].as_array().is_some_and(|values| {
+                        values.iter().any(|value| {
+                            value
+                                .as_str()
+                                .is_some_and(|value| value.eq_ignore_ascii_case(topic))
+                        })
+                    })
+                })
+            })
+        {
+            return Ok(None);
         }
         Ok(Some(json!({
             "name": repo.name, "owner": raw["owner"]["login"],

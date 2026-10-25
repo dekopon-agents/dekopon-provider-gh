@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "query": null,
+    "headers": {
+      "accept": "application/vnd.github+json",
+      "accept-encoding": "identity",
+      "authorization": "[redacted]",
+      "connection": "close",
+      "content-length": "564",
+      "content-type": "application/json",
+      "host": "127.0.0.1:8787",
+      "user-agent": "dekopon-gh-provider/0.1",
+      "x-github-api-version": "2022-11-28"
+    },
+    "body": {
+      "json": {
+        "query": "query LastIssueComment($owner: String!, $name: String!, $number: Int!, $before: String) { viewer { login } repository(owner: $owner, name: $name) { issueOrPullRequest(number: $number) { ... on Issue { id comments(last: 100, before: $before) { nodes { id author { login } } pageInfo { hasPreviousPage startCursor } } } ... on PullRequest { id comments(last: 100, before: $before) { nodes { id author { login } } pageInfo { hasPreviousPage startCursor } } } } } }",
+        "variables": {
+          "owner": "dekopon-agents",
+          "name": "gh-parity-scratch",
+          "number": 2,
+          "before": null
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+      "content-security-policy": "default-src 'none'",
+      "content-type": "application/json; charset=utf-8",
+      "date": "Sun, 25 Oct 2026 07:37:49 GMT",
+      "github-authentication-token-expiration": "2026-10-25 12:09:47 UTC",
+      "referrer-policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+      "server": "envoy",
+      "strict-transport-security": "max-age=31536000; includeSubdomains; preload",
+      "vary": "Accept-Encoding, Accept, X-Requested-With",
+      "x-accepted-oauth-scopes": "repo",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "353",
+      "x-frame-options": "deny",
+      "x-github-edge-region": "iad",
+      "x-github-media-type": "github.v4; format=json",
+      "x-github-request-id": "E897:3568DD:15A0DF3:46B0458:6ADDB1CC",
+      "x-oauth-client-id": "Iv23liVemv8A9if9v0F2",
+      "x-oauth-scopes": "",
+      "x-ratelimit-limit": "10000",
+      "x-ratelimit-remaining": "9695",
+      "x-ratelimit-reset": "1792916490",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "305",
+      "x-xss-protection": "0"
+    },
+    "body": {
+      "json": {
+        "data": {
+          "viewer": {
+            "login": "xrl"
+          },
+          "repository": {
+            "issueOrPullRequest": {
+              "id": "I_kwDOVPPmV88AAAABZvFZOg",
+              "comments": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasPreviousPage": false,
+                  "startCursor": null
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

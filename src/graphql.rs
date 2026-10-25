@@ -61,6 +61,29 @@ pub fn repository_node(
     Ok(node)
 }
 
+pub(crate) fn execute<V: Serialize, T: serde::de::DeserializeOwned>(
+    document: &'static str,
+    variables: &V,
+    base: &Base,
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+) -> Result<T, ProviderError> {
+    let body = json!({"query":document,"variables":variables});
+    let request = crate::github_json_request(method::POST, crate::url(base, "/graphql")?, &body)?;
+    let response = send(request).map_err(|_| crate::http_failed())?;
+    if response.status != 200 {
+        return Err(crate::status_error(&response));
+    }
+    let envelope: Envelope = crate::decode(&response.body)?;
+    if !envelope.errors.is_empty() {
+        return Err(ProviderError::new(
+            "graphql-error",
+            "GitHub GraphQL reported an error",
+        ));
+    }
+    serde_json::from_value(envelope.data.ok_or_else(crate::invalid_response)?)
+        .map_err(|_| crate::invalid_response())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

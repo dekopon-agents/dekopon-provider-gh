@@ -8,7 +8,7 @@
 use crate::error::ProviderError;
 use dekopon_provider_sdk::provider::endpoint::Base;
 use dekopon_provider_sdk::provider::{HttpError, Request, Response, method};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::pulls::{RawPull, fetch_pull};
@@ -28,6 +28,56 @@ struct ReviewInput {
     body: Option<String>,
     #[serde(default)]
     expected_head_sha: Option<String>,
+    comments: Option<Vec<LineComment>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LineComment {
+    path: String,
+    line: u32,
+    #[serde(default)]
+    side: Side,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    start_line: Option<u32>,
+    body: String,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
+enum Side {
+    Left,
+    #[default]
+    Right,
+}
+
+fn review_body(input: &ReviewInput, event: ReviewEvent, sha: &str) -> Result<Value, ProviderError> {
+    let mut body = json!({"event": event.wire(), "commit_id": sha});
+    if let Some(text) = &input.body {
+        body["body"] = json!(text);
+    }
+    if let Some(comments) = &input.comments {
+        let items = comments.iter().map(|comment| {
+            let mut item = json!({"path": comment.path, "line": comment.line, "side": comment.side, "body": comment.body});
+            if let Some(start) = comment.start_line {
+                item["start_line"] = json!(start);
+                item["start_side"] = json!(comment.side);
+            }
+            item
+        }).collect::<Vec<_>>();
+        body["comments"] = json!(items);
+        if serde_json::to_vec(&body)
+            .map_err(|_| invalid_input())?
+            .len()
+            > 16384
+        {
+            return Err(ProviderError::new(
+                "request-too-large",
+                "the review request would exceed 16384 bytes",
+            ));
+        }
+    }
+    Ok(body)
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,6 +87,8 @@ struct MergeInput {
     repo: String,
     number: u32,
     merge_method: MergeMethod,
+    body: Option<String>,
+    subject: Option<String>,
     #[serde(default)]
     expected_head_sha: Option<String>,
 }
@@ -139,15 +191,46 @@ fn submit_review(
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
     event: ReviewEvent,
 ) -> Result<Value, ProviderError> {
+    if input.get("comments").is_some() {
+        match event {
+            ReviewEvent::Comment => {}
+            ReviewEvent::Approve | ReviewEvent::RequestChanges => return Err(invalid_input()),
+        }
+    }
     let input = serde_json::from_value::<ReviewInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
     validate_expected_sha(input.expected_head_sha.as_deref())?;
+    if let Some(comments) = &input.comments {
+        match event {
+            ReviewEvent::Comment => {}
+            ReviewEvent::Approve | ReviewEvent::RequestChanges => return Err(invalid_input()),
+        }
+        if !(1..=50).contains(&comments.len()) {
+            return Err(invalid_input());
+        }
+        for comment in comments {
+            crate::validate_path(&comment.path)?;
+            if comment.path.is_empty()
+                || comment.line == 0
+                || comment
+                    .start_line
+                    .is_some_and(|start| start == 0 || start >= comment.line)
+            {
+                return Err(invalid_input());
+            }
+            validate_body(&comment.body)?;
+        }
+    }
     match input.body.as_deref() {
         Some(body) => validate_body(body)?,
-        None if event.body_required() => return Err(invalid_input()),
+        None if event.body_required() && input.comments.is_none() => return Err(invalid_input()),
         None => {}
+    }
+
+    if input.comments.is_some() {
+        review_body(&input, event, &"0".repeat(40))?;
     }
 
     // Pre-read: the refusals below happen before any write leaves this guest, so a mock that
@@ -162,13 +245,7 @@ fn submit_review(
     }
     require_expected_head(&pull, input.expected_head_sha.as_deref())?;
 
-    let mut body = json!({
-        "event": event.wire(),
-        "commit_id": pull.head.sha,
-    });
-    if let Some(text) = input.body.as_deref() {
-        body["body"] = Value::String(text.to_owned());
-    }
+    let body = review_body(&input, event, &pull.head.sha)?;
     let uri = url(
         base,
         &format!(
@@ -213,6 +290,12 @@ pub(crate) fn merge(
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
     validate_expected_sha(input.expected_head_sha.as_deref())?;
+    if let Some(body) = &input.body {
+        validate_body(body)?;
+    }
+    if let Some(subject) = &input.subject {
+        validate_body(subject)?;
+    }
     let pull = pinned_pull(
         send,
         base,
@@ -231,10 +314,16 @@ pub(crate) fn merge(
             input.number,
         ),
     )?;
-    let body = json!({
+    let mut body = json!({
         "sha": pull.head.sha,
         "merge_method": input.merge_method.as_str(),
     });
+    if let Some(text) = &input.body {
+        body["commit_message"] = json!(text);
+    }
+    if let Some(text) = &input.subject {
+        body["commit_title"] = json!(text);
+    }
     let response =
         send(github_json_request(method::PUT, uri, &body)?).map_err(|_| http_failed())?;
     // GitHub refuses a blocked or conflicting merge with 405, and a stale head with 409. The
@@ -588,5 +677,10 @@ mod tests {
         )
         .expect_err("moved head refuses");
         assert_eq!(error.code(), "head-changed");
+    }
+    #[test]
+    fn native_bad_line_items_keep_the_invalid_input_code_without_http() {
+        let error = invoke_with(&capability("gh.pull-request.comment"), json!({"owner":"octo","repo":"hello","number":7,"comments":[{"path":"../lib.rs","line":1,"body":"review"}]}), |_| panic!("invalid line items cannot send HTTP")).expect_err("invalid item");
+        assert_eq!(error.code(), "invalid-input");
     }
 }

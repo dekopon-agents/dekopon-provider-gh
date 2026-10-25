@@ -22,6 +22,8 @@ struct ReadInput {
     number: u32,
     #[serde(default, rename = "_cli")]
     cli: Option<String>,
+    #[serde(default)]
+    comments: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,7 +58,7 @@ struct RawLabel {
 }
 
 #[derive(Debug, Deserialize)]
-struct RawIssue {
+pub(crate) struct RawIssue {
     number: u32,
     title: String,
     state: String,
@@ -96,7 +98,10 @@ pub(crate) fn read(
     base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
-    let input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
+    let mut input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
+    if input.comments && input.cli.is_none() {
+        input.cli = Some(String::new());
+    }
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
@@ -118,7 +123,7 @@ pub(crate) fn read(
     }
     if let Some(fields) = input.cli.as_deref() {
         let mut projected = cli_issue(&issue, &raw, fields)?;
-        if fields.split(',').any(|field| field == "comments") {
+        if input.comments || fields.split(',').any(|field| field == "comments") {
             let path = format!(
                 "/repos/{}/{}/issues/{}/comments?per_page=100",
                 percent_encode(&input.owner),
@@ -154,7 +159,11 @@ pub(crate) fn read(
     }))
 }
 
-fn cli_issue(issue: &RawIssue, raw: &Value, fields: &str) -> Result<Value, ProviderError> {
+pub(crate) fn cli_issue(
+    issue: &RawIssue,
+    raw: &Value,
+    fields: &str,
+) -> Result<Value, ProviderError> {
     let title = marked_text(&issue.title, MAX_TITLE_OUT_BYTES);
     let body = marked_optional(issue.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
     if (fields.split(',').any(|field| field == "assignees")
@@ -186,6 +195,11 @@ pub(crate) fn list(
     base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
+    let mut input = input;
+    crate::qualifiers::remove_nulls("issue list", &mut input);
+    if crate::qualifiers::has_values("issue list", &input) {
+        return crate::list_filters::run("issue list", input, base, send);
+    }
     let input = serde_json::from_value::<ListInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;

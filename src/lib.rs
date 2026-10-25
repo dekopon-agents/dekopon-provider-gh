@@ -37,11 +37,15 @@ use serde_json::{Value, json};
 mod auth;
 pub mod commands;
 mod content;
+mod diff;
 pub mod error;
 pub mod graphql;
+mod issue_comments;
 mod issues;
+mod list_filters;
 mod output;
 mod pulls;
+mod qualifiers;
 mod repos;
 mod reviews;
 mod search;
@@ -131,6 +135,9 @@ pub(crate) mod ids {
     pub(crate) const USER_SELF_READ: &str = "gh.user-self.read";
     pub(crate) const ISSUE_READ: &str = "gh.issue.read";
     pub(crate) const ISSUE_LIST: &str = "gh.issue.list";
+    pub(crate) const ISSUE_COMMENT_EDIT: &str = "gh.issue.comment-edit";
+    pub(crate) const ISSUE_COMMENT_DELETE: &str = "gh.issue.comment-delete";
+    pub(crate) const ISSUE_COMMENT_EDIT_OR_CREATE: &str = "gh.issue.comment-edit-or-create";
     pub(crate) const ISSUE_COMMENT: &str = "gh.issue.comment";
 }
 
@@ -163,6 +170,9 @@ impl Provider for Gh {
         typed::IssueRead,
         typed::IssueList,
         typed::IssueComment,
+        typed::IssueCommentEdit,
+        typed::IssueCommentDelete,
+        typed::IssueCommentEditOrCreate,
         typed::PrMerge,
         typed::UserRead,
         typed::UserSelfRead,
@@ -220,6 +230,9 @@ where
         ids::AUTH_STATUS => auth::status(input, base, send),
         ids::ISSUE_READ => issues::read(input, base, send),
         ids::ISSUE_LIST => issues::list(input, base, send),
+        ids::ISSUE_COMMENT_EDIT => issue_comments::edit(input, base, send),
+        ids::ISSUE_COMMENT_DELETE => issue_comments::delete(input, base, send),
+        ids::ISSUE_COMMENT_EDIT_OR_CREATE => issue_comments::edit_or_create(input, base, send),
         ids::ISSUE_COMMENT => issues::comment(input, base, send),
         _ => Err(ProviderError::new(
             "unknown-capability",
@@ -248,7 +261,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         input_schema: schema,
     };
 
-    vec![
+    let mut capabilities = vec![
         read(
             ids::AUTH_STATUS,
             <typed::AuthStatus as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
@@ -305,10 +318,13 @@ fn capabilities() -> Vec<ProviderCapability> {
             repo_schema(
                 json!({
                     "number": number_property(),
-                    "body": body_property("Review comment; required."),
+                    "body": body_property("Review body; required without line comments."),
+                    "comments": {"type":"array","minItems":1,"maxItems":50,"items":{"type":"object","additionalProperties":false,"required":["path","line","body"],"properties":{
+                        "path":{"type":"string","maxLength":MAX_PATH_BYTES},"line":{"type":"integer","minimum":1},"side":{"type":"string","enum":["LEFT","RIGHT"],"default":"RIGHT"},"startLine":{"type":"integer","minimum":1},"body":body_property("Line comment body.")
+                    }}},
                     "expectedHeadSha": sha_property(),
                 }),
-                &["number", "body"],
+                &["number"],
             ),
         ),
         write(
@@ -425,6 +441,8 @@ fn capabilities() -> Vec<ProviderCapability> {
                     "number": number_property(),
                     "mergeMethod": {"type": "string", "enum": ["merge", "squash", "rebase"], "description": "Required merge strategy."},
                     "expectedHeadSha": sha_property(),
+                    "body": body_property("Merge commit message."),
+                    "subject": body_property("Merge commit title."),
                 }),
                 &["number", "mergeMethod"],
             ),
@@ -444,7 +462,95 @@ fn capabilities() -> Vec<ProviderCapability> {
                 &["login"],
             ),
         ),
-    ]
+    ];
+    for (id, description, body) in [
+        (
+            ids::ISSUE_COMMENT_EDIT,
+            "Edits the current user's last issue comment",
+            true,
+        ),
+        (
+            ids::ISSUE_COMMENT_DELETE,
+            "Deletes the current user's last issue comment",
+            false,
+        ),
+        (
+            ids::ISSUE_COMMENT_EDIT_OR_CREATE,
+            "Edits the current user's last issue comment or creates one",
+            true,
+        ),
+    ] {
+        let properties = if body {
+            json!({"number":number_property(),"body":body_property("Replacement or new comment body.")})
+        } else {
+            json!({"number":number_property()})
+        };
+        capabilities.push(write(
+            id,
+            description,
+            RiskLevel::Medium,
+            repo_schema(
+                properties,
+                if body {
+                    &["number", "body"]
+                } else {
+                    &["number"]
+                },
+            ),
+        ));
+    }
+    for capability in &mut capabilities {
+        if capability.id.as_str() == ids::PR_COMMENT {
+            capability.input_schema["anyOf"] =
+                json!([{"required":["body"]},{"required":["comments"]}]);
+        }
+        let properties = &mut capability.input_schema["properties"];
+        match capability.id.as_str() {
+            ids::PR_READ | ids::ISSUE_READ => {
+                properties["comments"] = json!({"type":"boolean"});
+            }
+            ids::PR_DIFF => {
+                for field in ["patch", "nameOnly", "allowEscapeSequences"] {
+                    properties[field] = json!({"type":"boolean"});
+                }
+                properties["exclude"] =
+                    json!({"type":"array","items":{"type":"string","maxLength":1024}});
+            }
+            ids::REPO_LIST => {
+                for field in [
+                    "source",
+                    "fork",
+                    "archived",
+                    "noArchived",
+                    "private",
+                    "public",
+                ] {
+                    properties[field] = json!({"type":"boolean"});
+                }
+                properties["language"] = json!({"type":"string"});
+                properties["topic"] = json!({"type":"array","items":{"type":"string"}});
+                properties["visibility"] =
+                    json!({"type":"string","enum":["public","private","internal"]});
+            }
+            ids::CONTENT_READ => {
+                properties["allowEscapeSequences"] = json!({"type":"boolean"});
+            }
+            _ => {}
+        }
+        let command = match capability.id.as_str() {
+            ids::SEARCH_PRS => "search prs",
+            ids::SEARCH_ISSUES => "search issues",
+            ids::SEARCH_REPOS => "search repos",
+            ids::SEARCH_CODE => "search code",
+            ids::SEARCH_COMMITS => "search commits",
+            ids::PR_LIST => "pr list",
+            ids::ISSUE_LIST => "issue list",
+            _ => "",
+        };
+        crate::qualifiers::add_schema(command, properties);
+        crate::qualifiers::query_schema(command, &mut capability.input_schema);
+    }
+    capabilities
 }
 
 fn search_schema(id: &str) -> Value {
@@ -1375,7 +1481,7 @@ mod tests {
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 24);
+        assert_eq!(manifest.capabilities.len(), 27);
 
         let external_writes = manifest
             .capabilities
@@ -1390,6 +1496,9 @@ mod tests {
                 "gh.pull-request.comment",
                 "gh.pull-request.request-changes",
                 "gh.issue.comment",
+                "gh.issue.comment-edit",
+                "gh.issue.comment-delete",
+                "gh.issue.comment-edit-or-create",
                 "gh.pull-request.merge",
             ]
         );
@@ -1516,7 +1625,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 24);
+        assert_eq!(manifest.capabilities.len(), 27);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()

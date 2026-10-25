@@ -108,6 +108,8 @@ struct ReadInput {
     number: u32,
     #[serde(default, rename = "_cli")]
     cli: Option<String>,
+    #[serde(default)]
+    comments: bool,
 }
 
 pub(crate) fn read(
@@ -115,7 +117,10 @@ pub(crate) fn read(
     base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
-    let input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
+    let mut input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
+    if input.comments && input.cli.is_none() {
+        input.cli = Some(String::new());
+    }
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
@@ -167,7 +172,7 @@ pub(crate) fn read(
             }
             projected["reviews"] = json!(reviews);
         }
-        if fields.split(',').any(|field| field == "comments") {
+        if input.comments || fields.split(',').any(|field| field == "comments") {
             projected["comments"] = json!(crate::view_items(send, base, &format!("{path}issues/{}/comments?per_page=100", input.number), &["created_at"])?
                 .into_iter().map(|comment| json!({"author": comment["user"]["login"].as_str().map(|login| json!({"login": login})), "body": comment["body"], "createdAt": comment["created_at"]})).collect::<Vec<_>>());
         }
@@ -290,7 +295,7 @@ fn next_file_page(
     Ok(next)
 }
 
-fn cli_pull(pull: &RawPull, raw: &Value, fields: &str) -> Result<Value, ProviderError> {
+pub(crate) fn cli_pull(pull: &RawPull, raw: &Value, fields: &str) -> Result<Value, ProviderError> {
     let title = marked_text(&pull.title, MAX_TITLE_OUT_BYTES);
     let body = marked_optional(pull.body.as_deref(), MAX_PR_BODY_OUT_BYTES);
     let state = if pull.merged.unwrap_or(false) || !raw["merged_at"].is_null() {
@@ -381,6 +386,11 @@ pub(crate) fn list(
     base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
+    let mut input = input;
+    crate::qualifiers::remove_nulls("pr list", &mut input);
+    if crate::qualifiers::has_values("pr list", &input) {
+        return crate::list_filters::run("pr list", input, base, send);
+    }
     let input = serde_json::from_value::<ListInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
@@ -498,11 +508,15 @@ pub(crate) fn diff(
     base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
-    let input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
+    let input = serde_json::from_value::<crate::diff::Input>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;
     validate_number(input.number)?;
 
+    let patterns = crate::diff::patterns(&input.exclude)?;
+    if input.patch && input.name_only {
+        return Err(invalid_input());
+    }
     let uri = url(
         base,
         &format!(
@@ -512,8 +526,23 @@ pub(crate) fn diff(
             input.number,
         ),
     )?;
-    let response = send_get(send, uri, ACCEPT_DIFF)?;
+    let response = send_get(
+        send,
+        uri,
+        if input.patch {
+            "application/vnd.github.patch"
+        } else {
+            ACCEPT_DIFF
+        },
+    )?;
     let text = core::str::from_utf8(&response.body).map_err(|_| invalid_response())?;
+    let transformed;
+    let text = if input.name_only || !patterns.is_empty() {
+        transformed = crate::diff::transform(text, input.name_only, &patterns)?;
+        transformed.as_str()
+    } else {
+        text
+    };
     let (diff, truncated) = truncate_text(text, MAX_DIFF_OUT_BYTES);
 
     Ok(json!({
@@ -617,6 +646,9 @@ pub(crate) fn status(
     base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
+    if input.get("comments").is_some() {
+        return Err(invalid_input());
+    }
     let input = serde_json::from_value::<ReadInput>(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     validate_repo(&input.repo)?;

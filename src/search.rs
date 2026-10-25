@@ -1,14 +1,15 @@
 use dekopon_provider_sdk::provider::endpoint::Base;
 use dekopon_provider_sdk::provider::{HttpError, Request, Response};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::error::ProviderError;
 use crate::{invalid_input, invalid_response, percent_encode, validate_login, validate_repo};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SearchInput {
+    #[serde(default)]
     query: String,
     owner: String,
     repo: Option<String>,
@@ -18,6 +19,126 @@ struct SearchInput {
     limit: Option<usize>,
     #[serde(rename = "_cliOutput")]
     output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    order: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    search_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    include_prs: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    app: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    archived: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    assignee: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    closed: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    commenter: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    comments: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    created: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    r#match: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    interactions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    involves: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    visibility: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    label: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    locked: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mentions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    milestone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    no_assignee: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    no_label: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    no_milestone: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    no_project: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    project: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reactions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    team_mentions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    updated: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    draft: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    head: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    merged_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    merged: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    review: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    review_requested: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reviewed_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    checks: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    followers: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    include_forks: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    forks: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    good_first_issues: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    help_wanted_issues: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    license: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    size: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stars: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    topic: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    number_topics: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    extension: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    filename: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    author_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    author_email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    author_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    committer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    committer_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    committer_email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    committer_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    merge: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tree: Option<String>,
 }
 
 macro_rules! search_handler {
@@ -43,6 +164,29 @@ pub(crate) fn run(
     base: &Base,
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
+    let command = match id {
+        crate::ids::SEARCH_PRS => "search prs",
+        crate::ids::SEARCH_ISSUES => "search issues",
+        crate::ids::SEARCH_REPOS => "search repos",
+        crate::ids::SEARCH_CODE => "search code",
+        crate::ids::SEARCH_COMMITS => "search commits",
+        _ => return Err(invalid_input()),
+    };
+    crate::qualifiers::validate(command, &input).map_err(|_| invalid_input())?;
+    for other in [
+        "search prs",
+        "search issues",
+        "search repos",
+        "search code",
+        "search commits",
+    ] {
+        for field in crate::qualifiers::fields(other) {
+            if crate::qualifiers::unsupported(command, field, &input) {
+                return Err(invalid_input());
+            }
+        }
+    }
+    let extra = input.clone();
     let input: SearchInput = serde_json::from_value(input).map_err(|_| invalid_input())?;
     validate_login(&input.owner)?;
     if let Some(repo) = &input.repo {
@@ -55,7 +199,7 @@ pub(crate) fn run(
         .state
         .as_deref()
         .is_some_and(|s| !matches!(s, "open" | "closed"))
-        || input.query.is_empty()
+        || (input.query.is_empty() && !crate::qualifiers::has_values(command, &extra))
         || input.query.len() > 512
         || input.query.chars().any(char::is_control)
         || input.query.split_whitespace().any(|word| {
@@ -93,10 +237,14 @@ pub(crate) fn run(
     } else {
         format!("user:{}", input.owner)
     };
-    let mut q = format!("{} {}", input.query, scope);
+    let mut q = if input.query.is_empty() {
+        scope
+    } else {
+        format!("{} {}", input.query, scope)
+    };
     if id == crate::ids::SEARCH_PRS {
         q.push_str(" is:pr");
-    } else if id == crate::ids::SEARCH_ISSUES {
+    } else if id == crate::ids::SEARCH_ISSUES && input.include_prs != Some(true) {
         q.push_str(" is:issue");
     }
     if let Some(state) = &input.state {
@@ -105,11 +253,43 @@ pub(crate) fn run(
     if let Some(author) = &input.author {
         q.push_str(&format!(" author:{author}"));
     }
-    let path = format!("/search/{endpoint}?q={}", percent_encode(&q));
+    for term in crate::qualifiers::terms(command, &extra) {
+        q.push(' ');
+        q.push_str(&term);
+    }
+    let mut path = format!("/search/{endpoint}?q={}", percent_encode(&q));
+    if let Some(sort) = &input.sort
+        && sort != "best-match"
+    {
+        path.push_str(&format!("&sort={}", percent_encode(sort)));
+    }
+    if let Some(order) = &input.order
+        && input.sort.is_some()
+    {
+        path.push_str(&format!("&order={order}"));
+    }
+    if let Some(kind) = &input.search_type
+        && kind != "lexical"
+    {
+        path.push_str(&format!("&search_type={kind}"));
+    }
     let mut total = None;
     let mut received = 0_u64;
+    let single_page = input
+        .search_type
+        .as_deref()
+        .is_some_and(|kind| kind == "semantic" || kind == "hybrid");
+    let mut bounded_send = |request| {
+        let mut response = send(request)?;
+        if single_page {
+            response
+                .headers
+                .retain(|header| !header.name.eq_ignore_ascii_case("link"));
+        }
+        Ok(response)
+    };
     let rows = crate::collect_pages_with(
-        send,
+        &mut bounded_send,
         base,
         &path,
         input.limit.unwrap_or(30),
@@ -131,80 +311,85 @@ pub(crate) fn run(
             Ok(items)
         },
         |item| result_key(id, item),
-        |item| {
-            let mut row = serde_json::Map::new();
-            for field in fields.split(',') {
-                let upstream = match field {
-                    "fullName" => "full_name",
-                    "defaultBranch" => "default_branch",
-                    "isArchived" => "archived",
-                    "isFork" => "fork",
-                    "isPrivate" => "private",
-                    "stargazersCount" => "stargazers_count",
-                    "createdAt" => "created_at",
-                    "updatedAt" => "updated_at",
-                    "pushedAt" => "pushed_at",
-                    "isDraft" => "draft",
-                    "closedAt" => "closed_at",
-                    _ => field,
-                };
-                let value = if field == "repository"
-                    && matches!(id, crate::ids::SEARCH_PRS | crate::ids::SEARCH_ISSUES)
-                {
-                    let path = item["repository_url"]
-                        .as_str()
-                        .ok_or_else(invalid_response)?;
-                    let (_, names) = path.rsplit_once("/repos/").ok_or_else(invalid_response)?;
-                    let (owner, name) = names.split_once('/').ok_or_else(invalid_response)?;
-                    crate::validate_login(owner).map_err(|_| invalid_response())?;
-                    crate::validate_repo(name).map_err(|_| invalid_response())?;
-                    json!({"name": name, "nameWithOwner": format!("{owner}/{name}")})
-                } else {
-                    item.get(upstream).cloned().unwrap_or(Value::Null)
-                };
-                let value = if matches!(field, "author" | "owner") {
-                    if value.is_null() {
-                        Value::Null
-                    } else {
-                        json!({"login": value.get("login").and_then(Value::as_str)})
-                    }
-                } else if field == "assignees" {
-                    if let Some(users) = value.as_array() {
-                        Value::Array(
-                            users
-                                .iter()
-                                .take(100)
-                                .map(|user| json!({"login": user["login"]}))
-                                .collect(),
-                        )
-                    } else {
-                        Value::Null
-                    }
-                } else {
-                    bounded(value, 0)
-                };
-                row.insert(field.to_owned(), value);
-            }
-            if id == crate::ids::SEARCH_PRS || id == crate::ids::SEARCH_ISSUES {
-                row.insert(
-                    "author".into(),
-                    if item["user"].is_null() {
-                        Value::Null
-                    } else {
-                        json!({"login": item["user"]["login"]})
-                    },
-                );
-            }
-            Ok(Some(Value::Object(row)))
-        },
+        |item| project(id, fields, item),
     )?;
-    if rows.len() < input.limit.unwrap_or(30) && total.is_some_and(|count| count > received) {
+    if !single_page
+        && rows.len() < input.limit.unwrap_or(30)
+        && total.is_some_and(|count| count > received)
+    {
         return Err(ProviderError::new(
             "index-ceiling",
             "GitHub search exposes only the first 1000 indexed results",
         ));
     }
     Ok(Value::Array(rows))
+}
+
+fn project(id: &str, fields: &str, item: Value) -> Result<Option<Value>, ProviderError> {
+    let mut row = serde_json::Map::new();
+    for field in fields.split(',') {
+        let upstream = match field {
+            "fullName" => "full_name",
+            "defaultBranch" => "default_branch",
+            "isArchived" => "archived",
+            "isFork" => "fork",
+            "isPrivate" => "private",
+            "stargazersCount" => "stargazers_count",
+            "createdAt" => "created_at",
+            "updatedAt" => "updated_at",
+            "pushedAt" => "pushed_at",
+            "isDraft" => "draft",
+            "closedAt" => "closed_at",
+            _ => field,
+        };
+        let value = if field == "repository"
+            && matches!(id, crate::ids::SEARCH_PRS | crate::ids::SEARCH_ISSUES)
+        {
+            let path = item["repository_url"]
+                .as_str()
+                .ok_or_else(invalid_response)?;
+            let (_, names) = path.rsplit_once("/repos/").ok_or_else(invalid_response)?;
+            let (owner, name) = names.split_once('/').ok_or_else(invalid_response)?;
+            crate::validate_login(owner).map_err(|_| invalid_response())?;
+            crate::validate_repo(name).map_err(|_| invalid_response())?;
+            json!({"name": name, "nameWithOwner": format!("{owner}/{name}")})
+        } else {
+            item.get(upstream).cloned().unwrap_or(Value::Null)
+        };
+        let value = if matches!(field, "author" | "owner") {
+            if value.is_null() {
+                Value::Null
+            } else {
+                json!({"login": value.get("login").and_then(Value::as_str)})
+            }
+        } else if field == "assignees" {
+            if let Some(users) = value.as_array() {
+                Value::Array(
+                    users
+                        .iter()
+                        .take(100)
+                        .map(|user| json!({"login": user["login"]}))
+                        .collect(),
+                )
+            } else {
+                Value::Null
+            }
+        } else {
+            bounded(value, 0)
+        };
+        row.insert(field.to_owned(), value);
+    }
+    if id == crate::ids::SEARCH_PRS || id == crate::ids::SEARCH_ISSUES {
+        row.insert(
+            "author".into(),
+            if item["user"].is_null() {
+                Value::Null
+            } else {
+                json!({"login": item["user"]["login"]})
+            },
+        );
+    }
+    Ok(Some(Value::Object(row)))
 }
 
 fn result_key(id: &str, item: &Value) -> Option<String> {
