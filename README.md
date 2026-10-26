@@ -2,7 +2,7 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Twenty-nine narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
+Twenty-nine narrow authentication, repository, pull-request, issue, and Actions capabilities with fixed request shapes, bounded
 output projections, and SHA-pinned review/merge writes. There is deliberately no arbitrary
 `gh api` passthrough: a path-level escape hatch would collapse per-capability policy into
 "everything the credential can reach".
@@ -355,8 +355,8 @@ remain mandatory even when selecting fields. JSON uses an envelope: list has `ru
 Coverage reports returned count, GitHub's raw `total_count`, an explicit `incomplete` boolean
 and reasons. GitHub's raw run count is not a claimed count after workflow-state filtering.
 Page/limit bounds and count drift retain bounded rows and return `incomplete-results` (exit 3).
-A deliberately selected job marks `selected-job` coverage and may exit 0 while naming its partial
-coverage. `--exit-status` returns `run-failed` (exit 1) for a completed unsuccessful attempt;
+A deliberately selected job names `selected-job` scope in coverage and may exit 0 when that
+selected read is complete, while job-duration coverage explicitly remains partial. `--exit-status` returns `run-failed` (exit 1) for a completed unsuccessful attempt;
 incomplete results take precedence. Success, neutral and skipped are not failed conclusions.
 
 Grant `gh.run.list` and `gh.run.read` separately. Both need only GET on the existing API authority

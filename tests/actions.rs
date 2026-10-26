@@ -331,6 +331,8 @@ async fn selected_completed_job_reports_one_of_eight_in_text_and_json_for_both_a
             } else {
                 let value: Value = serde_json::from_slice(&out).unwrap();
                 assert_eq!(value["completedJobDurationSeconds"], 60);
+                assert_eq!(value["coverage"]["scope"], "selected-job");
+                assert_eq!(value["coverage"]["incomplete"], false);
                 assert_eq!(
                     value["jobDurationCoverage"],
                     json!({"completedJobs":1,"jobsRead":1,"totalJobs":8,"partial":true})

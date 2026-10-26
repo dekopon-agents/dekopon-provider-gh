@@ -575,7 +575,7 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
                 assert!(stdout.contains("Permission is hereby granted"));
                 assert!(stdout.contains("Apache License"));
             }
-            "actions" => assert!(stdout.contains("GitHub Actions: workflows define automation")),
+            "actions" => assert!(stdout.contains("gh run list and jobs with gh run view")),
             "accessibility" => assert!(stdout.contains("plain text and JSON over pipes")),
             _ => unreachable!(),
         }

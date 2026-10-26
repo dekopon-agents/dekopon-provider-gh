@@ -679,14 +679,11 @@ pub(crate) fn read(
         if total == 1 && rows[0]["id"] != value["id"] {
             return Err(invalid_response());
         }
-        let mut c = Coverage {
+        let c = Coverage {
             returned: 1,
             total: Some(total),
             reasons: Vec::new(),
         };
-        if total > 1 {
-            c.mark("selected-job");
-        }
         (vec![value], c)
     } else {
         pages(
@@ -728,6 +725,11 @@ pub(crate) fn read(
     run["completedJobDurationSeconds"] = json!(sum);
     run["jobDurationCoverage"] = json!({"completedJobs":completed,"jobsRead":coverage.returned,"totalJobs":coverage.total,"partial":partial});
     run["coverage"] = coverage.json();
+    run["coverage"]["scope"] = json!(if input.job.is_some() {
+        "selected-job"
+    } else {
+        "attempt-jobs"
+    });
     run["requestsUsed"] = json!(reads.used);
     Ok(run)
 }
@@ -843,7 +845,7 @@ pub(crate) fn execute(
     let reasons = value["coverage"]["reasons"]
         .as_array()
         .ok_or_else(invalid_response)?;
-    if reasons.iter().any(|reason| reason != "selected-job") {
+    if !reasons.is_empty() {
         return Err(ActionError::Incomplete.into());
     }
     if exit
@@ -1144,7 +1146,17 @@ mod tests {
             })
             .map(ProviderError::from)
             .expect("typed error");
-            let mut send = |_: Request| {
+            let calls = std::cell::Cell::new(0);
+            let mut send = |request: Request| {
+                calls.set(calls.get() + 1);
+                assert_eq!(request.method, "GET");
+                assert_eq!(request.uri, "https://api.github.com/repos/o/r");
+                assert!(
+                    !request
+                        .headers
+                        .iter()
+                        .any(|header| header.name.eq_ignore_ascii_case("authorization"))
+                );
                 Ok(Response {
                     status,
                     headers: headers.clone(),
@@ -1159,6 +1171,7 @@ mod tests {
             };
             let error = reads.get("/repos/o/r").expect_err("typed failure");
             assert_eq!(error.code(), expected_code.code());
+            assert_eq!(calls.get(), 1);
         }
     }
 }
