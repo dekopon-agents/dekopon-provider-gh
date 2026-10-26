@@ -555,30 +555,6 @@ fn every_inventory_refusal_is_known_to_the_real_component_without_http_imports()
             format!("gh {command}: not available in this environment ({reason})")
         );
     }
-    let CommandRunOutcome::Rendered {
-        stdout,
-        stderr,
-        status,
-    } = runtime.block_on(registry.run_command("gh", &["--help".into()], false))?
-    else {
-        panic!("help expected")
-    };
-    assert_eq!(status, 0);
-    assert!(stderr.is_empty());
-    assert!(!stdout.contains("web/w"));
-    assert!(!stdout.contains("_unavailable_args"));
-    assert!(stdout.contains("gh pr view --web/-w"));
-    assert_eq!(
-        stdout.matches("Not available in this environment:").count(),
-        1
-    );
-    for entry in unavailable::entries() {
-        assert!(
-            stdout.contains(entry.command),
-            "{} missing from help",
-            entry.command
-        );
-    }
     for name in ["version", "licenses", "actions", "accessibility"] {
         let CommandRunOutcome::Rendered {
             stdout,

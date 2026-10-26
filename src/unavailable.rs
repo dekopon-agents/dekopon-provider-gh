@@ -199,8 +199,78 @@ fn required_globals(mut command: Command, inherited: &[clap::Id], path: String) 
     command
 }
 
+fn exclusion_help(path: &str) -> String {
+    let mut help = String::new();
+    for entry in entries().filter(|entry| {
+        entry.command == path
+            || entry
+                .command
+                .strip_prefix(path)
+                .is_some_and(|tail| tail.starts_with(' '))
+    }) {
+        let path = entry.command;
+        match entry.kind {
+            Kind::Syntax => {}
+            Kind::Command => help.push_str(&format!("  gh {path} ({})\n", entry.reason)),
+            Kind::Flag => {
+                for flag in entry.flags() {
+                    let name = flag.name;
+                    let short = flag
+                        .short
+                        .map_or(String::new(), |short| format!("/-{short}"));
+                    help.push_str(&format!("  gh {path} --{name}{short} ({})\n", entry.reason));
+                }
+            }
+            Kind::UnscopedSearch => help.push_str(&format!(
+                "  gh {path} without --owner or -R ({})\n",
+                entry.reason
+            )),
+        }
+    }
+    if help.is_empty() {
+        help
+    } else {
+        format!("Not available in this environment:\n{help}")
+    }
+}
+
+fn focused_help(mut command: Command, path: &str) -> Command {
+    if !path.is_empty() {
+        command = command.after_help(exclusion_help(path));
+        if command.is_hide_set() {
+            if command.get_arguments().any(|arg| arg.get_id() == "help") {
+                command =
+                    command.mut_arg("help", |arg| arg.action(clap::ArgAction::Help).num_args(0));
+            } else {
+                let short = (!command
+                    .get_arguments()
+                    .any(|arg| arg.get_short() == Some('h')))
+                .then_some('h');
+                command = command.arg(
+                    Arg::new("help")
+                        .long("help")
+                        .short(short)
+                        .action(clap::ArgAction::Help),
+                );
+            }
+        }
+    }
+    let names: Vec<_> = command
+        .get_subcommands()
+        .map(|child| child.get_name().to_owned())
+        .collect();
+    for name in names {
+        let child_path = if path.is_empty() {
+            name.clone()
+        } else {
+            format!("{path} {name}")
+        };
+        command = command.mut_subcommand(name, |child| focused_help(child, &child_path));
+    }
+    command
+}
+
 pub(crate) fn register(mut root: Command) -> Command {
-    let mut help = String::from("Not available in this environment:\n");
     for (path, entries) in groups() {
         let existing = {
             let mut node = Some(&root);
@@ -218,23 +288,6 @@ pub(crate) fn register(mut root: Command) -> Command {
                 Parsing::PassThrough => parsing = Parsing::PassThrough,
                 Parsing::NoPositionals => parsing = Parsing::NoPositionals,
                 Parsing::Group => parsing = Parsing::Group,
-            }
-            match entry.kind {
-                Kind::Syntax => {}
-                Kind::Command => help.push_str(&format!("  gh {path} ({})\n", entry.reason)),
-                Kind::Flag => {
-                    for flag in entry.flags() {
-                        let name = flag.name;
-                        let short = flag
-                            .short
-                            .map_or(String::new(), |short| format!("/-{short}"));
-                        help.push_str(&format!("  gh {path} --{name}{short} ({})\n", entry.reason));
-                    }
-                }
-                Kind::UnscopedSearch => help.push_str(&format!(
-                    "  gh {path} without --owner or -R ({})\n",
-                    entry.reason
-                )),
             }
             for flag in entry.flags() {
                 if command.get_arguments().any(|arg| arg.get_id() == flag.name) {
@@ -296,6 +349,16 @@ pub(crate) fn register(mut root: Command) -> Command {
             }
         }
     }
+    let families: Vec<_> = root
+        .get_subcommands()
+        .filter(|command| command.is_hide_set())
+        .map(|command| command.get_name().to_owned())
+        .collect();
+    let help = format!(
+        "Unavailable families: {}.\nUse gh GROUP --help for all unavailable commands, flags and scopes in that group.\nRepeat for each group above for the full inventory; gh help GROUP also works.",
+        families.join(", ")
+    );
+    root = focused_help(root, "");
     required_globals(root.after_help(help), &[], "gh".to_owned())
 }
 

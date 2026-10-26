@@ -74,8 +74,11 @@ A text field cut at its byte bound ends, in JSON and text alike, with the line
 `[dekopon: truncated to N bytes of M]`.
 Upstream commands and flags classified as Backburner or Excluded refuse before HTTP with
 `gh <cmd> [flag or scope]: not available in this environment (<reason>)`. The registry in
-[`src/unavailable.tsv`](src/unavailable.tsv) supplies both refusals and the single
-“Not available in this environment” section in `gh --help`. Unknown commands and flags retain
+[`src/unavailable.tsv`](src/unavailable.tsv) supplies both refusals and help. `gh --help` is a bounded overview with the supported
+groups, API restriction and a compact list of unavailable families. `gh GROUP --help`
+(or `gh help GROUP`) lists every unavailable command, flag and scope in that group
+with its reason; repeat for each group named on the root page for the full inventory.
+Focused leaf help also lists its exclusions. Unknown commands and flags retain
 clap usage errors. Unbuilt Buildable commands retain their base clap usage errors unless an actual
 refused flag is present alongside valid upstream options. Required arguments on supported
 commands stay required; flag refusals name the canonical long flag and scope refusals name the
