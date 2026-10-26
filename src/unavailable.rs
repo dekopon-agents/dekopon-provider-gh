@@ -237,24 +237,8 @@ fn exclusion_help(path: &str) -> String {
 fn focused_help(mut command: Command, path: &str) -> Command {
     if !path.is_empty() {
         command = command.after_help(exclusion_help(path));
-        if command.is_hide_set() {
-            if command.get_arguments().any(|arg| arg.get_id() == "help") {
-                command =
-                    command.mut_arg("help", |arg| arg.action(clap::ArgAction::Help).num_args(0));
-            } else {
-                let short = (!command
-                    .get_arguments()
-                    .any(|arg| arg.get_short() == Some('h')))
-                .then_some('h');
-                command = command.arg(
-                    Arg::new("help")
-                        .long("help")
-                        .short(short)
-                        .action(clap::ArgAction::Help),
-                );
-            }
-        }
     }
+
     let names: Vec<_> = command
         .get_subcommands()
         .map(|child| child.get_name().to_owned())
@@ -355,7 +339,7 @@ pub(crate) fn register(mut root: Command) -> Command {
         .map(|command| command.get_name().to_owned())
         .collect();
     let help = format!(
-        "Unavailable families: {}.\nUse gh GROUP --help for all unavailable commands, flags and scopes in that group.\nRepeat for each group above for the full inventory; gh help GROUP also works.",
+        "Unavailable families: {}.\nUse gh help GROUP for all unavailable commands, flags and scopes in that group.\nRepeat for each group above for the full inventory. Supported groups also accept gh GROUP --help.",
         families.join(", ")
     );
     root = focused_help(root, "");
