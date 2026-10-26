@@ -70,6 +70,26 @@ impl From<ActionError> for ProviderError {
     }
 }
 
+#[derive(Clone, Copy, Deserialize)]
+#[serde(transparent)]
+struct RunId(u64);
+#[derive(Clone, Copy, Deserialize)]
+#[serde(transparent)]
+struct JobId(u64);
+#[derive(Clone, Copy, Deserialize)]
+#[serde(transparent)]
+struct Attempt(u32);
+impl std::fmt::Display for RunId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl std::fmt::Display for JobId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum Workflow {
@@ -167,9 +187,9 @@ impl ListInput {
 struct ReadInput {
     owner: String,
     repo: String,
-    run_id: u64,
-    attempt: Option<u32>,
-    job: Option<u64>,
+    run_id: RunId,
+    attempt: Option<Attempt>,
+    job: Option<JobId>,
     #[serde(default)]
     #[serde(rename = "verbose")]
     _verbose: bool,
@@ -186,7 +206,10 @@ impl ReadInput {
     const MAX_SELECTED_JOB_REQUESTS: usize = 21;
     fn validate(&self) -> Result<(), ProviderError> {
         validate_repo(&self.owner, &self.repo)?;
-        if self.run_id == 0 || self.attempt == Some(0) || self.job == Some(0) {
+        if self.run_id.0 == 0
+            || self.attempt.is_some_and(|v| v.0 == 0)
+            || self.job.is_some_and(|v| v.0 == 0)
+        {
             return Err(invalid_input());
         }
         selection(self.output.as_deref(), READ_FIELDS)
@@ -249,17 +272,27 @@ impl Reads<'_> {
             crate::ACCEPT_JSON,
         )?)
         .map_err(|_| crate::http_failed())?;
-        match response.status {
-            200 => Ok(response),
-            404 => Err(ActionError::NotFoundOrNotAccessible.into()),
-            403 if crate::rate_limit_exhausted(&response) => Err(ActionError::RateLimit.into()),
-            403 => Err(ActionError::Permission.into()),
-            429 => Err(ActionError::RateLimit.into()),
-            _ => Err(crate::status_error(&response)),
+        if response.status == 200 {
+            return Ok(response);
         }
+        if let Some(error) = action_status(&response) {
+            return Err(error.into());
+        }
+        Err(crate::status_error(&response))
     }
+
     fn value(&mut self, path: &str) -> Result<Value, ProviderError> {
         crate::decode(&self.get(path)?.body)
+    }
+}
+
+fn action_status(response: &Response) -> Option<ActionError> {
+    match response.status {
+        404 => Some(ActionError::NotFoundOrNotAccessible),
+        403 if crate::rate_limit_exhausted(response) => Some(ActionError::RateLimit),
+        403 => Some(ActionError::Permission),
+        429 => Some(ActionError::RateLimit),
+        _ => None,
     }
 }
 
@@ -438,7 +471,7 @@ pub(crate) fn list(
             true
         } else {
             match states.get(&workflow) {
-                Some(state) => **state == *"active",
+                Some(state) => *state == "active",
                 None => {
                     coverage_reasons.push("workflow-unresolved");
                     false
@@ -505,7 +538,7 @@ fn duration(start: &Value, end: &Value) -> Result<Option<i64>, ProviderError> {
 }
 fn state(v: &Value) -> Result<(&str, Value), ProviderError> {
     let status = string(v, "status")?;
-    if !STATUSES[..8].contains(&status) {
+    if !STATUSES[..6].contains(&status) {
         return Err(invalid_response());
     }
     let conclusion = match &v["conclusion"] {
@@ -536,7 +569,7 @@ fn run_row(
     let start = stamp(run, "run_started_at")?;
     let updated = stamp(run, "updated_at")?;
     let wall = if status == "completed" {
-        duration(&start, &updated)?
+        Some(duration(&start, &updated)?.ok_or_else(invalid_response)?)
     } else {
         None
     };
@@ -561,7 +594,7 @@ fn job_row(job: &Value, run: &Value) -> Result<Value, ProviderError> {
     let start = stamp(job, "started_at")?;
     let end = stamp(job, "completed_at")?;
     let elapsed = if status == "completed" {
-        duration(&start, &end)?
+        Some(duration(&start, &end)?.ok_or_else(invalid_response)?)
     } else {
         None
     };
@@ -605,11 +638,11 @@ pub(crate) fn read(
     let root = root(&input.owner, &input.repo);
     repository(&mut reads, &root)?;
     let latest = reads.value(&format!("{root}/actions/runs/{}", input.run_id))?;
-    let latest_row = run_row(&latest, Some(input.run_id), None)?;
+    let latest_row = run_row(&latest, Some(input.run_id.0), None)?;
     let latest_attempt = latest_row["attempt"]
         .as_u64()
         .ok_or_else(invalid_response)? as u32;
-    let attempt = input.attempt.unwrap_or(latest_attempt);
+    let attempt = input.attempt.map_or(latest_attempt, |v| v.0);
     if attempt > latest_attempt {
         return Err(ActionError::NotFoundOrNotAccessible.into());
     }
@@ -618,7 +651,7 @@ pub(crate) fn read(
             "{root}/actions/runs/{}/attempts/{attempt}",
             input.run_id
         ))?;
-        let row = run_row(&value, Some(input.run_id), Some(attempt))?;
+        let row = run_row(&value, Some(input.run_id.0), Some(attempt))?;
         if row["headSha"] != latest_row["headSha"] {
             return Err(invalid_response());
         }
@@ -632,7 +665,7 @@ pub(crate) fn read(
     );
     let (raw_jobs, mut coverage) = if let Some(job) = input.job {
         let value = reads.value(&format!("{root}/actions/jobs/{job}"))?;
-        if positive(&value, "id")? != job {
+        if positive(&value, "id")? != job.0 {
             return Err(invalid_response());
         }
         job_row(&value, &run)?;
@@ -643,6 +676,9 @@ pub(crate) fn read(
             return Err(invalid_response());
         }
         job_row(&rows[0], &run)?;
+        if total == 1 && rows[0]["id"] != value["id"] {
+            return Err(invalid_response());
+        }
         let mut c = Coverage {
             returned: 1,
             total: Some(total),
@@ -695,7 +731,7 @@ pub(crate) fn read(
     run["requestsUsed"] = json!(reads.used);
     Ok(run)
 }
-fn check_id(raw: &Value) -> Result<u64, ProviderError> {
+fn check_id(raw: &Value, root: &str) -> Result<u64, ProviderError> {
     let value = string(raw, "check_run_url")?;
     let (prefix, id) = value.rsplit_once('/').ok_or_else(invalid_response)?;
     let id = id
@@ -703,7 +739,9 @@ fn check_id(raw: &Value) -> Result<u64, ProviderError> {
         .ok()
         .filter(|n| *n > 0)
         .ok_or_else(invalid_response)?;
-    if !prefix.ends_with("/check-runs") || value.len() > 2048 || value.chars().any(char::is_control)
+    if !prefix.ends_with(&format!("{root}/check-runs"))
+        || value.len() > 2048
+        || value.chars().any(char::is_control)
     {
         return Err(invalid_response());
     }
@@ -722,7 +760,7 @@ fn annotations(
         coverage.mark("annotation-bound");
         return Ok((result, coverage));
     }
-    let id = check_id(raw)?;
+    let id = check_id(raw, root)?;
     *used += 1;
     let check = reads.value(&format!("{root}/check-runs/{id}"))?;
     if positive(&check, "id")? != id || check["head_sha"] != run["headSha"] {
@@ -952,7 +990,6 @@ pub(crate) fn commands() -> Command {
         if let Some(s) = short { a.short(s) } else { a }
     };
     let mut list = Command::new("list")
-        .visible_alias("ls")
         .about("Read bounded Actions run history")
         .arg(repo())
         .arg(
@@ -1064,4 +1101,64 @@ pub(crate) fn dispatch(
         value.validate()?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dekopon_provider_sdk::provider::Failure;
+    #[test]
+    fn native_action_error_variants_preserve_distinct_codes_and_statuses() {
+        for (variant, code, status) in [
+            (
+                ActionError::NotFoundOrNotAccessible,
+                "not-found-or-not-accessible",
+                3,
+            ),
+            (ActionError::Permission, "forbidden", 3),
+            (ActionError::RateLimit, "rate-limited", 3),
+            (ActionError::Incomplete, "incomplete-results", 3),
+            (ActionError::RunFailed, "run-failed", 1),
+        ] {
+            let error: ProviderError = variant.into();
+            assert_eq!(error.code(), code);
+            assert_eq!(Failure::code(&error).status().get(), status);
+        }
+        for (status, headers, variant) in [
+            (404, vec![], ActionError::NotFoundOrNotAccessible),
+            (403, vec![], ActionError::Permission),
+            (429, vec![], ActionError::RateLimit),
+        ] {
+            assert_eq!(
+                action_status(&Response {
+                    status,
+                    headers: headers.clone(),
+                    body: vec![]
+                }),
+                Some(variant)
+            );
+            let expected_code = action_status(&Response {
+                status,
+                headers: headers.clone(),
+                body: vec![],
+            })
+            .map(ProviderError::from)
+            .expect("typed error");
+            let mut send = |_: Request| {
+                Ok(Response {
+                    status,
+                    headers: headers.clone(),
+                    body: vec![],
+                })
+            };
+            let mut reads = Reads {
+                base: &crate::GITHUB_API,
+                send: &mut send,
+                used: 0,
+                max: 1,
+            };
+            let error = reads.get("/repos/o/r").expect_err("typed failure");
+            assert_eq!(error.code(), expected_code.code());
+        }
+    }
 }

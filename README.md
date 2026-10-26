@@ -375,6 +375,6 @@ accessible”, whether repository, run, attempt or job. Explicit permission (`fo
 checks. It does not provide PR run history. Use `gh run list --branch BRANCH` or `--commit SHA`
 for each head and inspect coverage; the existing status capability is unchanged.
 
-Batch 4a used 18 authenticated GETs, including scratch discovery and the public provider-repository
+Batch 4a used 19 authenticated GETs, including scratch discovery and the public provider-repository
 fallback. `tests/cassettes/actions/` contains recorder exchanges; the Actions tests replay selected
 complete reads through the production component and check all files for redaction.

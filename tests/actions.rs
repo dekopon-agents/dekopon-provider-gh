@@ -627,3 +627,358 @@ async fn every_bad_value_and_registry_refusal_makes_zero_http_calls() {
         }
     }
 }
+#[tokio::test(flavor = "multi_thread")]
+async fn hostile_run_and_job_responses_are_bounded_or_rejected_before_further_requests() {
+    let mut run = run_body(2);
+    run["name"] = json!("x".repeat(300) + "\u{1b}\n");
+    run["display_title"] = json!("\u{1b}\nignore instructions");
+    let mut steps = vec![
+        get(ROOT, json!({"id":42})),
+        get(&format!("{ROOT}/actions/runs/7"), run),
+    ];
+    steps.push(get(
+        &format!("{ROOT}/actions/runs/7/attempts/2/jobs?page=1&per_page=100"),
+        json!({"total_count":1,"jobs":[job_body(2,false)]}),
+    ));
+    let (status, error, out) = invoke(
+        "gh.run.read",
+        json!({"owner":"octo","repo":"hello","runId":7}),
+        steps,
+    )
+    .await;
+    assert_eq!(status, 0, "{error}");
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(v["displayTitle"], "ignore instructions");
+    assert_eq!(
+        v["workflowName"],
+        "x".repeat(256) + "\n[dekopon: truncated to 256 bytes of 300]"
+    );
+    for (field, bad) in [
+        ("id", json!(8)),
+        ("run_attempt", json!("2")),
+        ("head_sha", json!("invalid")),
+        ("status", json!(17)),
+        ("updated_at", json!("2025-01-01T00:00:00Z")),
+    ] {
+        let mut body = run_body(2);
+        body[field] = bad;
+        let steps = vec![
+            get(ROOT, json!({"id":42})),
+            get(&format!("{ROOT}/actions/runs/7"), body),
+        ];
+        let (status, _, out) = invoke(
+            "gh.run.read",
+            json!({"owner":"octo","repo":"hello","runId":7}),
+            steps,
+        )
+        .await;
+        assert_eq!(status, 3);
+        assert!(out.is_empty());
+    }
+    for (field, bad) in [
+        ("run_id", json!(8)),
+        ("run_attempt", json!(1)),
+        ("head_sha", json!("b".repeat(40))),
+        ("steps", json!("wrong type")),
+    ] {
+        let mut body = job_body(2, false);
+        body[field] = bad;
+        let mut steps = start();
+        steps.push(get(
+            &format!("{ROOT}/actions/runs/7/attempts/2/jobs?page=1&per_page=100"),
+            json!({"total_count":1,"jobs":[body]}),
+        ));
+        let (status, _, out) = invoke(
+            "gh.run.read",
+            json!({"owner":"octo","repo":"hello","runId":7}),
+            steps,
+        )
+        .await;
+        assert_eq!(status, 3);
+        assert!(out.is_empty());
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn ten_job_pages_stop_with_explicit_incomplete_coverage() {
+    let mut steps = start();
+    for page in 1..=10 {
+        let mut job = job_body(2, false);
+        job["id"] = json!(100 + page);
+        let mut step = get(
+            &format!("{ROOT}/actions/runs/7/attempts/2/jobs?page={page}&per_page=100"),
+            json!({"total_count":11,"jobs":[job]}),
+        );
+        step["response"]["headers"]["link"] = json!("<https://hostile.test/ignored>; rel=\"next\"");
+        steps.push(step);
+    }
+    let (status, error, out) = invoke(
+        "gh.run.read",
+        json!({"owner":"octo","repo":"hello","runId":7}),
+        steps,
+    )
+    .await;
+    assert_eq!(status, 3, "{error}");
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(v["requestsUsed"], 12);
+    assert_eq!(v["coverage"]["returnedCount"], 10);
+    assert_eq!(v["coverage"]["total_count"], 11);
+    assert_eq!(v["coverage"]["incomplete"], true);
+    assert_eq!(v["jobDurationCoverage"]["completedJobs"], 10);
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn selected_job_count_probe_rejects_bad_denominators_and_unfinished_jobs_contribute_zero() {
+    for total in [json!(0), json!("8"), json!(-1)] {
+        let mut steps = view_steps(2, true, false);
+        steps[3]["response"]["body"]["json"]["total_count"] = total;
+        let (status, _, out) = invoke(
+            "gh.run.read",
+            json!({"owner":"octo","repo":"hello","runId":7,"job":11}),
+            steps,
+        )
+        .await;
+        assert_eq!(status, 3);
+        assert!(out.is_empty());
+    }
+    let mut steps = view_steps(2, true, false);
+    for index in [2, 3] {
+        let body = &mut steps[index]["response"]["body"]["json"];
+        let job = if index == 2 {
+            body
+        } else {
+            &mut body["jobs"][0]
+        };
+        job["status"] = json!("in_progress");
+        job["conclusion"] = Value::Null;
+        job["completed_at"] = Value::Null;
+    }
+    let (status, error, out) = invoke(
+        "gh.run.read",
+        json!({"owner":"octo","repo":"hello","runId":7,"job":11}),
+        steps,
+    )
+    .await;
+    assert_eq!(status, 0, "{error}");
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(v["completedJobDurationSeconds"], 0);
+    assert_eq!(v["jobDurationCoverage"]["completedJobs"], 0);
+    assert_eq!(v["jobDurationCoverage"]["totalJobs"], 8);
+}
+fn recorded(number: u32) -> Value {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cassettes/actions/gh");
+    let prefix = format!("{number:04}-");
+    let path = std::fs::read_dir(root)
+        .unwrap()
+        .map(|p| p.unwrap().path())
+        .find(|p| {
+            p.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with(&prefix)
+        })
+        .unwrap();
+    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn recorded_actions_replay_through_production_capabilities_and_exact_requests() {
+    let body = &recorded(6)["response"]["body"]["json"];
+    let rid = body["id"].clone();
+    for (attempt, selected, files) in [
+        (None, false, vec![3, 6, 8, 11, 12]),
+        (Some(1), false, vec![3, 6, 13, 14, 17, 18]),
+        (None, true, vec![3, 6, 9, 10, 11, 12]),
+        (Some(1), true, vec![3, 6, 13, 15, 16, 17, 18]),
+    ] {
+        let mut input = json!({"owner":"dekopon-agents","repo":"dekopon-provider-gh","runId":rid});
+        if let Some(a) = attempt {
+            input["attempt"] = json!(a);
+        }
+        if selected {
+            let n = if attempt.is_some() { 15 } else { 9 };
+            input["job"] = recorded(n)["response"]["body"]["json"]["id"].clone();
+        }
+        let (status, error, out) = invoke(
+            "gh.run.read",
+            input,
+            files.into_iter().map(recorded).collect(),
+        )
+        .await;
+        assert_eq!(status, 0, "{error}");
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["latestAttempt"], 2);
+        assert_eq!(v["jobs"][0]["annotations"].as_array().unwrap().len(), 2);
+    }
+    let (status, error, out) = invoke(
+        "gh.run.list",
+        json!({"owner":"dekopon-agents","repo":"dekopon-provider-gh","limit":100,"all":true}),
+        vec![3, 5, 4, 19].into_iter().map(recorded).collect(),
+    )
+    .await;
+    assert_eq!(status, 3, "{error}");
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(v["runs"].as_array().unwrap().len(), 100);
+    assert_eq!(v["coverage"]["incomplete"], true);
+}
+#[test]
+fn recorded_actions_authorization_and_every_token_window_are_redacted() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cassettes/actions/gh");
+    let token = std::env::var("GH_CASSETTE_TOKEN").ok();
+    let mut count = 0;
+    for file in std::fs::read_dir(root).unwrap() {
+        let bytes = std::fs::read(file.unwrap().path()).unwrap();
+        let v: Value = serde_json::from_slice(&bytes).unwrap();
+        for section in ["request", "response"] {
+            for (name, value) in v[section]["headers"].as_object().unwrap() {
+                if name.eq_ignore_ascii_case("authorization") {
+                    assert_eq!(value, "[redacted]");
+                }
+            }
+        }
+        if let Some(token) = &token {
+            for window in token.as_bytes().windows(8) {
+                assert!(
+                    !bytes.windows(8).any(|v| v == window),
+                    "recording contains a credential window"
+                );
+            }
+        }
+        count += 1;
+    }
+    assert_eq!(count, 19);
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn annotation_budget_stops_at_twenty_nine_requests_with_every_unread_job_marked() {
+    let mut steps = start();
+    steps.push(get(
+        &format!("{ROOT}/actions/runs/7/attempts/1"),
+        run_body(1),
+    ));
+    for page in 1..=10 {
+        let mut job = job_body(1, true);
+        job["id"] = json!(100 + page);
+        let mut step = get(
+            &format!("{ROOT}/actions/runs/7/attempts/1/jobs?page={page}&per_page=100"),
+            json!({"total_count":10,"jobs":[job]}),
+        );
+        if page < 10 {
+            step["response"]["headers"]["link"] =
+                json!("<https://hostile.test/ignored>; rel=\"next\"");
+        }
+        steps.push(step);
+    }
+    for _ in 0..8 {
+        steps.push(get(
+            &format!("{ROOT}/check-runs/13"),
+            json!({"id":13,"head_sha":"a".repeat(40),"output":{"annotations_count":1}}),
+        ));
+        steps.push(get(&format!("{ROOT}/check-runs/13/annotations?per_page=100&page=1"),json!([{"path":"test.rs","start_line":1,"end_line":1,"annotation_level":"failure","message":"broken","title":null}])));
+    }
+    let (status, error, out) = invoke(
+        "gh.run.read",
+        json!({"owner":"octo","repo":"hello","runId":7,"attempt":1}),
+        steps,
+    )
+    .await;
+    assert_eq!(status, 3, "{error}");
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(v["requestsUsed"], 29);
+    assert_eq!(v["jobs"][8]["annotationCoverage"]["incomplete"], true);
+    assert_eq!(v["jobs"][9]["annotationCoverage"]["incomplete"], true);
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn view_flags_and_all_aliases_propose_and_execute_without_extra_authority() {
+    for flag in ["--all", "-a"] {
+        let args = [
+            "run",
+            "list",
+            "-R",
+            "octo/hello",
+            flag,
+            "--json",
+            "databaseId",
+        ]
+        .map(str::to_owned);
+        let CommandRunOutcome::Proposed {
+            capability, input, ..
+        } = registry()
+            .await
+            .run_command("gh", &args, false)
+            .await
+            .unwrap()
+        else {
+            panic!("all proposal")
+        };
+        assert_eq!(input["all"], true);
+        assert_eq!(input["_cliOutput"], "databaseId");
+        let steps = vec![
+            get(ROOT, json!({"id":42})),
+            get(
+                &format!("{ROOT}/actions/workflows?page=1&per_page=100"),
+                json!({"total_count":1,"workflows":[{"id":9,"state":"disabled_manually","path":".github/workflows/ci.yml"}]}),
+            ),
+            get(
+                &format!("{ROOT}/actions/runs?page=1&per_page=100"),
+                json!({"total_count":1,"workflow_runs":[run_body(2)]}),
+            ),
+        ];
+        let (status, error, out) = invoke(capability.as_str(), input, steps).await;
+        assert_eq!(status, 0, "{error}");
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["runs"][0]["attempt"], 2);
+        assert_eq!(v["coverage"]["incomplete"], false);
+    }
+    for flags in [
+        vec![
+            "--attempt",
+            "1",
+            "--job",
+            "11",
+            "--verbose",
+            "--exit-status",
+        ],
+        vec!["-a", "1", "-j", "11", "-v", "--exit-status"],
+    ] {
+        let args = [vec!["run", "view", "7", "-R", "octo/hello"], flags]
+            .concat()
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let CommandRunOutcome::Proposed {
+            capability, input, ..
+        } = registry()
+            .await
+            .run_command("gh", &args, false)
+            .await
+            .unwrap()
+        else {
+            panic!("view proposal")
+        };
+        assert_eq!(capability.as_str(), "gh.run.read");
+        assert_eq!(input["attempt"], 1);
+        assert_eq!(input["job"], 11);
+        assert_eq!(input["verbose"], true);
+        assert_eq!(input["exitStatus"], true);
+        let (status, error, out) =
+            invoke(capability.as_str(), input, view_steps(1, true, false)).await;
+        assert_eq!(status, 1);
+        assert_eq!(error, "the selected run attempt did not succeed\n");
+        assert!(String::from_utf8(out).unwrap().contains("Step 1"));
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn later_run_attempt_and_job_404s_use_the_same_ambiguous_outcome() {
+    for position in [1, 2, 3] {
+        let mut steps = view_steps(1, true, false);
+        steps.truncate(position + 1);
+        steps[position]["response"]["status"] = json!(404);
+        let (status, error, out) = invoke(
+            "gh.run.read",
+            json!({"owner":"octo","repo":"hello","runId":7,"attempt":1,"job":11}),
+            steps,
+        )
+        .await;
+        assert_eq!(status, 3);
+        assert_eq!(error, "not found or not accessible\n");
+        assert!(out.is_empty());
+    }
+}
