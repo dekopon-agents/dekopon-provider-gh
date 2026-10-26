@@ -984,3 +984,24 @@ async fn later_run_attempt_and_job_404s_use_the_same_ambiguous_outcome() {
         assert!(out.is_empty());
     }
 }
+#[tokio::test(flavor = "multi_thread")]
+async fn canonical_check_urls_preserve_case_insensitive_repository_identity_without_selecting_a_host()
+ {
+    let mut steps = view_steps(2, false, true);
+    for step in &mut steps {
+        let path = step["request"]["path"]
+            .as_str()
+            .unwrap()
+            .replace("/repos/octo/hello", "/repos/Octo/Hello");
+        step["request"]["path"] = json!(path);
+    }
+    let (status, error, out) = invoke(
+        "gh.run.read",
+        json!({"owner":"Octo","repo":"Hello","runId":7}),
+        steps,
+    )
+    .await;
+    assert_eq!(status, 0, "{error}");
+    let value: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(value["jobs"][0]["annotations"][0]["untrusted"], true);
+}

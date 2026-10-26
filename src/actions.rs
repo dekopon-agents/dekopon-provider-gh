@@ -741,7 +741,9 @@ fn check_id(raw: &Value, root: &str) -> Result<u64, ProviderError> {
         .ok()
         .filter(|n| *n > 0)
         .ok_or_else(invalid_response)?;
-    if !prefix.ends_with(&format!("{root}/check-runs"))
+    if !prefix
+        .to_ascii_lowercase()
+        .ends_with(&format!("{root}/check-runs").to_ascii_lowercase())
         || value.len() > 2048
         || value.chars().any(char::is_control)
     {
