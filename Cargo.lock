@@ -665,6 +665,7 @@ dependencies = [
  "dekopon-broker-host",
  "dekopon-capability",
  "dekopon-core",
+ "dekopon-http-host",
  "dekopon-provider-sdk",
  "dekopon-provider-sdk-testkit",
  "regex",

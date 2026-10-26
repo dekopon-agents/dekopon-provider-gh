@@ -195,6 +195,7 @@ async fn invoke_with_stdin(
                     max_response_bytes: 4 * 1024 * 1024,
                     allow_plaintext_loopback: true,
                     propagate_trace: false,
+                    signed_download: None,
                     request_templates: vec![],
                 }),
                 asset: None,
@@ -218,8 +219,7 @@ async fn invoke_with_stdin(
         .await
         .invoke_with_test_imports(
             authorized,
-            None,
-            None,
+            Default::default(),
             AssetInputs {
                 streams: Some(Streams {
                     stdin,
@@ -1262,5 +1262,221 @@ async fn caller_limits_preserve_terminal_count_mismatches_without_an_extra_get()
                 );
             }
         }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn log_flags_propose_their_own_capability_and_read_only_selected_attempt_metadata() {
+    for (flag, mode) in [("--log", "all"), ("--log-failed", "failed")] {
+        for (attempt_flag, job_flag) in [("--attempt", "--job"), ("-a", "-j")] {
+            let args = [
+                "run",
+                "view",
+                "7",
+                "-R",
+                "octo/hello",
+                flag,
+                attempt_flag,
+                "1",
+                job_flag,
+                "11",
+            ]
+            .map(str::to_owned);
+            let CommandRunOutcome::Proposed {
+                capability, input, ..
+            } = registry()
+                .await
+                .run_command("gh", &args, false)
+                .await
+                .unwrap()
+            else {
+                panic!("typed log proposal")
+            };
+            assert_eq!(capability.as_str(), "gh.actions.logs.read");
+            assert_eq!(
+                input,
+                json!({"owner":"octo","repo":"hello","runId":7,"mode":mode,"attempt":1,"job":11})
+            );
+            let mut steps = start();
+            steps.push(get(
+                &format!("{ROOT}/actions/runs/7/attempts/1"),
+                run_body(1),
+            ));
+            let mut job = job_body(1, true);
+            job["status"] = json!("in_progress");
+            job["conclusion"] = Value::Null;
+            job["completed_at"] = Value::Null;
+            steps.push(get(&format!("{ROOT}/actions/jobs/11"), job));
+            let (status, error, out) = invoke(capability.as_str(), input, steps).await;
+            assert_eq!(status, 8);
+            assert_eq!(error, "job still running; logs not final.\n");
+            let value: Value = serde_json::from_slice(&out).unwrap();
+            assert_eq!(value["jobs"][0]["outcome"], "job-running");
+            assert_eq!(value["jobs"][0]["jobId"], 11);
+            assert_eq!(value["attempt"], 1);
+            assert_eq!(value["headSha"], "a".repeat(40));
+            assert_eq!(value["metadataRequests"], 4);
+            assert_eq!(value["downloadCalls"], 0);
+            assert_eq!(value["complete"], false);
+            assert_eq!(value["collectionComplete"], false);
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn log_inputs_and_conflicting_flags_refuse_without_any_request() {
+    for patch in [
+        json!({"runId":0}),
+        json!({"attempt":0}),
+        json!({"job":0}),
+        json!({"cursor":"tampered"}),
+        json!({"mode":"url"}),
+        json!({"range":"bytes=0-0"}),
+        json!({"host":"example.invalid"}),
+    ] {
+        let mut input = json!({"owner":"octo","repo":"hello","runId":7,"mode":"all"});
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        let (status, _, out) = invoke("gh.actions.logs.read", input, vec![]).await;
+        assert_eq!(status, 2);
+        assert!(out.is_empty());
+    }
+    for flags in [
+        vec!["--log", "--log-failed"],
+        vec!["--log", "--json", "jobs"],
+        vec!["--log", "--verbose"],
+        vec!["--log-failed", "--exit-status"],
+        vec!["--log-cursor", "bad"],
+        vec!["--log", "--log-cursor", "bad"],
+        vec!["--log", "--web"],
+    ] {
+        let args = [vec!["run", "view", "7", "-R", "octo/hello"], flags]
+            .concat()
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        match registry()
+            .await
+            .run_command("gh", &args, false)
+            .await
+            .unwrap()
+        {
+            CommandRunOutcome::Rendered { status, .. } => assert_eq!(status, 2),
+            CommandRunOutcome::Failed { error } => {
+                assert!(["usage", "invalid-input"].contains(&error.code.as_str()))
+            }
+            other => panic!("must refuse before invocation: {other:?}"),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn log_download_denial_retains_identity_and_never_presents_partial_collection_as_complete() {
+    for mode in ["all", "failed"] {
+        let mut steps = start();
+        steps.push(get(&format!("{ROOT}/actions/jobs/11"), job_body(2, true)));
+        let (status, error, out) = invoke(
+            "gh.actions.logs.read",
+            json!({"owner":"octo","repo":"hello","runId":7,"job":11,"mode":mode}),
+            steps,
+        )
+        .await;
+        assert_eq!(status, 3);
+        assert_eq!(error, "permission-denied\n");
+        let value: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(value["jobs"][0]["outcome"], "permission-denied");
+        assert_eq!(value["downloadCalls"], 1);
+        assert_eq!(value["requestsReserved"], 7);
+        assert_eq!(value["complete"], false);
+        assert_eq!(value["collectionComplete"], false);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn failed_log_collection_stops_metadata_at_ten_job_pages_without_annotations_or_downloads() {
+    let mut steps = start();
+    steps.push(get(
+        &format!("{ROOT}/actions/runs/7/attempts/1"),
+        run_body(1),
+    ));
+    for page in 1..=10 {
+        let mut job = job_body(1, false);
+        job["id"] = json!(page);
+        let mut step = get(
+            &format!("{ROOT}/actions/runs/7/attempts/1/jobs?page={page}&per_page=100"),
+            json!({"total_count":11,"jobs":[job]}),
+        );
+        step["response"]["headers"]["link"] = json!(format!(
+            "<https://api.github.com{ROOT}/actions/runs/7/attempts/1/jobs?page={}&per_page=100>; rel=\"next\"",
+            page + 1
+        ));
+        steps.push(step);
+    }
+    let (status, _, out) = invoke(
+        "gh.actions.logs.read",
+        json!({"owner":"octo","repo":"hello","runId":7,"attempt":1,"mode":"failed"}),
+        steps,
+    )
+    .await;
+    assert_eq!(status, 3);
+    let value: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(value["metadataRequests"], 13);
+    assert_eq!(value["downloadCalls"], 0);
+    assert_eq!(value["collectionComplete"], false);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn log_cursor_proposes_an_opaque_continuation_and_pins_its_job_and_attempt() {
+    for (flag, mode) in [("--log", "all"), ("--log-failed", "failed")] {
+        let raw = format!(
+            r#"{{"v":1,"owner":"octo","repo":"hello","run":7,"job":11,"attempt":1,"sha":"{}","mode":"{}","start":0,"end":20,"total":20,"next":1,"digest":"{}"}}"#,
+            "a".repeat(40),
+            mode,
+            "0".repeat(64)
+        );
+        let cursor = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
+        let args = [
+            "run",
+            "view",
+            "7",
+            "-R",
+            "octo/hello",
+            flag,
+            "--log-cursor",
+            &cursor,
+        ]
+        .map(str::to_owned);
+        let CommandRunOutcome::Proposed {
+            capability, input, ..
+        } = registry()
+            .await
+            .run_command("gh", &args, false)
+            .await
+            .unwrap()
+        else {
+            panic!("typed continuation proposal")
+        };
+        assert_eq!(capability.as_str(), "gh.actions.logs.read");
+        assert_eq!(input["cursor"], cursor);
+        assert_eq!(input["mode"], mode);
+        let mut steps = start();
+        steps.push(get(
+            &format!("{ROOT}/actions/runs/7/attempts/1"),
+            run_body(1),
+        ));
+        let mut job = job_body(1, true);
+        job["status"] = json!("in_progress");
+        job["conclusion"] = Value::Null;
+        job["completed_at"] = Value::Null;
+        steps.push(get(&format!("{ROOT}/actions/jobs/11"), job));
+        let (status, _, out) = invoke(capability.as_str(), input, steps).await;
+        assert_eq!(status, 8);
+        let output: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(output["attempt"], 1);
+        assert_eq!(output["jobs"][0]["jobId"], 11);
+        assert_eq!(output["downloadCalls"], 0);
+        assert_eq!(output["metadataRequests"], 4);
     }
 }

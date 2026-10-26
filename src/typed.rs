@@ -173,7 +173,7 @@ capability!(
     LogsReadInput,
     crate::ids::LOGS_READ,
     "actions.logs.read",
-    "Bounded Actions job logs",
+    "Bounded Actions job logs (shared 32-request budget)",
     crate::logs::unused,
     EffectKind::ReadOnly,
     RiskLevel::Low

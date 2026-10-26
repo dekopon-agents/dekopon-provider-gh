@@ -24,9 +24,9 @@ enum Mode {
 pub(crate) struct Input {
     pub owner: String,
     pub repo: String,
-    pub run_id: u64,
-    pub attempt: Option<u32>,
-    pub job: Option<u64>,
+    pub run_id: crate::actions::RunId,
+    pub attempt: Option<crate::actions::Attempt>,
+    pub job: Option<crate::actions::JobId>,
     mode: Mode,
     cursor: Option<String>,
 }
@@ -121,7 +121,10 @@ pub(crate) fn validate(value: Value) -> Result<Input, ProviderError> {
     let input: Input = serde_json::from_value(value).map_err(|_| crate::invalid_input())?;
     crate::validate_login(&input.owner)?;
     crate::validate_repo(&input.repo)?;
-    if input.run_id == 0 || input.job == Some(0) || input.attempt == Some(0) {
+    if input.run_id.0 == 0
+        || input.job.is_some_and(|v| v.0 == 0)
+        || input.attempt.is_some_and(|v| v.0 == 0)
+    {
         return Err(crate::invalid_input());
     }
     if let Some(raw) = &input.cursor {
@@ -143,12 +146,12 @@ fn decode_cursor(raw: &str, input: &Input) -> Result<Cursor, ProviderError> {
     if c.v != 1
         || c.owner != input.owner
         || c.repo != input.repo
-        || c.run != input.run_id
+        || c.run != input.run_id.0
         || c.mode != input.mode
         || c.job == 0
         || c.attempt == 0
-        || input.job.is_some_and(|job| job != c.job)
-        || input.attempt.is_some_and(|attempt| attempt != c.attempt)
+        || input.job.is_some_and(|job| job.0 != c.job)
+        || input.attempt.is_some_and(|attempt| attempt.0 != c.attempt)
         || c.start >= c.end
         || c.end > c.total
         || c.end - c.start > u64::from(WINDOW)
@@ -385,28 +388,15 @@ fn render_window(
     )
 }
 
-fn fetch(
+type Download<'a> = dyn FnMut(&sd::Request) -> Result<sd::Response, sd::DownloadError> + 'a;
+fn acquire(
     input: &Input,
-    metadata: &Value,
-    job: &Value,
+    job_id: u64,
     previous: Option<&Cursor>,
     base: &Base,
     budget: &mut Budget,
-    text_budget: usize,
-) -> Result<Value, Outcome> {
-    if job["status"] != "completed" {
-        return Err(Outcome::JobRunning);
-    }
-    let job_id = job["databaseId"].as_u64().ok_or(Outcome::IncompleteRead)?;
-    let attempt = metadata["attempt"]
-        .as_u64()
-        .ok_or(Outcome::IncompleteRead)? as u32;
-    let sha = metadata["headSha"]
-        .as_str()
-        .ok_or(Outcome::IncompleteRead)?;
-    if previous.is_some_and(|c| c.job != job_id || c.attempt != attempt || c.sha != sha) {
-        return Err(Outcome::SourceChanged);
-    }
+    download: &mut Download<'_>,
+) -> Result<sd::Response, Outcome> {
     let window = if let Some(c) = previous {
         let (start, length) = if c.next == c.end {
             (
@@ -432,32 +422,71 @@ fn fetch(
         ),
     )
     .map_err(|_| Outcome::StorageError)?;
-    let response = sd::download(&sd::Request { api_uri, window }).map_err(download_error)?;
+    download(&sd::Request { api_uri, window }).map_err(download_error)
+}
+
+struct FetchFailure {
+    outcome: Outcome,
+    fetched: Option<Value>,
+}
+impl From<Outcome> for FetchFailure {
+    fn from(outcome: Outcome) -> Self {
+        Self {
+            outcome,
+            fetched: None,
+        }
+    }
+}
+
+fn fetch(
+    input: &Input,
+    metadata: &Value,
+    job: &Value,
+    previous: Option<&Cursor>,
+    base: &Base,
+    budget: &mut Budget,
+    text_budget: usize,
+) -> Result<Value, FetchFailure> {
+    if job["status"] != "completed" {
+        return Err(Outcome::JobRunning.into());
+    }
+    let job_id = job["databaseId"].as_u64().ok_or(Outcome::IncompleteRead)?;
+    let attempt = metadata["attempt"]
+        .as_u64()
+        .ok_or(Outcome::IncompleteRead)? as u32;
+    let sha = metadata["headSha"]
+        .as_str()
+        .ok_or(Outcome::IncompleteRead)?;
+    if previous.is_some_and(|c| c.job != job_id || c.attempt != attempt || c.sha != sha) {
+        return Err(Outcome::SourceChanged.into());
+    }
+    let response = acquire(input, job_id, previous, base, budget, &mut sd::download)?;
     match response {
         sd::Response::Api(api) => Err(api_status(
             api.status,
             api.headers
                 .iter()
                 .any(|h| h.name.eq_ignore_ascii_case("x-ratelimit-remaining") && h.value == b"0"),
-        )),
+        )
+        .into()),
         sd::Response::Storage {
             status,
             coverage,
             body,
         } => {
             if status != 206 {
-                return Err(storage_status(status));
+                return Err(storage_status(status).into());
             }
             let coverage = coverage.ok_or(Outcome::IncompleteRead)?;
             if coverage.start >= coverage.end_exclusive
                 || coverage.end_exclusive > coverage.total
                 || coverage.end_exclusive - coverage.start > u64::from(WINDOW)
             {
-                return Err(Outcome::IncompleteRead);
+                return Err(Outcome::IncompleteRead.into());
             }
             if let Some(c) = previous {
                 if c.total != coverage.total {
-                    return Err(Outcome::SourceChanged);
+                    return Err(Outcome::SourceChanged.into());
                 }
                 let expected_start = if c.next == c.end {
                     c.start.saturating_sub(u64::from(WINDOW))
@@ -466,12 +495,12 @@ fn fetch(
                 };
                 let expected_end = if c.next == c.end { c.start } else { c.end };
                 if coverage.start != expected_start || coverage.end_exclusive != expected_end {
-                    return Err(Outcome::IncompleteRead);
+                    return Err(Outcome::IncompleteRead.into());
                 }
             } else if coverage.end_exclusive != coverage.total
                 || coverage.start != coverage.total.saturating_sub(u64::from(WINDOW))
             {
-                return Err(Outcome::IncompleteRead);
+                return Err(Outcome::IncompleteRead.into());
             }
             let body = body.ok_or(Outcome::IncompleteRead)?;
             let next = previous
@@ -481,7 +510,7 @@ fn fetch(
                 v: 1,
                 owner: input.owner.clone(),
                 repo: input.repo.clone(),
-                run: input.run_id,
+                run: input.run_id.0,
                 job: job_id,
                 attempt,
                 sha: sha.to_owned(),
@@ -510,7 +539,7 @@ fn fetch(
                 previous,
                 &steps,
                 text_budget,
-            )
+            ).map_err(|outcome| FetchFailure { outcome, fetched: Some(json!({"start":coverage.start,"endExclusive":coverage.end_exclusive,"total":coverage.total})) })
         }
     }
 }
@@ -528,8 +557,8 @@ pub(crate) fn execute(
         .map(|raw| decode_cursor(raw, &input))
         .transpose()?;
     if let Some(c) = &previous {
-        input.job = Some(c.job);
-        input.attempt = Some(c.attempt);
+        input.job = Some(crate::actions::JobId(c.job));
+        input.attempt = Some(crate::actions::Attempt(c.attempt));
     }
     let metadata = crate::actions::log_metadata(&input, base, send).map_err(|error| match error
         .code_str()
@@ -579,8 +608,9 @@ pub(crate) fn execute(
             (remaining.saturating_sub(2048) / 2).min(8192),
         ) {
             Ok(row) => rows.push(row),
-            Err(outcome) => {
-                rows.push(json!({"runId":input.run_id,"attempt":metadata["attempt"],"headSha":metadata["headSha"],"jobId":job["databaseId"],"outcome":outcome,"complete":false,"fetched":null,"renderedSpans":[],"continuation":input.cursor}));
+            Err(error) => {
+                let outcome = error.outcome;
+                rows.push(json!({"runId":input.run_id.0,"attempt":metadata["attempt"],"headSha":metadata["headSha"],"jobId":job["databaseId"],"outcome":outcome,"complete":false,"fetched":error.fetched,"renderedSpans":[],"continuation":input.cursor}));
                 failure = Some(outcome);
                 break;
             }
@@ -590,7 +620,7 @@ pub(crate) fn execute(
         failure.get_or_insert(Outcome::IncompleteRead);
     }
     let complete = failure.is_none() && rows.iter().all(|r| r["complete"] == true);
-    let result = json!({"runId":input.run_id,"attempt":metadata["attempt"],"headSha":metadata["headSha"],"complete":complete,"collectionComplete":failure.is_none(),"selectedJobs":selected.len(),"jobs":rows,"coverage":metadata["coverage"],"metadataRequests":budget.metadata,"downloadCalls":budget.tails+budget.offsets,"requestsReserved":budget.used()});
+    let result = json!({"runId":input.run_id.0,"attempt":metadata["attempt"],"headSha":metadata["headSha"],"complete":complete,"collectionComplete":failure.is_none(),"selectedJobs":selected.len(),"jobs":rows,"coverage":metadata["coverage"],"metadataRequests":budget.metadata,"downloadCalls":budget.tails+budget.offsets,"requestsReserved":budget.used()});
     let bytes = serde_json::to_vec(&result).map_err(|_| crate::invalid_response())?;
     if bytes.len() + 1 > OUTPUT {
         return Err(Outcome::IncompleteRead.error().expect("failure"));
@@ -813,6 +843,69 @@ mod tests {
         assert_eq!(budget.used(), 32);
         assert_eq!(budget.reserve(true), Err(Outcome::RequestLimit));
     }
+    #[test]
+    fn native_each_window_makes_one_download_with_canonical_uri_and_a_typed_tail_or_offset() {
+        let input = validate(input()).unwrap();
+        let base: Base = serde_json::from_value(json!("https://api.github.com/prefix")).unwrap();
+        let mut budget = Budget {
+            metadata: 4,
+            tails: 0,
+            offsets: 0,
+        };
+        let mut calls = 0;
+        let mut c = cursor(100000);
+        c.start = 34464;
+        c.next = 35000;
+        for (previous, expected) in [(None, None), (Some(&c), Some((34464, 65536)))] {
+            acquire(&input, 11, previous, &base, &mut budget, &mut |request| {
+                calls += 1;
+                assert_eq!(
+                    request.api_uri,
+                    "https://api.github.com/prefix/repos/octo/hello/actions/jobs/11/logs"
+                );
+                match (&request.window, expected) {
+                    (sd::Window::Tail(length), None) => assert_eq!(*length, 65536),
+                    (sd::Window::Offset(window), Some((start, length))) => {
+                        assert_eq!(window.start, start);
+                        assert_eq!(window.length, length);
+                    }
+                    _ => panic!("wrong typed window"),
+                }
+                Ok(sd::Response::Api(sd::ApiResponse {
+                    status: 410,
+                    headers: vec![],
+                    body: vec![],
+                }))
+            })
+            .unwrap();
+        }
+        assert_eq!(calls, 2);
+        assert_eq!(budget.used(), 13);
+        c.next = c.end;
+        acquire(&input, 11, Some(&c), &base, &mut budget, &mut |request| {
+            match &request.window {
+                sd::Window::Offset(window) => {
+                    assert_eq!(window.start, 0);
+                    assert_eq!(window.length, 34464);
+                }
+                sd::Window::Tail(_) => panic!("preceding window is explicit"),
+            }
+            Err(sd::DownloadError {
+                code: sd::ErrorCode::Incomplete,
+            })
+        })
+        .err()
+        .filter(|outcome| *outcome == Outcome::IncompleteRead)
+        .expect("typed incomplete");
+        budget.metadata = 32;
+        assert!(matches!(
+            acquire(&input, 11, None, &base, &mut budget, &mut |_| panic!(
+                "no call after cap"
+            )),
+            Err(Outcome::RequestLimit)
+        ));
+    }
+
     #[test]
     fn native_api_and_storage_failures_keep_distinct_closed_variants_and_exit_codes() {
         for (status, exhausted, expected) in [

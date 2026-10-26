@@ -27,6 +27,7 @@ sha2 = "0.10.9"
 [dev-dependencies]
 dekopon-provider-sdk-testkit = "=0.58.0"
 dekopon-broker-host = "=0.58.0"
+dekopon-http-host = "=0.58.0"
 
 dekopon-capability = "=0.58.0"
 dekopon-core = "=0.58.0"

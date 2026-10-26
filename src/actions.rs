@@ -72,13 +72,13 @@ impl From<ActionError> for ProviderError {
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(transparent)]
-struct RunId(u64);
+pub(crate) struct RunId(pub(crate) u64);
 #[derive(Clone, Copy, Deserialize)]
 #[serde(transparent)]
-struct JobId(u64);
+pub(crate) struct JobId(pub(crate) u64);
 #[derive(Clone, Copy, Deserialize)]
 #[serde(transparent)]
-struct Attempt(u32);
+pub(crate) struct Attempt(pub(crate) u32);
 impl std::fmt::Display for RunId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -780,9 +780,9 @@ pub(crate) fn log_metadata(
     let root = root(&input.owner, &input.repo);
     repository(&mut reads, &root)?;
     let latest = reads.value(&format!("{root}/actions/runs/{}", input.run_id))?;
-    let latest = run_row(&latest, Some(input.run_id), None)?;
+    let latest = run_row(&latest, Some(input.run_id.0), None)?;
     let latest_attempt = latest["attempt"].as_u64().ok_or_else(invalid_response)? as u32;
-    let attempt = input.attempt.unwrap_or(latest_attempt);
+    let attempt = input.attempt.map_or(latest_attempt, |v| v.0);
     if attempt > latest_attempt {
         return Err(ActionError::NotFoundOrNotAccessible.into());
     }
@@ -791,7 +791,7 @@ pub(crate) fn log_metadata(
             "{root}/actions/runs/{}/attempts/{attempt}",
             input.run_id
         ))?;
-        let row = run_row(&raw, Some(input.run_id), Some(attempt))?;
+        let row = run_row(&raw, Some(input.run_id.0), Some(attempt))?;
         if row["headSha"] != latest["headSha"] {
             return Err(invalid_response());
         }
@@ -801,7 +801,7 @@ pub(crate) fn log_metadata(
     };
     let (raw, coverage) = if let Some(job) = input.job {
         let raw = reads.value(&format!("{root}/actions/jobs/{job}"))?;
-        if positive(&raw, "id")? != job {
+        if positive(&raw, "id")? != job.0 {
             return Err(invalid_response());
         }
         (vec![raw], Coverage::default())
@@ -822,7 +822,7 @@ pub(crate) fn log_metadata(
         .map(|raw| job_row(raw, &run))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(
-        json!({"runId":input.run_id,"attempt":attempt,"headSha":run["headSha"],"jobs":jobs,"coverage":coverage.json(),"metadataRequests":reads.used}),
+        json!({"runId":input.run_id.0,"attempt":attempt,"headSha":run["headSha"],"jobs":jobs,"coverage":coverage.json(),"metadataRequests":reads.used}),
     )
 }
 

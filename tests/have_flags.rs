@@ -201,6 +201,7 @@ async fn invoke_with_stdin(
                     max_response_bytes: 4 * 1024 * 1024,
                     allow_plaintext_loopback: true,
                     propagate_trace: false,
+                    signed_download: None,
                     request_templates: vec![],
                 }),
                 asset: None,
@@ -224,8 +225,7 @@ async fn invoke_with_stdin(
         .await
         .invoke_with_test_imports(
             authorized,
-            None,
-            None,
+            Default::default(),
             AssetInputs {
                 streams: Some(Streams {
                     stdin,
