@@ -301,6 +301,8 @@ struct Coverage {
     returned: usize,
     total: Option<u64>,
     reasons: Vec<&'static str>,
+    notes: Vec<&'static str>,
+    page_error: Option<String>,
 }
 impl Coverage {
     fn mark(&mut self, reason: &'static str) {
@@ -309,7 +311,7 @@ impl Coverage {
         }
     }
     fn json(&self) -> Value {
-        json!({"returnedCount":self.returned,"total_count":self.total,"incomplete":!self.reasons.is_empty(),"reasons":self.reasons})
+        json!({"returnedCount":self.returned,"total_count":self.total,"incomplete":!self.reasons.is_empty(),"reasons":self.reasons,"notes":self.notes,"pageError":self.page_error})
     }
 }
 fn pages(
@@ -319,14 +321,39 @@ fn pages(
     bound: usize,
     limit: usize,
 ) -> Result<(Vec<Value>, Coverage), ProviderError> {
+    pages_with(reads, path, field, bound, limit, false, |value| {
+        Ok(Some(value.clone()))
+    })
+}
+fn pages_with(
+    reads: &mut Reads<'_>,
+    path: &str,
+    field: &str,
+    bound: usize,
+    limit: usize,
+    limit_note: bool,
+    mut project: impl FnMut(&Value) -> Result<Option<Value>, ProviderError>,
+) -> Result<(Vec<Value>, Coverage), ProviderError> {
     let mut result = Vec::new();
     let mut coverage = Coverage::default();
     let mut seen = HashSet::new();
     for page in 1..=bound {
-        let response = reads.get(&format!(
+        let response = match reads.get(&format!(
             "{path}{}page={page}&per_page=100",
             if path.ends_with('?') { "" } else { "&" }
-        ))?;
+        )) {
+            Ok(response) => response,
+            Err(error) if limit_note && coverage.total.is_some() => {
+                coverage.mark("page-failed");
+                coverage.page_error = Some(
+                    dekopon_provider_sdk::provider::Failure::code(&error)
+                        .as_str()
+                        .to_owned(),
+                );
+                break;
+            }
+            Err(error) => return Err(error),
+        };
         let value: Value = crate::decode(&response.body)?;
         let total = value["total_count"].as_u64().ok_or_else(invalid_response)?;
         let items = value[field].as_array().ok_or_else(invalid_response)?;
@@ -347,14 +374,26 @@ fn pages(
                 continue;
             }
             if result.len() < limit {
-                result.push(item.clone());
+                if let Some(row) = project(item)? {
+                    result.push(row);
+                }
+                if limit_note && result.len() == limit {
+                    break;
+                }
             } else {
                 coverage.mark("limit");
             }
         }
         let next = crate::has_next_link(&response);
         if result.len() >= limit {
-            if next || total > result.len() as u64 {
+            if limit_note {
+                if next || total > seen.len() as u64 {
+                    coverage.notes.push("limit");
+                }
+                if total < seen.len() as u64 || (next && total == seen.len() as u64) {
+                    coverage.mark("count-mismatch");
+                }
+            } else if next || total > result.len() as u64 {
                 coverage.mark("limit");
             }
             break;
@@ -456,36 +495,30 @@ pub(crate) fn list(
             ));
         }
     }
-    let (runs, mut coverage) = pages(
+    let (output, mut coverage) = pages_with(
         &mut reads,
         &path,
         "workflow_runs",
         ListInput::MAX_RUN_PAGES,
-        1000,
-    )?;
-    let mut output = Vec::new();
-    for run in runs {
-        let row = run_row(&run, None, None)?;
-        let workflow = positive(&run, "workflow_id")?;
-        let eligible = if input.all {
-            true
-        } else {
-            match states.get(&workflow) {
-                Some(state) => *state == "active",
-                None => {
-                    coverage_reasons.push("workflow-unresolved");
-                    false
-                }
-            }
-        };
-        if eligible {
-            if output.len() < input.limit {
-                output.push(row);
+        input.limit,
+        true,
+        |run| {
+            let row = run_row(run, None, None)?;
+            let workflow = positive(run, "workflow_id")?;
+            let eligible = if input.all {
+                true
             } else {
-                coverage.mark("limit");
-            }
-        }
-    }
+                match states.get(&workflow) {
+                    Some(state) => *state == "active",
+                    None => {
+                        coverage_reasons.push("workflow-unresolved");
+                        false
+                    }
+                }
+            };
+            Ok(eligible.then_some(row))
+        },
+    )?;
     coverage.returned = output.len();
     for reason in coverage_reasons {
         coverage.mark(reason);
@@ -569,7 +602,7 @@ fn run_row(
     let start = stamp(run, "run_started_at")?;
     let updated = stamp(run, "updated_at")?;
     let wall = if status == "completed" {
-        Some(duration(&start, &updated)?.ok_or_else(invalid_response)?)
+        duration(&start, &updated)?
     } else {
         None
     };
@@ -594,7 +627,7 @@ fn job_row(job: &Value, run: &Value) -> Result<Value, ProviderError> {
     let start = stamp(job, "started_at")?;
     let end = stamp(job, "completed_at")?;
     let elapsed = if status == "completed" {
-        Some(duration(&start, &end)?.ok_or_else(invalid_response)?)
+        duration(&start, &end)?
     } else {
         None
     };
@@ -683,6 +716,7 @@ pub(crate) fn read(
             returned: 1,
             total: Some(total),
             reasons: Vec::new(),
+            ..Default::default()
         };
         (vec![value], c)
     } else {
@@ -801,6 +835,10 @@ fn annotations(
             result.push(json!({"untrusted":true,"path":text(&row,"path",1024)?,"startLine":start,"endLine":end,"level":level,"message":text(&row,"message",4096)?,"title":match &row["title"] {Value::Null=>Value::Null,Value::String(s)=>json!(clean(s,256)),_=>return Err(invalid_response())}}));
         }
         if !crate::has_next_link(&response) {
+            break;
+        }
+        if result.len() as u64 >= total {
+            coverage.mark("count-mismatch");
             break;
         }
         page += 1;

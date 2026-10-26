@@ -342,7 +342,8 @@ and workflow name. Job identity includes job/run ids, attempt, head SHA, status,
 and start/completion times. `latestAttempt` and the inclusive `existingAttempts` range describe
 which attempts exist. `wallClockSeconds` measures a completed run's start to update;
 `completedJobDurationSeconds` sums only completed jobs with known durations. These are separate
-measurements and are never added. `jobDurationCoverage` names completed jobs, jobs read and the
+measurements and are never added. Missing timing endpoints leave durations null instead of failing
+the read; jobs without known durations do not contribute to the sum. `jobDurationCoverage` names completed jobs, jobs read and the
 selected attempt's total jobs. A selected job uses a one-row jobs count probe, so its duration
 can explicitly cover 1 of 8 jobs; unfinished/unread jobs make the sum partial.
 
@@ -354,14 +355,20 @@ remain mandatory even when selecting fields. JSON uses an envelope: list has `ru
 `workflowCoverage` and `requestsUsed`; view includes `coverage` and `jobDurationCoverage`.
 Coverage reports returned count, GitHub's raw `total_count`, an explicit `incomplete` boolean
 and reasons. GitHub's raw run count is not a claimed count after workflow-state filtering.
-Page/limit bounds and count drift retain bounded rows and return `incomplete-results` (exit 3).
+A caller-selected list limit (including the default 20) stops paging once enough eligible rows
+exist; it is a `coverage.notes` entry, not incompleteness, and exits 0. Page-budget exhaustion
+before the limit, count drift, and unread annotation successors are incomplete and return
+`incomplete-results` (exit 3) after bounded rows. A failed later run page preserves rows and
+reports `page-failed` plus its typed `pageError` code.
 A deliberately selected job names `selected-job` scope in coverage and may exit 0 when that
 selected read is complete, while job-duration coverage explicitly remains partial. `--exit-status` returns `run-failed` (exit 1) for a completed unsuccessful attempt;
 incomplete results take precedence. Success, neutral and skipped are not failed conclusions.
 
 Grant `gh.run.list` and `gh.run.read` separately. Both need only GET on the existing API authority
 and Actions: Read; view additionally needs Checks: Read for annotations. List enforces at most
-21 requests: repository visibility, ten workflow pages and ten run pages. View enforces at most
+21 requests at worst: repository visibility, ten workflow pages and up to ten run pages,
+stopping as soon as the requested number of eligible runs exists. With a one-page workflow
+catalog and enough eligible runs on the first run page, the request count is three. View enforces at most
 29: repository, latest run, optional explicit attempt, ten jobs pages and sixteen annotation
 requests shared across metadata/pages. Selecting one job uses at most 20 requests without an
 explicit attempt, 21 with it: repository, latest run, optional attempt, individual job, one-row

@@ -321,3 +321,10 @@ current head and collapses repeated checks. Inspect coverage before claiming a c
 Run view supports explicit attempts and jobs; a selected job reports its completed duration
 against the entire selected attempt's job count. Logs and artifacts are not fetched.
 These example grants do not change deployed homelab grants.
+
+Caller-chosen run-list limits, including the default 20, stop collection once that many
+eligible runs are available and appear as coverage notes with exit 0. The 21-GET grant is
+a worst-case ceiling; a one-page workflow catalog and sufficient first-page runs use three
+GETs. Count mismatches, unread annotation successors, and a page bound reached before the
+requested count remain incomplete (exit 3). Unknown start times retain the read with null
+durations and explicit partial duration coverage.

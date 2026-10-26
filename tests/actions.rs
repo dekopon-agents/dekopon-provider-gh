@@ -813,13 +813,14 @@ async fn recorded_actions_replay_through_production_capabilities_and_exact_reque
     let (status, error, out) = invoke(
         "gh.run.list",
         json!({"owner":"dekopon-agents","repo":"dekopon-provider-gh","limit":100,"all":true}),
-        vec![3, 5, 4, 19].into_iter().map(recorded).collect(),
+        vec![3, 5, 4].into_iter().map(recorded).collect(),
     )
     .await;
-    assert_eq!(status, 3, "{error}");
+    assert_eq!(status, 0, "{error}");
     let v: Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(v["runs"].as_array().unwrap().len(), 100);
-    assert_eq!(v["coverage"]["incomplete"], true);
+    assert_eq!(v["coverage"]["incomplete"], false);
+    assert_eq!(v["coverage"]["notes"], json!(["limit"]));
 }
 #[test]
 fn recorded_actions_authorization_and_every_token_window_are_redacted() {
@@ -1004,4 +1005,206 @@ async fn canonical_check_urls_preserve_case_insensitive_repository_identity_with
     assert_eq!(status, 0, "{error}");
     let value: Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(value["jobs"][0]["annotations"][0]["untrusted"], true);
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn annotation_successors_at_the_metadata_count_are_incomplete_in_text_and_json() {
+    for count in [100, 1500] {
+        for output in ["", "jobs"] {
+            let mut steps = start();
+            steps.push(get(
+                &format!("{ROOT}/actions/runs/7/attempts/2/jobs?page=1&per_page=100"),
+                json!({"total_count":1,"jobs":[job_body(2,true)]}),
+            ));
+            steps.push(get(
+                &format!("{ROOT}/check-runs/13"),
+                json!({"id":13,"head_sha":"a".repeat(40),"output":{"annotations_count":count}}),
+            ));
+            for page in 1..=count / 100 {
+                let annotation = json!({"path":"a.rs","start_line":1,"end_line":1,"annotation_level":"failure","message":"broken","title":null});
+                let mut step = get(
+                    &format!("{ROOT}/check-runs/13/annotations?per_page=100&page={page}"),
+                    json!(vec![annotation; 100]),
+                );
+                step["response"]["headers"]["link"] =
+                    json!("<https://ignored.test/next>; rel=\"next\"");
+                steps.push(step);
+            }
+            let (status, error, out) = invoke(
+                "gh.run.read",
+                json!({"owner":"octo","repo":"hello","runId":7,"_cliOutput":output}),
+                steps,
+            )
+            .await;
+            assert_eq!(status, 3, "{error}");
+            assert_eq!(error, "Actions results are incomplete; inspect coverage\n");
+            if output.is_empty() {
+                let text = String::from_utf8(out).unwrap();
+                assert!(text.contains("count-mismatch"));
+                assert!(text.contains("annotations-incomplete"));
+                assert!(text.contains("\"incomplete\":true"));
+            } else {
+                let value: Value = serde_json::from_slice(&out).unwrap();
+                assert_eq!(value["coverage"]["incomplete"], true);
+                let coverage = &value["jobs"][0]["annotationCoverage"];
+                assert_eq!(coverage["returnedCount"], count);
+                assert_eq!(coverage["total_count"], count);
+                assert_eq!(coverage["incomplete"], true);
+                assert_eq!(coverage["reasons"], json!(["count-mismatch"]));
+            }
+        }
+    }
+}
+fn workflows() -> Value {
+    get(
+        &format!("{ROOT}/actions/workflows?page=1&per_page=100"),
+        json!({"total_count":2,"workflows":[{"id":9,"state":"active","path":".github/workflows/ci.yml"},{"id":10,"state":"disabled_manually","path":".github/workflows/old.yml"}]}),
+    )
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn caller_limits_including_the_default_are_notes_and_stop_before_the_next_page() {
+    for limit in [2, 20] {
+        for output in ["", "databaseId"] {
+            let rows = (0..limit + 1)
+                .map(|i| {
+                    let mut r = run_body(2);
+                    r["id"] = json!(7 + i);
+                    r
+                })
+                .collect::<Vec<_>>();
+            let mut page = get(
+                &format!("{ROOT}/actions/runs?page=1&per_page=100"),
+                json!({"total_count":100,"workflow_runs":rows}),
+            );
+            page["response"]["headers"]["link"] =
+                json!("<https://ignored.test/next>; rel=\"next\"");
+            let mut input = json!({"owner":"octo","repo":"hello","_cliOutput":output});
+            if limit == 2 {
+                input["limit"] = json!(limit);
+            }
+            let (status, error, out) = invoke(
+                "gh.run.list",
+                input,
+                vec![get(ROOT, json!({"id":42})), workflows(), page],
+            )
+            .await;
+            assert_eq!(status, 0, "{error}");
+            assert!(error.is_empty());
+            if output.is_empty() {
+                let text = String::from_utf8(out).unwrap();
+                assert!(text.contains("\"notes\":[\"limit\"]"));
+                assert!(text.contains("\"incomplete\":false"));
+            } else {
+                let v: Value = serde_json::from_slice(&out).unwrap();
+                assert_eq!(v["runs"].as_array().unwrap().len(), limit);
+                assert_eq!(v["coverage"]["notes"], json!(["limit"]));
+                assert_eq!(v["coverage"]["incomplete"], false);
+                assert_eq!(v["requestsUsed"], 3);
+            }
+        }
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn list_limits_count_eligible_rows_and_keep_real_paging_failures_incomplete() {
+    for (failure, only_disabled) in [(false, false), (true, false), (true, true)] {
+        let mut disabled = run_body(2);
+        disabled["id"] = json!(8);
+        disabled["workflow_id"] = json!(10);
+        let mut first = get(
+            &format!("{ROOT}/actions/runs?page=1&per_page=100"),
+            json!({"total_count":4,"workflow_runs":if only_disabled {vec![disabled]} else {vec![run_body(2),disabled]}}),
+        );
+        first["response"]["headers"]["link"] = json!("<https://ignored.test/next>; rel=\"next\"");
+        let mut row = run_body(2);
+        row["id"] = json!(9);
+        let mut second = get(
+            &format!("{ROOT}/actions/runs?page=2&per_page=100"),
+            json!({"total_count":4,"workflow_runs":[row]}),
+        );
+        second["response"]["headers"]["link"] = json!("<https://ignored.test/next>; rel=\"next\"");
+        if failure {
+            second["response"]["status"] = json!(503);
+        }
+        let (status, error, out) = invoke(
+            "gh.run.list",
+            json!({"owner":"octo","repo":"hello","limit":2}),
+            vec![get(ROOT, json!({"id":42})), workflows(), first, second],
+        )
+        .await;
+        assert_eq!(status, if failure { 3 } else { 0 }, "{error}");
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(
+            v["runs"].as_array().unwrap().len(),
+            if only_disabled {
+                0
+            } else if failure {
+                1
+            } else {
+                2
+            }
+        );
+        assert_eq!(v["coverage"]["incomplete"], failure);
+        if failure {
+            assert_eq!(v["coverage"]["reasons"], json!(["page-failed"]));
+            assert_eq!(v["coverage"]["pageError"], "unexpected-status");
+        } else {
+            assert_eq!(v["coverage"]["notes"], json!(["limit"]));
+        }
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn null_start_times_preserve_reads_and_report_unknown_durations() {
+    let mut steps = start();
+    steps[1]["response"]["body"]["json"]["run_started_at"] = Value::Null;
+    let mut job = job_body(2, false);
+    job["started_at"] = Value::Null;
+    steps.push(get(
+        &format!("{ROOT}/actions/runs/7/attempts/2/jobs?page=1&per_page=100"),
+        json!({"total_count":1,"jobs":[job]}),
+    ));
+    let (status, error, out) = invoke(
+        "gh.run.read",
+        json!({"owner":"octo","repo":"hello","runId":7}),
+        steps,
+    )
+    .await;
+    assert_eq!(status, 0, "{error}");
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    assert!(v["wallClockSeconds"].is_null());
+    assert!(v["jobs"][0]["durationSeconds"].is_null());
+    assert_eq!(v["jobDurationCoverage"]["completedJobs"], 0);
+    assert_eq!(v["jobDurationCoverage"]["totalJobs"], 1);
+    assert_eq!(v["jobDurationCoverage"]["partial"], true);
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn list_page_bounds_and_count_mismatches_remain_incomplete_below_the_requested_limit() {
+    for bounded in [false, true] {
+        let mut steps = vec![get(ROOT, json!({"id":42})), workflows()];
+        for page in 1..=if bounded { 10 } else { 1 } {
+            let mut row = run_body(2);
+            row["id"] = json!(page + 100);
+            let mut step = get(
+                &format!("{ROOT}/actions/runs?page={page}&per_page=100"),
+                json!({"total_count":if bounded{11}else{2},"workflow_runs":[row]}),
+            );
+            if bounded {
+                step["response"]["headers"]["link"] =
+                    json!("<https://ignored.test/next>; rel=\"next\"");
+            }
+            steps.push(step);
+        }
+        let (status, error, out) =
+            invoke("gh.run.list", json!({"owner":"octo","repo":"hello"}), steps).await;
+        assert_eq!(status, 3, "{error}");
+        let value: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(value["coverage"]["incomplete"], true);
+        assert_eq!(value["coverage"]["notes"], json!([]));
+        assert_eq!(
+            value["coverage"]["reasons"],
+            json!([if bounded {
+                "page-bound"
+            } else {
+                "count-mismatch"
+            }])
+        );
+    }
 }
