@@ -17,6 +17,10 @@ auditPath: /home/xavier/.local/state/dekopon/audit.jsonl
 checkpointPath: /home/xavier/.local/state/dekopon/audit-checkpoint.json
 checkpointLockPath: /home/xavier/.local/state/dekopon/audit-checkpoint.lock
 
+assets:
+  rootPath: /home/xavier/.local/share/dekopon-assets
+  maxInFlightBytes: 67108864
+
 brokerPrincipal: local-broker
 policyRevision: pr-summarizer-linter-2026-01
 

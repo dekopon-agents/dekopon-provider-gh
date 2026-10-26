@@ -419,6 +419,8 @@ Rendered spans are half-open. There is no automatic retry, ZIP download, cache o
 Grant this capability separately with GET, Actions: Read, `allowedHosts: [api.github.com]`,
 `maxRequests: 32`, `signedDownload: github-actions-logs-v1`, and the documented
 `maxResponseBytes: 131072` (64 KiB response heads plus a 64 KiB body window).
+Configure broker `assets.rootPath` and `assets.maxInFlightBytes` for the bounded spool,
+using a dedicated broker-owned 0700 directory outside broker state and provider paths.
 Deploy supporting core before using this import or grant. The broker owns the one redirect,
 probe `bytes=0-0`, explicit ranges, credential isolation and bounded asset spool. The guest
 receives no storage URL or headers and sets no authorization. Additional destination classes

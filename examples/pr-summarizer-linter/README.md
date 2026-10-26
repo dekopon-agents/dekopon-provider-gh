@@ -5,12 +5,12 @@ answer while the pull request gets one `COMMENT` review containing the summary, 
 findings, and check status.
 
 The gateway authenticates the message and vouches for the sender; it decides nothing. The broker
-maps that Slack subject to the principal `maintainer`, checks Cedar policy, exposes five narrow
+maps that Slack subject to the principal `maintainer`, checks Cedar policy, exposes eight narrow
 capabilities, injects a GitHub token bound to `api.github.com`, executes the `gh` WebAssembly
 component, and hash-links every decision and result into an audit chain naming the person who
 asked. The token is never visible to the model, shell session, agent, or component that uses it.
 
-The provider still exports twenty-nine production capabilities; this example grants seven.
+The provider still exports thirty production capabilities; this example grants eight.
 Upstream shorthands select the same grants: `gh pr review ... -c -b <text>` is equivalent to
 `--comment --body <text>`, and `-F -` reads a piped body. Unsupported upstream operations refuse
 before HTTP; `gh --help` lists their reasons. `gh version`, `licenses`, `actions`, and
@@ -34,6 +34,16 @@ Nothing here is a mock: these are the files a deployment runs, and the constrain
 and refuses to start on. The allow/deny table these files declare was asserted by
 `crates/dekopon-brokerd/tests/examples.rs` while the provider lived in the dekopon tree; the
 example came here with the component, and nothing in dekopon exercises it any more.
+
+## Core 0.58.0 startup compatibility gate
+
+The offline 0.58.0 broker check currently rejects this example's inherited broker schema,
+starting with `auditPath`. The example also retains legacy `constraintSets`, `identityMappings`,
+per-capability `maxOutputBytes`, and attestor `chatScopes`; the 0.58.0 configuration types
+no longer accept those fields. The log grant and dedicated asset spool below are documented,
+but this example is not verified to start on the required core release. A coordinator ruling
+is needed before migrating or removing the existing authority restrictions; no deployed
+configuration is changed by this PR.
 
 ## What “lint” means here
 
@@ -321,7 +331,8 @@ current head and collapses repeated checks. Inspect coverage before claiming a c
 Run view supports explicit attempts and jobs; a selected job reports its completed duration
 against the entire selected attempt's job count. Ordinary run reads fetch no logs or artifacts. The separate log capability needs Actions: Read,
 `maxRequests: 32`, `signedDownload: github-actions-logs-v1` and
-`maxResponseBytes: 131072`. It retains API-only credential destinations; storage redirects
+`maxResponseBytes: 131072`. The dedicated `assets.rootPath` spool is broker-owned, 0700,
+and separate from broker state and provider paths. It retains API-only credential destinations; storage redirects
 are native and unauthenticated. Use `--log` or `--log-failed` and inspect window and collection
 coverage. Supporting core and the D10 component-test follow-up must precede provider release.
 These example grants do not change deployed homelab grants.

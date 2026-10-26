@@ -229,6 +229,9 @@ async fn invoke_with_stdin(
             },
             Some(&TestImports {
                 settings: Some(json!({"baseUrl":base}).to_string()),
+                assets: (id == "gh.actions.logs.read").then(|| {
+                    dekopon_http_host::asset::AssetDirectory::new(std::env::temp_dir(), 131072)
+                }),
                 ..Default::default()
             }),
         )
@@ -249,6 +252,15 @@ async fn invoke_with_stdin(
             assert_eq!(failure.http_calls.len(), expected);
             match *failure.error {
                 BrokerHostError::ProviderFailure { status, stderr, .. } => (status, stderr, stdout),
+                BrokerHostError::HostCallRejected {
+                    reason:
+                        dekopon_broker_host::HostCallRejection::Http(
+                            dekopon_http_host::PolicyViolation::Denied,
+                        ),
+                    ..
+                } if id == "gh.actions.logs.read" => {
+                    (3, "host denied signed download\n".into(), stdout)
+                }
                 other => panic!("unexpected host failure: {other:?}"),
             }
         }
@@ -1373,7 +1385,7 @@ async fn log_inputs_and_conflicting_flags_refuse_without_any_request() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn log_download_denial_retains_identity_and_never_presents_partial_collection_as_complete() {
+async fn log_host_denial_retains_identity_and_never_presents_partial_collection_as_complete() {
     for mode in ["all", "failed"] {
         let mut steps = start();
         steps.push(get(&format!("{ROOT}/actions/jobs/11"), job_body(2, true)));
@@ -1384,7 +1396,7 @@ async fn log_download_denial_retains_identity_and_never_presents_partial_collect
         )
         .await;
         assert_eq!(status, 3);
-        assert_eq!(error, "permission-denied\n");
+        assert_eq!(error, "host denied signed download\n");
         let value: Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(value["jobs"][0]["outcome"], "permission-denied");
         assert_eq!(value["downloadCalls"], 1);
