@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "request": {
+    "method": "GET",
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/workflows",
+    "query": "page=1&per_page=100",
+    "headers": {
+      "accept": "application/vnd.github+json",
+      "accept-encoding": "identity",
+      "authorization": "[redacted]",
+      "connection": "close",
+      "host": "127.0.0.1:8787",
+      "user-agent": "dekopon-gh-provider/0.1",
+      "x-github-api-version": "2022-11-28"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+      "cache-control": "private, max-age=60, s-maxage=60",
+      "content-security-policy": "default-src 'none'",
+      "content-type": "application/json; charset=utf-8",
+      "date": "Mon, 26 Oct 2026 08:35:07 GMT",
+      "etag": "\"107d61017408aaae3e1302b52000ae394a34373fe7c333af71687dfd385df03d\"",
+      "github-authentication-token-expiration": "2026-10-26 11:40:12 UTC",
+      "referrer-policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+      "server": "envoy",
+      "strict-transport-security": "max-age=31536000; includeSubdomains; preload",
+      "vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+      "x-accepted-github-permissions": "actions=read",
+      "x-accepted-oauth-scopes": "",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "267",
+      "x-frame-options": "deny",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-github-edge-region": "iad",
+      "x-github-media-type": "github.v3; format=json",
+      "x-github-request-id": "A674:260252:24B967F:7915A67:6ADF10BB",
+      "x-oauth-client-id": "Iv23liVemv8A9if9v0F2",
+      "x-oauth-scopes": "",
+      "x-ratelimit-limit": "15000",
+      "x-ratelimit-remaining": "14999",
+      "x-ratelimit-reset": "1793007307",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "1",
+      "x-xss-protection": "0"
+    },
+    "body": {
+      "json": {
+        "total_count": 4,
+        "workflows": [
+          {
+            "id": 337422377,
+            "node_id": "W_kwDOT88BXM4UHKgp",
+            "name": "CI",
+            "path": ".github/workflows/ci.yml",
+            "state": "active",
+            "created_at": "2026-08-18T18:01:44.000-07:00",
+            "updated_at": "2026-08-18T18:01:44.000-07:00",
+            "url": "https://api.github.com/repos/dekopon-agents/dekopon-provider-gh/actions/workflows/337422377",
+            "html_url": "https://github.com/dekopon-agents/dekopon-provider-gh/blob/main/.github/workflows/ci.yml",
+            "badge_url": "https://github.com/dekopon-agents/dekopon-provider-gh/workflows/CI/badge.svg"
+          },
+          {
+            "id": 357596490,
+            "node_id": "W_kwDOT88BXM4VUH1K",
+            "name": "Cut release",
+            "path": ".github/workflows/cut-release.yml",
+            "state": "active",
+            "created_at": "2026-09-13T23:52:15.000-07:00",
+            "updated_at": "2026-10-18T01:29:32.000-07:00",
+            "url": "https://api.github.com/repos/dekopon-agents/dekopon-provider-gh/actions/workflows/357596490",
+            "html_url": "https://github.com/dekopon-agents/dekopon-provider-gh/blob/main/.github/workflows/cut-release.yml",
+            "badge_url": "https://github.com/dekopon-agents/dekopon-provider-gh/workflows/Cut%20release/badge.svg"
+          },
+          {
+            "id": 337422379,
+            "node_id": "W_kwDOT88BXM4UHKgr",
+            "name": "Release",
+            "path": ".github/workflows/release.yml",
+            "state": "active",
+            "created_at": "2026-08-18T18:01:44.000-07:00",
+            "updated_at": "2026-08-18T18:01:44.000-07:00",
+            "url": "https://api.github.com/repos/dekopon-agents/dekopon-provider-gh/actions/workflows/337422379",
+            "html_url": "https://github.com/dekopon-agents/dekopon-provider-gh/blob/main/.github/workflows/release.yml",
+            "badge_url": "https://github.com/dekopon-agents/dekopon-provider-gh/workflows/Release/badge.svg"
+          },
+          {
+            "id": 357596537,
+            "node_id": "W_kwDOT88BXM4VUH15",
+            "name": "Dependabot Updates",
+            "path": "dynamic/dependabot/dependabot-updates",
+            "state": "active",
+            "created_at": "2026-09-13T23:52:21.000-07:00",
+            "updated_at": "2026-09-13T23:52:21.000-07:00",
+            "url": "https://api.github.com/repos/dekopon-agents/dekopon-provider-gh/actions/workflows/357596537",
+            "html_url": "https://github.com/dekopon-agents/dekopon-provider-gh/actions/workflows/dependabot/dependabot-updates",
+            "badge_url": "https://github.com/dekopon-agents/dekopon-provider-gh/actions/workflows/dependabot/dependabot-updates/badge.svg"
+          }
+        ]
+      }
+    }
+  }
+}

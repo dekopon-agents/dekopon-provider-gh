@@ -63,6 +63,9 @@ macro_rules! capability {
                 out: &mut dyn Write,
             ) -> Result<(), ProviderError> {
                 let mut input = input.0;
+                if matches!($id, crate::ids::RUN_LIST | crate::ids::RUN_READ) {
+                    return crate::actions::execute($id, input, base, send, out);
+                }
                 if input.get(STDIN_BODY_FIELD).is_some() {
                     if !has_piped_body($id)
                         || input.get(STDIN_BODY_FIELD) != Some(&Value::Bool(true))
@@ -164,6 +167,26 @@ fn has_piped_body(id: &str) -> bool {
     )
 }
 
+capability!(
+    RunList,
+    RunListInput,
+    crate::ids::RUN_LIST,
+    "run.list",
+    "Bounded Actions run history (at most 21 GETs)",
+    crate::actions::list,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+capability!(
+    RunRead,
+    RunReadInput,
+    crate::ids::RUN_READ,
+    "run.read",
+    "Actions run, attempt, jobs and annotations (at most 29 GETs)",
+    crate::actions::read,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
 capability!(
     AuthStatus,
     AuthStatusInput,
@@ -438,6 +461,8 @@ capability!(
 
 pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
     match id {
+        crate::ids::RUN_LIST => Proposal::to::<RunList>(RunListInput(input)),
+        crate::ids::RUN_READ => Proposal::to::<RunRead>(RunReadInput(input)),
         crate::ids::AUTH_STATUS => Proposal::to::<AuthStatus>(AuthStatusInput(input)),
         "gh.content.read" => Proposal::to::<ContentRead>(ContentReadInput(input)),
         "gh.pull-request.list" => Proposal::to::<PrList>(PrListInput(input)),

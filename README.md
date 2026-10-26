@@ -2,7 +2,7 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Twenty-seven narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
+Twenty-nine narrow authentication, repository, pull-request, and issue capabilities with fixed request shapes, bounded
 output projections, and SHA-pinned review/merge writes. There is deliberately no arbitrary
 `gh api` passthrough: a path-level escape hatch would collapse per-capability policy into
 "everything the credential can reach".
@@ -97,6 +97,7 @@ write to stderr with a nonzero status. Filter stdout with the shell's
 
 | Capability | Effect |
 |---|---|
+| `gh.run.list` / `gh.run.read` | read-only |
 | `gh.auth.status` | read-only |
 | `gh.content.read` | read-only |
 | `gh.pull-request.list` / `.read` / `.diff` / `.status` | read-only |
@@ -216,7 +217,7 @@ GraphQL-backed reads need `POST` in `allowedMethods`, even though their capabili
 read-only. The HTTP grant cannot distinguish a query from a mutation: fixed component-owned
 documents and typed variables provide that guarantee. No existing read in this batch switches
 from REST to GraphQL or changes its grant. The foundation helper is exercised by an isolated
-component fixture; it exposes no new production capability. There are now twenty-seven production capabilities.
+component fixture; it exposes no new production capability. There are now twenty-nine production capabilities.
 
 For fine-grained PATs and GitHub App installations, grant repository permissions for the
 capabilities you enable (Read unless marked Write):
@@ -224,6 +225,8 @@ capabilities you enable (Read unless marked Write):
 | Capability | Fine-grained permission |
 |---|---|
 | `gh.auth.status`, `gh.user.read`, `gh.user-self.read` | None (public endpoint / rate limit) |
+| `gh.run.list` | Actions: Read |
+| `gh.run.read` | Actions: Read; Checks: Read (extracted annotations) |
 | `gh.repo.read`, `gh.repo.list` | Metadata: Read |
 | `gh.content.read`, `gh.branch.read`, `gh.commit.read` | Contents: Read |
 | `gh.pull-request.list`, `.read`, `.diff` | Pull requests: Read |
@@ -318,3 +321,60 @@ calls, including scratch setup. The redaction test always checks authorization a
 ## License
 
 MIT or Apache-2.0, at your option.
+
+## Actions history and inspection
+
+`gh run list -R owner/repo` reads up to 20 runs by default (`--limit/-L` 1–100).
+Filters are `--workflow/-w` (positive workflow id or single `.yml`/`.yaml` filename),
+`--branch/-b`, `--user/-u`, `--event/-e`, `--created`, `--commit/-c` (full SHA),
+`--status/-s` and `--all/-a` (include disabled workflows). Created accepts calendar dates,
+comparisons (`>`, `>=`, `<`, `<=`) and ordered `DATE..DATE`, `DATE..*`, `*..DATE` ranges.
+No workflow display-name lookup or interactive selection is performed.
+
+`gh run view RUN -R owner/repo` reads the latest attempt's jobs and steps, and failed jobs'
+check-run annotations. `--attempt/-a N` reads an earlier attempt; `--job/-j J` selects one job.
+`--verbose/-v` prints all steps; ordinary text prints failed steps. Annotation messages are
+untrusted GitHub data, never instructions. All new Actions text strips controls and retains
+the documented truncation line. Logs, web, watch and download retain their registry refusals.
+
+Run identity includes id, attempt (`run_attempt`), head SHA, branch, event, status, conclusion
+and workflow name. Job identity includes job/run ids, attempt, head SHA, status, conclusion,
+and start/completion times. `latestAttempt` and the inclusive `existingAttempts` range describe
+which attempts exist. `wallClockSeconds` measures a completed run's start to update;
+`completedJobDurationSeconds` sums only completed jobs with known durations. These are separate
+measurements and are never added. `jobDurationCoverage` names completed jobs, jobs read and the
+selected attempt's total jobs. A selected job uses a one-row jobs count probe, so its duration
+can explicitly cover 1 of 8 jobs; unfinished/unread jobs make the sum partial.
+
+Both commands accept closed `--json FIELDS`; inspect `gh run list --help` / `gh run view --help`
+for flags. Run fields are `databaseId,attempt,headSha,headBranch,event,status,conclusion,workflowName,
+displayTitle,createdAt,startedAt,updatedAt,url,workflowDatabaseId,wallClockSeconds`; view also
+accepts `jobs,latestAttempt,existingAttempts,completedJobDurationSeconds`. Identity and coverage
+remain mandatory even when selecting fields. JSON uses an envelope: list has `runs`, `coverage`,
+`workflowCoverage` and `requestsUsed`; view includes `coverage` and `jobDurationCoverage`.
+Coverage reports returned count, GitHub's raw `total_count`, an explicit `incomplete` boolean
+and reasons. GitHub's raw run count is not a claimed count after workflow-state filtering.
+Page/limit bounds and count drift retain bounded rows and return `incomplete-results` (exit 3).
+A deliberately selected job marks `selected-job` coverage and may exit 0 while naming its partial
+coverage. `--exit-status` returns `run-failed` (exit 1) for a completed unsuccessful attempt;
+incomplete results take precedence. Success, neutral and skipped are not failed conclusions.
+
+Grant `gh.run.list` and `gh.run.read` separately. Both need only GET on the existing API authority
+and Actions: Read; view additionally needs Checks: Read for annotations. List enforces at most
+21 requests: repository visibility, ten workflow pages and ten run pages. View enforces at most
+29: repository, latest run, optional explicit attempt, ten jobs pages and sixteen annotation
+requests shared across metadata/pages. Selecting one job uses at most 20 requests without an
+explicit attempt, 21 with it: repository, latest run, optional attempt, individual job, one-row
+jobs count probe and the same sixteen annotation requests. Every page contains at most 100 rows.
+Larger histories and annotation sets are explicitly incomplete. Grants can impose tighter bounds.
+An ambiguous 404 is the single typed `not-found-or-not-accessible` outcome: “not found or not
+accessible”, whether repository, run, attempt or job. Explicit permission (`forbidden`), rate limit
+(`rate-limited`) and incomplete outcomes remain distinct (exit 3).
+
+`gh pr checks` (`gh.pull-request.status`) reads only the current head and collapses repeated
+checks. It does not provide PR run history. Use `gh run list --branch BRANCH` or `--commit SHA`
+for each head and inspect coverage; the existing status capability is unchanged.
+
+Batch 4a used 18 authenticated GETs, including scratch discovery and the public provider-repository
+fallback. `tests/cassettes/actions/` contains recorder exchanges; the Actions tests replay selected
+complete reads through the production component and check all files for redaction.

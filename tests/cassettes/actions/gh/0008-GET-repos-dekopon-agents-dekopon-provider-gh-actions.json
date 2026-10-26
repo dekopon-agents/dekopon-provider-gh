@@ -1,0 +1,263 @@
+{
+  "version": 1,
+  "request": {
+    "method": "GET",
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/runs/38802882220/attempts/2/jobs",
+    "query": "page=1&per_page=100",
+    "headers": {
+      "accept": "application/vnd.github+json",
+      "accept-encoding": "identity",
+      "authorization": "[redacted]",
+      "connection": "close",
+      "host": "127.0.0.1:8787",
+      "user-agent": "dekopon-gh-provider/0.1",
+      "x-github-api-version": "2022-11-28"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+      "cache-control": "private, max-age=60, s-maxage=60",
+      "content-security-policy": "default-src 'none'",
+      "content-type": "application/json; charset=utf-8",
+      "date": "Mon, 26 Oct 2026 08:35:08 GMT",
+      "etag": "\"a1a80c482c7960dae638de6ab22121772e36cef2dfb49f9bee9f79f14391f02a\"",
+      "github-authentication-token-expiration": "2026-10-26 11:40:12 UTC",
+      "referrer-policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+      "server": "envoy",
+      "strict-transport-security": "max-age=31536000; includeSubdomains; preload",
+      "vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+      "x-accepted-github-permissions": "actions=read",
+      "x-accepted-oauth-scopes": "",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "392",
+      "x-frame-options": "deny",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-github-edge-region": "iad",
+      "x-github-media-type": "github.v3; format=json",
+      "x-github-request-id": "A13F:267B7D:39956AC:BC1825E:6ADF10B7",
+      "x-oauth-client-id": "Iv23liVemv8A9if9v0F2",
+      "x-oauth-scopes": "",
+      "x-ratelimit-limit": "15000",
+      "x-ratelimit-remaining": "14996",
+      "x-ratelimit-reset": "1793007307",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "4",
+      "x-xss-protection": "0"
+    },
+    "body": {
+      "json": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 116656759261,
+            "run_id": 38802882220,
+            "workflow_name": "CI",
+            "head_branch": "cc/14-eval-practice-s3-gh",
+            "run_url": "https://api.github.com/repos/dekopon-agents/dekopon-provider-gh/actions/runs/38802882220",
+            "run_attempt": 2,
+            "node_id": "CR_kwDOT88BXM8AAAAbKUjh3Q",
+            "head_sha": "20b3fe1faf232aee44446d010cc8e2d9e2e5f545",
+            "url": "https://api.github.com/repos/dekopon-agents/dekopon-provider-gh/actions/jobs/116656759261",
+            "html_url": "https://github.com/dekopon-agents/dekopon-provider-gh/actions/runs/38802882220/job/116656759261",
+            "status": "completed",
+            "conclusion": "failure",
+            "created_at": "2026-10-15T20:34:29Z",
+            "started_at": "2026-10-15T20:34:32Z",
+            "completed_at": "2026-10-15T20:35:03Z",
+            "name": "ci / validate",
+            "steps": [
+              {
+                "name": "Set up job",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1,
+                "started_at": "2026-10-15T20:34:32Z",
+                "completed_at": "2026-10-15T20:34:34Z"
+              },
+              {
+                "name": "Name the provider from the repository",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 2,
+                "started_at": "2026-10-15T20:34:34Z",
+                "completed_at": "2026-10-15T20:34:34Z"
+              },
+              {
+                "name": "Check out the provider",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 3,
+                "started_at": "2026-10-15T20:34:34Z",
+                "completed_at": "2026-10-15T20:34:34Z"
+              },
+              {
+                "name": "Check out provider-workflows at this workflow's commit",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 4,
+                "started_at": "2026-10-15T20:34:34Z",
+                "completed_at": "2026-10-15T20:34:35Z"
+              },
+              {
+                "name": "Install the Rust toolchain rust-toolchain.toml declares",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 5,
+                "started_at": "2026-10-15T20:34:35Z",
+                "completed_at": "2026-10-15T20:34:43Z"
+              },
+              {
+                "name": "Install prebuilt tools",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 6,
+                "started_at": "2026-10-15T20:34:43Z",
+                "completed_at": "2026-10-15T20:34:44Z"
+              },
+              {
+                "name": "Restore the cargo cache",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 7,
+                "started_at": "2026-10-15T20:34:44Z",
+                "completed_at": "2026-10-15T20:34:57Z"
+              },
+              {
+                "name": "Optimize the test-time Wasmtime compiler",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 8,
+                "started_at": "2026-10-15T20:34:57Z",
+                "completed_at": "2026-10-15T20:34:57Z"
+              },
+              {
+                "name": "Check formatting",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 9,
+                "started_at": "2026-10-15T20:34:57Z",
+                "completed_at": "2026-10-15T20:34:58Z"
+              },
+              {
+                "name": "Check dependency policy",
+                "status": "completed",
+                "conclusion": "failure",
+                "number": 10,
+                "started_at": "2026-10-15T20:34:58Z",
+                "completed_at": "2026-10-15T20:35:01Z"
+              },
+              {
+                "name": "Lint for the host",
+                "status": "completed",
+                "conclusion": "skipped",
+                "number": 11,
+                "started_at": "2026-10-15T20:35:01Z",
+                "completed_at": "2026-10-15T20:35:01Z"
+              },
+              {
+                "name": "Lint for wasm32",
+                "status": "completed",
+                "conclusion": "skipped",
+                "number": 12,
+                "started_at": "2026-10-15T20:35:01Z",
+                "completed_at": "2026-10-15T20:35:01Z"
+              },
+              {
+                "name": "Build the component",
+                "status": "completed",
+                "conclusion": "skipped",
+                "number": 13,
+                "started_at": "2026-10-15T20:35:01Z",
+                "completed_at": "2026-10-15T20:35:01Z"
+              },
+              {
+                "name": "Verify the checksum sidecar and publish the component path to the tests",
+                "status": "completed",
+                "conclusion": "skipped",
+                "number": 14,
+                "started_at": "2026-10-15T20:35:01Z",
+                "completed_at": "2026-10-15T20:35:01Z"
+              },
+              {
+                "name": "Build the test suite",
+                "status": "completed",
+                "conclusion": "skipped",
+                "number": 15,
+                "started_at": "2026-10-15T20:35:01Z",
+                "completed_at": "2026-10-15T20:35:01Z"
+              },
+              {
+                "name": "Run the test suite",
+                "status": "completed",
+                "conclusion": "skipped",
+                "number": 16,
+                "started_at": "2026-10-15T20:35:01Z",
+                "completed_at": "2026-10-15T20:35:01Z"
+              },
+              {
+                "name": "Generate the SBOM",
+                "status": "completed",
+                "conclusion": "skipped",
+                "number": 17,
+                "started_at": "2026-10-15T20:35:01Z",
+                "completed_at": "2026-10-15T20:35:01Z"
+              },
+              {
+                "name": "Upload the component and SBOM",
+                "status": "completed",
+                "conclusion": "skipped",
+                "number": 18,
+                "started_at": "2026-10-15T20:35:01Z",
+                "completed_at": "2026-10-15T20:35:01Z"
+              },
+              {
+                "name": "Post Restore the cargo cache",
+                "status": "completed",
+                "conclusion": "skipped",
+                "number": 34,
+                "started_at": "2026-10-15T20:35:01Z",
+                "completed_at": "2026-10-15T20:35:01Z"
+              },
+              {
+                "name": "Post Check out provider-workflows at this workflow's commit",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 35,
+                "started_at": "2026-10-15T20:35:01Z",
+                "completed_at": "2026-10-15T20:35:01Z"
+              },
+              {
+                "name": "Post Check out the provider",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 36,
+                "started_at": "2026-10-15T20:35:01Z",
+                "completed_at": "2026-10-15T20:35:02Z"
+              },
+              {
+                "name": "Complete job",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 37,
+                "started_at": "2026-10-15T20:35:02Z",
+                "completed_at": "2026-10-15T20:35:02Z"
+              }
+            ],
+            "check_run_url": "https://api.github.com/repos/dekopon-agents/dekopon-provider-gh/check-runs/116656759261",
+            "labels": [
+              "ubuntu-24.04"
+            ],
+            "runner_id": 1000016782,
+            "runner_name": "GitHub Actions 1000016782",
+            "runner_group_id": 0,
+            "runner_group_name": "GitHub Actions"
+          }
+        ]
+      }
+    }
+  }
+}

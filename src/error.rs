@@ -34,6 +34,8 @@ impl Failure for ProviderError {
             "usage" => Code::USAGE,
             "request-too-large" => Code::new("request-too-large").exiting(2),
             "checks-pending" => Code::new("checks-pending").exiting(8),
+            "run-failed" => Code::new("run-failed").exiting(1),
+            "not-found-or-not-accessible" => Code::new("not-found-or-not-accessible").exiting(3),
             "checks-failed" => Code::new("checks-failed").exiting(1),
             "checks-empty" => Code::new("checks-empty").exiting(1),
             "unauthorized" | "forbidden" | "not-found" | "unprocessable" | "rate-limited"

@@ -34,6 +34,7 @@ use dekopon_provider_sdk::{EffectKind, ProviderCapability, RiskLevel};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
+mod actions;
 mod auth;
 pub mod commands;
 mod content;
@@ -112,6 +113,8 @@ const MAX_LABELS: usize = 20;
 /// renaming a capability is a compile error rather than an exit code a model discovers
 /// mid-session.
 pub(crate) mod ids {
+    pub(crate) const RUN_LIST: &str = "gh.run.list";
+    pub(crate) const RUN_READ: &str = "gh.run.read";
     pub(crate) const AUTH_STATUS: &str = "gh.auth.status";
     pub(crate) const CONTENT_READ: &str = "gh.content.read";
     pub(crate) const PR_LIST: &str = "gh.pull-request.list";
@@ -150,6 +153,8 @@ impl Provider for Gh {
     const COMMAND_WORDS: &'static [&'static str] = &["gh"];
     type Args = commands::GhArgs;
     type Capabilities = (
+        typed::RunList,
+        typed::RunRead,
         typed::ContentRead,
         typed::PrList,
         typed::PrRead,
@@ -207,6 +212,8 @@ where
     let send: &mut dyn FnMut(Request) -> Result<Response, HttpError> = &mut send;
     let base = &GITHUB_API;
     match capability.as_str() {
+        ids::RUN_LIST => actions::list(input, base, send),
+        ids::RUN_READ => actions::read(input, base, send),
         ids::CONTENT_READ => content::read(input, base, send),
         ids::PR_LIST => pulls::list(input, base, send),
         ids::PR_READ => pulls::read(input, base, send),
@@ -262,6 +269,16 @@ fn capabilities() -> Vec<ProviderCapability> {
     };
 
     let mut capabilities = vec![
+        read(
+            ids::RUN_LIST,
+            "Bounded Actions run history (at most 21 GETs)",
+            actions::schema(false),
+        ),
+        read(
+            ids::RUN_READ,
+            "Actions run, attempt, jobs and annotations (at most 29 GETs)",
+            actions::schema(true),
+        ),
         read(
             ids::AUTH_STATUS,
             <typed::AuthStatus as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
@@ -1481,7 +1498,7 @@ mod tests {
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 27);
+        assert_eq!(manifest.capabilities.len(), 29);
 
         let external_writes = manifest
             .capabilities
@@ -1625,7 +1642,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 27);
+        assert_eq!(manifest.capabilities.len(), 29);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()
