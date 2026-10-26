@@ -195,3 +195,100 @@ fn broker_host_cache_preserves_the_real_component_root_page_byte_for_byte() {
     assert_eq!(cached.get("gh"), Some(&root));
     assert!(!cached["gh"].contains("[--help truncated"));
 }
+
+#[test]
+fn non_help_usage_and_refusal_selection_remain_unchanged_in_the_real_component() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let registry = registry(&runtime);
+    let run = |words: &[&str]| {
+        let argv: Vec<_> = words.iter().map(|word| (*word).to_owned()).collect();
+        let native = provider::with_port(NoHttp, || {
+            dekopon_provider_sdk::__typed_run_command::<Gh>(&argv, false)
+        });
+        [
+            serde_json::from_str::<CommandRunOutcome>(&native).expect("native outcome"),
+            runtime
+                .block_on(registry.run_command("gh", &argv, false))
+                .expect("import-free non-help command"),
+        ]
+    };
+    for (argv, usage) in [
+        (
+            vec!["auth", "git-credential", "--definitely-a-typo"],
+            "Usage: gh auth git-credential",
+        ),
+        (vec!["bogus"], "Usage: gh <COMMAND>"),
+        (
+            vec!["pr", "view", "--web"],
+            "Usage: gh pr view [OPTIONS] --repo <OWNER/REPO> <NUMBER>",
+        ),
+        (
+            vec![
+                "pr",
+                "view",
+                "7",
+                "-R",
+                "octo/hello",
+                "--definitely-a-typo",
+                "--web",
+            ],
+            "Usage: gh pr view [OPTIONS] --repo <OWNER/REPO> <NUMBER>",
+        ),
+    ] {
+        for outcome in run(&argv) {
+            let CommandRunOutcome::Rendered {
+                stdout,
+                stderr,
+                status,
+            } = outcome
+            else {
+                panic!("clap usage must take precedence over refusal: {argv:?}")
+            };
+            assert_eq!(status, 2, "{argv:?}");
+            assert!(stdout.is_empty(), "{argv:?}");
+            let usage_lines: Vec<_> = stderr
+                .lines()
+                .filter(|line| line.starts_with("Usage:"))
+                .collect();
+            assert!(!usage_lines.is_empty(), "{argv:?}: {stderr}");
+            for line in usage_lines {
+                assert_eq!(line, usage, "{argv:?}");
+            }
+        }
+    }
+    for (argv, refusal) in [
+        (
+            vec!["auth", "git-credential"],
+            "gh auth git-credential: not available in this environment (needs a local git checkout)",
+        ),
+        (
+            vec![
+                "pr",
+                "view",
+                "7",
+                "-R",
+                "octo/hello",
+                "--jq",
+                ".title",
+                "--web",
+            ],
+            "gh pr view --web: not available in this environment (needs a browser or local application)",
+        ),
+        (
+            vec!["pr", "view", "7", "-R", "octo/hello", "--jq", "--web"],
+            "gh pr view --jq: not available in this environment (by policy)",
+        ),
+        (
+            vec!["search", "prs", "term"],
+            "gh search prs without --owner or -R: not available in this environment (by policy)",
+        ),
+    ] {
+        for outcome in run(&argv) {
+            let CommandRunOutcome::Failed { error } = outcome else {
+                panic!("registry refusal must remain selected: {argv:?}")
+            };
+            assert_eq!(error.code, "usage", "{argv:?}");
+            assert_eq!(error.message, refusal, "{argv:?}");
+        }
+    }
+}
