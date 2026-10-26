@@ -57,6 +57,7 @@ spec:
     - gh.pull-request.read
     - gh.pull-request.diff
     - gh.pull-request.status
+    - gh.actions.logs.read
     - gh.pull-request.comment
   providers:
     - gh

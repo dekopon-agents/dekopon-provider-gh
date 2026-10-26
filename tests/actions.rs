@@ -608,8 +608,6 @@ async fn every_bad_value_and_registry_refusal_makes_zero_http_calls() {
         assert!(out.is_empty());
     }
     for args in [
-        vec!["run", "view", "7", "-R", "octo/hello", "--log"],
-        vec!["run", "view", "7", "-R", "octo/hello", "--log-failed"],
         vec!["run", "view", "7", "-R", "octo/hello", "--web"],
         vec!["run", "watch", "7"],
         vec!["run", "download", "7"],

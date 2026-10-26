@@ -315,11 +315,15 @@ has its own grant because its fallback creates a comment. No read capability gai
 ## Actions read grants
 
 The example additionally grants `gh.run.list` (21 GETs) and `gh.run.read` (29 GETs),
-with Actions: Read and Checks: Read for extracted annotations. There are seven grants total.
+with Actions: Read and Checks: Read for extracted annotations. The separate `gh.actions.logs.read` grant brings the total to eight.
 Use run list by PR branch or each head SHA to investigate history: `pr checks` reads only the
 current head and collapses repeated checks. Inspect coverage before claiming a complete history.
 Run view supports explicit attempts and jobs; a selected job reports its completed duration
-against the entire selected attempt's job count. Logs and artifacts are not fetched.
+against the entire selected attempt's job count. Ordinary run reads fetch no logs or artifacts. The separate log capability needs Actions: Read,
+`maxRequests: 32`, `signedDownload: github-actions-logs-v1` and
+`maxResponseBytes: 131072`. It retains API-only credential destinations; storage redirects
+are native and unauthenticated. Use `--log` or `--log-failed` and inspect window and collection
+coverage. Supporting core and the D10 component-test follow-up must precede provider release.
 These example grants do not change deployed homelab grants.
 
 Caller-chosen run-list limits, including the default 20, stop collection once that many

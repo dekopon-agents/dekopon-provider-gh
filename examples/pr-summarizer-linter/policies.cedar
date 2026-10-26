@@ -31,6 +31,7 @@ permit(principal == Dekopon::Principal::"maintainer",
                   Dekopon::Action::"gh.pull-request.status",
                   Dekopon::Action::"gh.run.list",
                   Dekopon::Action::"gh.run.read",
+                  Dekopon::Action::"gh.actions.logs.read",
                   Dekopon::Action::"gh.pull-request.comment"],
        resource == Dekopon::Provider::"gh")
 when { context has agent && context.agent == "pr-summarizer-linter"

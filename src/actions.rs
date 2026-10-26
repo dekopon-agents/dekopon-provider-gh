@@ -766,6 +766,66 @@ pub(crate) fn read(
     run["requestsUsed"] = json!(reads.used);
     Ok(run)
 }
+pub(crate) fn log_metadata(
+    input: &crate::logs::Input,
+    base: &Base,
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+) -> Result<Value, ProviderError> {
+    let mut reads = Reads {
+        base,
+        send,
+        used: 0,
+        max: 13,
+    };
+    let root = root(&input.owner, &input.repo);
+    repository(&mut reads, &root)?;
+    let latest = reads.value(&format!("{root}/actions/runs/{}", input.run_id))?;
+    let latest = run_row(&latest, Some(input.run_id), None)?;
+    let latest_attempt = latest["attempt"].as_u64().ok_or_else(invalid_response)? as u32;
+    let attempt = input.attempt.unwrap_or(latest_attempt);
+    if attempt > latest_attempt {
+        return Err(ActionError::NotFoundOrNotAccessible.into());
+    }
+    let run = if input.attempt.is_some() {
+        let raw = reads.value(&format!(
+            "{root}/actions/runs/{}/attempts/{attempt}",
+            input.run_id
+        ))?;
+        let row = run_row(&raw, Some(input.run_id), Some(attempt))?;
+        if row["headSha"] != latest["headSha"] {
+            return Err(invalid_response());
+        }
+        row
+    } else {
+        latest
+    };
+    let (raw, coverage) = if let Some(job) = input.job {
+        let raw = reads.value(&format!("{root}/actions/jobs/{job}"))?;
+        if positive(&raw, "id")? != job {
+            return Err(invalid_response());
+        }
+        (vec![raw], Coverage::default())
+    } else {
+        pages(
+            &mut reads,
+            &format!(
+                "{root}/actions/runs/{}/attempts/{attempt}/jobs?",
+                input.run_id
+            ),
+            "jobs",
+            10,
+            1000,
+        )?
+    };
+    let jobs = raw
+        .iter()
+        .map(|raw| job_row(raw, &run))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(
+        json!({"runId":input.run_id,"attempt":attempt,"headSha":run["headSha"],"jobs":jobs,"coverage":coverage.json(),"metadataRequests":reads.used}),
+    )
+}
+
 fn check_id(raw: &Value, root: &str) -> Result<u64, ProviderError> {
     let value = string(raw, "check_run_url")?;
     let (prefix, id) = value.rsplit_once('/').ok_or_else(invalid_response)?;
@@ -1082,6 +1142,14 @@ pub(crate) fn commands() -> Command {
                 .short('j')
                 .value_parser(clap::value_parser!(u64).range(1..)),
         )
+        .arg(boolean("log", None).conflicts_with_all([
+            "log-failed",
+            "json",
+            "verbose",
+            "exit-status",
+        ]))
+        .arg(boolean("log-failed", None).conflicts_with_all(["json", "verbose", "exit-status"]))
+        .arg(Arg::new("log-cursor").long("log-cursor"))
         .arg(boolean("verbose", Some('v')))
         .arg(boolean("exit-status", None))
         .arg(
@@ -1138,8 +1206,27 @@ pub(crate) fn dispatch(
                 input.insert(field.into(), json!(true));
             }
         }
-        let value: ReadInput = serde_json::from_value(json!(input)).map_err(|_| invalid_input())?;
-        value.validate()?;
+        if matches.get_flag("log") || matches.get_flag("log-failed") {
+            input.insert(
+                "mode".into(),
+                json!(if matches.get_flag("log-failed") {
+                    "failed"
+                } else {
+                    "all"
+                }),
+            );
+            if let Some(cursor) = matches.get_one::<String>("log-cursor") {
+                input.insert("cursor".into(), json!(cursor));
+            }
+            crate::logs::validate(json!(input))?;
+        } else {
+            if matches.contains_id("log-cursor") {
+                return Err(invalid_input());
+            }
+            let value: ReadInput =
+                serde_json::from_value(json!(input)).map_err(|_| invalid_input())?;
+            value.validate()?;
+        }
     }
     Ok(())
 }

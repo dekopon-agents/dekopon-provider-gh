@@ -1,0 +1,852 @@
+use crate::error::ProviderError;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use dekopon_provider_sdk::{
+    provider::{HttpError, Request, Response, endpoint::Base},
+    signed_download as sd,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use std::io::Write;
+
+const WINDOW: u32 = 65536;
+const OUTPUT: usize = 16384;
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum Mode {
+    All,
+    Failed,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct Input {
+    pub owner: String,
+    pub repo: String,
+    pub run_id: u64,
+    pub attempt: Option<u32>,
+    pub job: Option<u64>,
+    mode: Mode,
+    cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Cursor {
+    v: u8,
+    owner: String,
+    repo: String,
+    run: u64,
+    job: u64,
+    attempt: u32,
+    sha: String,
+    mode: Mode,
+    start: u64,
+    end: u64,
+    total: u64,
+    next: u64,
+    digest: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum Outcome {
+    Complete,
+    Truncated,
+    JobRunning,
+    ExpiredLogs,
+    PermissionDenied,
+    NotFoundOrNotVisible,
+    RateLimited,
+    DownloadAuthorizationFailure,
+    DownloadExpiry,
+    IncompleteRead,
+    SourceChanged,
+    RedirectRefused,
+    StorageError,
+    RequestLimit,
+    Timeout,
+}
+impl Outcome {
+    fn error(self) -> Option<ProviderError> {
+        let (code, label) = match self {
+            Self::Complete | Self::Truncated => return None,
+            Self::JobRunning => ("job-running", "job still running; logs not final."),
+            Self::ExpiredLogs => ("expired-logs", "expired-logs"),
+            Self::PermissionDenied => ("permission-denied", "permission-denied"),
+            Self::NotFoundOrNotVisible => ("not-found-or-not-visible", "not-found-or-not-visible"),
+            Self::RateLimited => ("rate-limited", "rate-limited"),
+            Self::DownloadAuthorizationFailure => (
+                "download-authorization-failure",
+                "download authorization failure",
+            ),
+            Self::DownloadExpiry => ("download-expiry", "download expiry"),
+            Self::IncompleteRead => ("incomplete-read", "incomplete-read"),
+            Self::SourceChanged => ("source-changed", "source-changed"),
+            Self::RedirectRefused => ("redirect-refused", "redirect-refused"),
+            Self::StorageError => ("storage-error", "storage-error"),
+            Self::RequestLimit => ("request-ceiling", "log request reservation exhausted"),
+            Self::Timeout => ("http-failed", "log download timeout"),
+        };
+        Some(ProviderError::new(code, label))
+    }
+}
+
+struct Budget {
+    metadata: usize,
+    tails: usize,
+    offsets: usize,
+}
+impl Budget {
+    const MAX_REQUESTS: usize = 32;
+    fn used(&self) -> usize {
+        self.metadata + 4 * self.tails + 5 * self.offsets
+    }
+    fn reserve(&mut self, offset: bool) -> Result<(), Outcome> {
+        let cost = if offset { 5 } else { 4 };
+        if self.used() + cost > Self::MAX_REQUESTS {
+            return Err(Outcome::RequestLimit);
+        }
+        if offset {
+            self.offsets += 1;
+        } else {
+            self.tails += 1;
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn validate(value: Value) -> Result<Input, ProviderError> {
+    let input: Input = serde_json::from_value(value).map_err(|_| crate::invalid_input())?;
+    crate::validate_login(&input.owner)?;
+    crate::validate_repo(&input.repo)?;
+    if input.run_id == 0 || input.job == Some(0) || input.attempt == Some(0) {
+        return Err(crate::invalid_input());
+    }
+    if let Some(raw) = &input.cursor {
+        decode_cursor(raw, &input)?;
+    }
+    Ok(input)
+}
+fn encode_cursor(cursor: &Cursor) -> String {
+    URL_SAFE_NO_PAD.encode(serde_json::to_vec(cursor).expect("bounded cursor"))
+}
+fn decode_cursor(raw: &str, input: &Input) -> Result<Cursor, ProviderError> {
+    if raw.len() > 1536 {
+        return Err(crate::invalid_input());
+    }
+    let bytes = URL_SAFE_NO_PAD
+        .decode(raw)
+        .map_err(|_| crate::invalid_input())?;
+    let c: Cursor = serde_json::from_slice(&bytes).map_err(|_| crate::invalid_input())?;
+    if c.v != 1
+        || c.owner != input.owner
+        || c.repo != input.repo
+        || c.run != input.run_id
+        || c.mode != input.mode
+        || c.job == 0
+        || c.attempt == 0
+        || input.job.is_some_and(|job| job != c.job)
+        || input.attempt.is_some_and(|attempt| attempt != c.attempt)
+        || c.start >= c.end
+        || c.end > c.total
+        || c.end - c.start > u64::from(WINDOW)
+        || c.next < c.start
+        || c.next > c.end
+        || c.sha.len() != 40
+        || !c.sha.bytes().all(|b| b.is_ascii_hexdigit())
+        || c.digest.len() != 64
+        || !c.digest.bytes().all(|b| b.is_ascii_hexdigit())
+        || encode_cursor(&c) != raw
+    {
+        return Err(crate::invalid_input());
+    }
+    Ok(c)
+}
+
+fn download_error(error: sd::DownloadError) -> Outcome {
+    match error.code {
+        sd::ErrorCode::Denied => Outcome::PermissionDenied,
+        sd::ErrorCode::RedirectRefused => Outcome::RedirectRefused,
+        sd::ErrorCode::RequestLimit => Outcome::RequestLimit,
+        sd::ErrorCode::Timeout => Outcome::Timeout,
+        sd::ErrorCode::ResponseTooLarge | sd::ErrorCode::Incomplete => Outcome::IncompleteRead,
+        sd::ErrorCode::Storage | sd::ErrorCode::Internal => Outcome::StorageError,
+    }
+}
+fn api_status(status: u16, exhausted: bool) -> Outcome {
+    match status {
+        410 => Outcome::ExpiredLogs,
+        403 if exhausted => Outcome::RateLimited,
+        403 => Outcome::PermissionDenied,
+        404 => Outcome::NotFoundOrNotVisible,
+        429 => Outcome::RateLimited,
+        301 | 302 | 303 | 307 | 308 => Outcome::RedirectRefused,
+        _ => Outcome::StorageError,
+    }
+}
+fn storage_status(status: u16) -> Outcome {
+    match status {
+        403 => Outcome::DownloadAuthorizationFailure,
+        410 => Outcome::DownloadExpiry,
+        301 | 302 | 303 | 307 | 308 => Outcome::RedirectRefused,
+        200 | 416 => Outcome::IncompleteRead,
+        _ => Outcome::StorageError,
+    }
+}
+
+type Source<'a> = dyn FnMut(u64, &mut [u8]) -> Result<usize, Outcome> + 'a;
+
+fn read_exact(source: &mut Source<'_>, offset: u64, bytes: &mut [u8]) -> Result<(), Outcome> {
+    let mut used = 0;
+    while used < bytes.len() {
+        let n = source(offset + used as u64, &mut bytes[used..])?;
+        if n == 0 || n > bytes.len() - used {
+            return Err(Outcome::IncompleteRead);
+        }
+        used += n;
+    }
+    Ok(())
+}
+fn inspect(
+    source: &mut Source<'_>,
+    length: u64,
+    steps: &[String],
+) -> Result<(String, Vec<(u64, u64)>), Outcome> {
+    let mut hasher = Sha256::new();
+    let mut buffer = [0; 2048];
+    let mut offset = 0;
+    let mut spans = Vec::new();
+    let mut overlap = Vec::new();
+    while offset < length {
+        let n = (length - offset).min(buffer.len() as u64) as usize;
+        read_exact(source, offset, &mut buffer[..n])?;
+        hasher.update(&buffer[..n]);
+        overlap.extend_from_slice(&buffer[..n]);
+        let needles = std::iter::once("##[error]").chain(steps.iter().map(String::as_str));
+        for needle in needles {
+            if spans.len() >= 3 || needle.is_empty() {
+                break;
+            }
+            if let Some(index) = overlap
+                .windows(needle.len())
+                .position(|bytes| bytes == needle.as_bytes())
+            {
+                let absolute = offset.saturating_sub((overlap.len() - n) as u64) + index as u64;
+                let span = (absolute.saturating_sub(128), (absolute + 384).min(length));
+                if !spans.contains(&span) {
+                    spans.push(span);
+                }
+            }
+        }
+        overlap = overlap[overlap.len().saturating_sub(256)..].to_vec();
+        offset += n as u64;
+    }
+    let mut extra = [0];
+    if source(length, &mut extra)? != 0 {
+        return Err(Outcome::IncompleteRead);
+    }
+    if length > 0 {
+        spans.push((length.saturating_sub(512), length));
+    }
+    Ok((format!("{:x}", hasher.finalize()), spans))
+}
+fn escape(c: char) -> String {
+    if c == '\n' || c == '\t' {
+        return c.to_string();
+    }
+    if c.is_control()
+        || matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+    {
+        format!("\\u{{{:04x}}}", c as u32)
+    } else {
+        c.to_string()
+    }
+}
+
+fn excerpt(
+    source: &mut Source<'_>,
+    start: u64,
+    end: u64,
+    budget: usize,
+) -> Result<(String, u64, usize), Outcome> {
+    let mut output = String::new();
+    let mut offset = start;
+    let mut replacements = 0;
+    let mut segment = 0;
+    let mut buffer = [0; 2052];
+    let mut block_start = u64::MAX;
+    let mut block_len = 0;
+    while offset < end {
+        if block_start == u64::MAX || offset + 4 > block_start + block_len as u64 {
+            block_start = offset;
+            block_len = (end - offset).min(buffer.len() as u64) as usize;
+            read_exact(source, offset, &mut buffer[..block_len])?;
+        }
+        let index = (offset - block_start) as usize;
+        let available = &buffer[index..block_len];
+        let width = match available[0] {
+            0..=0x7f => 1,
+            0xc2..=0xdf => 2,
+            0xe0..=0xef => 3,
+            0xf0..=0xf4 => 4,
+            _ => 1,
+        };
+        let valid = available
+            .get(..width)
+            .and_then(|b| std::str::from_utf8(b).ok())
+            .and_then(|s| s.chars().next());
+        let (c, consumed, replacement) = valid.map_or(('�', 1, 1), |c| (c, width, 0));
+        let text = escape(c);
+        let break_line = segment + text.len() > 2048;
+        if output.len() + text.len() + usize::from(break_line) > budget {
+            break;
+        }
+        if break_line {
+            output.push('\n');
+            segment = 0;
+        }
+        output.push_str(&text);
+        segment = if c == '\n' { 0 } else { segment + text.len() };
+        offset += consumed as u64;
+        replacements += replacement;
+    }
+    Ok((output, offset, replacements))
+}
+
+fn render_window(
+    source: &mut Source<'_>,
+    mut cursor: Cursor,
+    previous: Option<&Cursor>,
+    steps: &[String],
+    budget: usize,
+) -> Result<Value, Outcome> {
+    let length = cursor.end - cursor.start;
+    let (digest, snippets) = inspect(source, length, steps)?;
+    if previous
+        .is_some_and(|p| p.start == cursor.start && p.end == cursor.end && p.digest != digest)
+    {
+        return Err(Outcome::SourceChanged);
+    }
+    cursor.digest = digest;
+    let (mut text, next, mut replacements) =
+        excerpt(source, cursor.next - cursor.start, length, budget / 2)?;
+    let sequential_start = cursor.next;
+    cursor.next = cursor.start + next;
+    let mut spans = vec![(sequential_start, cursor.next)];
+    if previous.is_none() {
+        for (start, end) in snippets {
+            if start >= sequential_start - cursor.start && end <= next {
+                continue;
+            }
+            let remaining = budget.saturating_sub(text.len() + 32);
+            if remaining < 16 {
+                break;
+            }
+            let (snippet, represented, count) = excerpt(source, start, end, remaining.min(512))?;
+            if represented == start {
+                continue;
+            }
+            text.push_str("\n[window-limited context]\n");
+            text.push_str(&snippet);
+            replacements += count;
+            spans.push((cursor.start + start, cursor.start + represented));
+        }
+    }
+    let exhausted = cursor.next == cursor.end;
+    let complete = exhausted && cursor.start == 0;
+    let continuation = if complete {
+        None
+    } else {
+        Some(encode_cursor(&cursor))
+    };
+    let outcome = if complete {
+        Outcome::Complete
+    } else {
+        Outcome::Truncated
+    };
+    if let Some(raw) = &continuation {
+        text.push_str(&format!(
+            "\n[dekopon: truncated; fetched {}-{}/{}; rendered {}; continue {}]\n",
+            cursor.start,
+            cursor.end - 1,
+            cursor.total,
+            spans
+                .iter()
+                .map(|(a, b)| format!("{a}-{b}"))
+                .collect::<Vec<_>>()
+                .join(","),
+            raw
+        ));
+    }
+    Ok(
+        json!({"runId":cursor.run,"attempt":cursor.attempt,"jobId":cursor.job,"headSha":cursor.sha,"outcome":outcome,"complete":complete,"extraction":"window-limited","fetched":{"start":cursor.start,"endExclusive":cursor.end,"total":cursor.total},"renderedSpans":spans,"nextSourceByte":cursor.next,"invalidUtf8Replacements":replacements,"continuation":continuation,"text":text}),
+    )
+}
+
+fn fetch(
+    input: &Input,
+    metadata: &Value,
+    job: &Value,
+    previous: Option<&Cursor>,
+    base: &Base,
+    budget: &mut Budget,
+    text_budget: usize,
+) -> Result<Value, Outcome> {
+    if job["status"] != "completed" {
+        return Err(Outcome::JobRunning);
+    }
+    let job_id = job["databaseId"].as_u64().ok_or(Outcome::IncompleteRead)?;
+    let attempt = metadata["attempt"]
+        .as_u64()
+        .ok_or(Outcome::IncompleteRead)? as u32;
+    let sha = metadata["headSha"]
+        .as_str()
+        .ok_or(Outcome::IncompleteRead)?;
+    if previous.is_some_and(|c| c.job != job_id || c.attempt != attempt || c.sha != sha) {
+        return Err(Outcome::SourceChanged);
+    }
+    let window = if let Some(c) = previous {
+        let (start, length) = if c.next == c.end {
+            (
+                c.start.saturating_sub(u64::from(WINDOW)),
+                c.start.min(u64::from(WINDOW)) as u32,
+            )
+        } else {
+            (c.start, (c.end - c.start) as u32)
+        };
+        if length == 0 {
+            return Err(Outcome::IncompleteRead);
+        }
+        sd::Window::Offset(sd::OffsetWindow { start, length })
+    } else {
+        sd::Window::Tail(WINDOW)
+    };
+    budget.reserve(previous.is_some())?;
+    let api_uri = crate::url(
+        base,
+        &format!(
+            "/repos/{}/{}/actions/jobs/{job_id}/logs",
+            input.owner, input.repo
+        ),
+    )
+    .map_err(|_| Outcome::StorageError)?;
+    let response = sd::download(&sd::Request { api_uri, window }).map_err(download_error)?;
+    match response {
+        sd::Response::Api(api) => Err(api_status(
+            api.status,
+            api.headers
+                .iter()
+                .any(|h| h.name.eq_ignore_ascii_case("x-ratelimit-remaining") && h.value == b"0"),
+        )),
+        sd::Response::Storage {
+            status,
+            coverage,
+            body,
+        } => {
+            if status != 206 {
+                return Err(storage_status(status));
+            }
+            let coverage = coverage.ok_or(Outcome::IncompleteRead)?;
+            if coverage.start >= coverage.end_exclusive
+                || coverage.end_exclusive > coverage.total
+                || coverage.end_exclusive - coverage.start > u64::from(WINDOW)
+            {
+                return Err(Outcome::IncompleteRead);
+            }
+            if let Some(c) = previous {
+                if c.total != coverage.total {
+                    return Err(Outcome::SourceChanged);
+                }
+                let expected_start = if c.next == c.end {
+                    c.start.saturating_sub(u64::from(WINDOW))
+                } else {
+                    c.start
+                };
+                let expected_end = if c.next == c.end { c.start } else { c.end };
+                if coverage.start != expected_start || coverage.end_exclusive != expected_end {
+                    return Err(Outcome::IncompleteRead);
+                }
+            } else if coverage.end_exclusive != coverage.total
+                || coverage.start != coverage.total.saturating_sub(u64::from(WINDOW))
+            {
+                return Err(Outcome::IncompleteRead);
+            }
+            let body = body.ok_or(Outcome::IncompleteRead)?;
+            let next = previous
+                .filter(|c| c.next != c.end)
+                .map_or(coverage.start, |c| c.next);
+            let cursor = Cursor {
+                v: 1,
+                owner: input.owner.clone(),
+                repo: input.repo.clone(),
+                run: input.run_id,
+                job: job_id,
+                attempt,
+                sha: sha.to_owned(),
+                mode: input.mode,
+                start: coverage.start,
+                end: coverage.end_exclusive,
+                total: coverage.total,
+                next,
+                digest: String::new(),
+            };
+            let steps = job["steps"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|step| step["conclusion"] == "failure")
+                .filter_map(|step| step["name"].as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.chars().take(256).collect())
+                .collect::<Vec<String>>();
+            render_window(
+                &mut |offset, bytes| {
+                    body.read_at(offset, bytes)
+                        .map_err(|_| Outcome::IncompleteRead)
+                },
+                cursor,
+                previous,
+                &steps,
+                text_budget,
+            )
+        }
+    }
+}
+
+pub(crate) fn execute(
+    value: Value,
+    base: &Base,
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+    out: &mut dyn Write,
+) -> Result<(), ProviderError> {
+    let mut input = validate(value)?;
+    let previous = input
+        .cursor
+        .as_ref()
+        .map(|raw| decode_cursor(raw, &input))
+        .transpose()?;
+    if let Some(c) = &previous {
+        input.job = Some(c.job);
+        input.attempt = Some(c.attempt);
+    }
+    let metadata = crate::actions::log_metadata(&input, base, send).map_err(|error| match error
+        .code_str()
+    {
+        "not-found-or-not-accessible" => Outcome::NotFoundOrNotVisible.error().expect("failure"),
+        "forbidden" => Outcome::PermissionDenied.error().expect("failure"),
+        _ => error,
+    })?;
+    let mut budget = Budget {
+        metadata: metadata["metadataRequests"]
+            .as_u64()
+            .ok_or_else(crate::invalid_response)? as usize,
+        tails: 0,
+        offsets: 0,
+    };
+    let mut rows = Vec::new();
+    let mut failure = None;
+    let jobs = metadata["jobs"]
+        .as_array()
+        .ok_or_else(crate::invalid_response)?;
+    let selected = jobs
+        .iter()
+        .filter(|job| {
+            input.mode == Mode::All
+                || job["conclusion"] == "failure"
+                || job["conclusion"] == "timed_out"
+                || job["conclusion"] == "startup_failure"
+                || job["status"] != "completed"
+        })
+        .collect::<Vec<_>>();
+    for job in &selected {
+        let used = serde_json::to_vec(&rows)
+            .map_err(|_| crate::invalid_response())?
+            .len();
+        let remaining = OUTPUT.saturating_sub(used + 2048);
+        if remaining < 4096 {
+            failure = Some(Outcome::IncompleteRead);
+            break;
+        }
+        match fetch(
+            &input,
+            &metadata,
+            job,
+            previous.as_ref(),
+            base,
+            &mut budget,
+            (remaining.saturating_sub(2048) / 2).min(8192),
+        ) {
+            Ok(row) => rows.push(row),
+            Err(outcome) => {
+                rows.push(json!({"runId":input.run_id,"attempt":metadata["attempt"],"headSha":metadata["headSha"],"jobId":job["databaseId"],"outcome":outcome,"complete":false,"fetched":null,"renderedSpans":[],"continuation":input.cursor}));
+                failure = Some(outcome);
+                break;
+            }
+        }
+    }
+    if metadata["coverage"]["incomplete"] == true {
+        failure.get_or_insert(Outcome::IncompleteRead);
+    }
+    let complete = failure.is_none() && rows.iter().all(|r| r["complete"] == true);
+    let result = json!({"runId":input.run_id,"attempt":metadata["attempt"],"headSha":metadata["headSha"],"complete":complete,"collectionComplete":failure.is_none(),"selectedJobs":selected.len(),"jobs":rows,"coverage":metadata["coverage"],"metadataRequests":budget.metadata,"downloadCalls":budget.tails+budget.offsets,"requestsReserved":budget.used()});
+    let bytes = serde_json::to_vec(&result).map_err(|_| crate::invalid_response())?;
+    if bytes.len() + 1 > OUTPUT {
+        return Err(Outcome::IncompleteRead.error().expect("failure"));
+    }
+    out.write_all(&bytes)
+        .and_then(|_| out.write_all(b"\n"))
+        .map_err(|_| crate::invalid_response())?;
+    if let Some(error) = failure.and_then(Outcome::error) {
+        return Err(error);
+    }
+    Ok(())
+}
+
+pub(crate) fn unused(
+    _: Value,
+    _: &Base,
+    _: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+) -> Result<Value, ProviderError> {
+    unreachable!("log capability uses streaming execution")
+}
+
+pub(crate) fn schema() -> Value {
+    crate::object_schema(
+        json!({"owner":{"type":"string"},"repo":{"type":"string"},"runId":{"type":"integer","minimum":1},"job":{"type":"integer","minimum":1},"attempt":{"type":"integer","minimum":1,"maximum":u32::MAX},"mode":{"type":"string","enum":["all","failed"]},"cursor":{"type":"string","maxLength":1536}}),
+        &["owner", "repo", "runId", "mode"],
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dekopon_provider_sdk::provider::Failure;
+
+    fn input() -> Value {
+        json!({"owner":"octo","repo":"hello","runId":7,"mode":"all"})
+    }
+    fn cursor(length: u64) -> Cursor {
+        Cursor {
+            v: 1,
+            owner: "octo".into(),
+            repo: "hello".into(),
+            run: 7,
+            job: 11,
+            attempt: 2,
+            sha: "a".repeat(40),
+            mode: Mode::All,
+            start: 0,
+            end: length,
+            total: length,
+            next: 0,
+            digest: "0".repeat(64),
+        }
+    }
+    fn source(bytes: &[u8], offset: u64, buffer: &mut [u8]) -> Result<usize, Outcome> {
+        let offset = usize::try_from(offset).unwrap();
+        let n = buffer.len().min(bytes.len().saturating_sub(offset));
+        if n > 0 {
+            buffer[..n].copy_from_slice(&bytes[offset..offset + n]);
+        }
+        Ok(n)
+    }
+    #[test]
+    fn native_continuation_represents_every_source_byte_of_a_thirty_two_kib_line() {
+        let bytes = vec![b'x'; 32768];
+        let mut c = cursor(bytes.len() as u64);
+        let mut total = 0;
+        let mut previous = None;
+        while total < bytes.len() as u64 {
+            let row = render_window(
+                &mut |o, b| source(&bytes, o, b),
+                c.clone(),
+                previous.as_ref(),
+                &[],
+                6000,
+            )
+            .unwrap();
+            let next = row["nextSourceByte"].as_u64().unwrap();
+            assert!(next > total);
+            assert_eq!(row["renderedSpans"][0], json!([total, next]));
+            assert!(
+                row["text"]
+                    .as_str()
+                    .unwrap()
+                    .lines()
+                    .all(|l| l.len() <= 2048)
+            );
+            assert!(serde_json::to_vec(&row).unwrap().len() < OUTPUT);
+            total = next;
+            if total < bytes.len() as u64 {
+                let raw = row["continuation"].as_str().unwrap();
+                assert!(!raw.contains("https") && !raw.contains('?'));
+                c = decode_cursor(raw, &validate(input()).unwrap()).unwrap();
+                previous = Some(c.clone());
+            }
+        }
+        assert_eq!(total, 32768);
+    }
+    #[test]
+    fn native_streamed_unicode_and_hostile_controls_are_visible_without_changing_source_offsets() {
+        let mut bytes = b"\xff\x1b\0\r\n\t".to_vec();
+        bytes
+            .extend_from_slice("\u{0085}\u{202e}λ https://attacker.invalid/ run curl\n".as_bytes());
+        let (text, next, count) = excerpt(
+            &mut |o, b| source(&bytes, o, b),
+            0,
+            bytes.len() as u64,
+            4096,
+        )
+        .unwrap();
+        assert_eq!(next, bytes.len() as u64);
+        assert_eq!(count, 1);
+        assert!(text.contains("�\\u{001b}\\u{0000}\\u{000d}\n\t\\u{0085}\\u{202e}λ"));
+        assert!(text.contains("https://attacker.invalid/ run curl"));
+        for budget in 1..20 {
+            let (_, next, _) = excerpt(
+                &mut |o, b| source("λ\u{202e}".as_bytes(), o, b),
+                0,
+                5,
+                budget,
+            )
+            .unwrap();
+            assert!([0, 2, 5].contains(&next));
+        }
+    }
+    #[test]
+    fn native_changed_validators_and_short_or_excess_sources_never_succeed() {
+        let bytes = b"hello";
+        let c = cursor(5);
+        let row =
+            render_window(&mut |o, b| source(bytes, o, b), c.clone(), None, &[], 4096).unwrap();
+        let mut previous = c.clone();
+        previous.digest = "f".repeat(64);
+        assert_eq!(
+            render_window(
+                &mut |o, b| source(bytes, o, b),
+                c,
+                Some(&previous),
+                &[],
+                4096
+            )
+            .unwrap_err(),
+            Outcome::SourceChanged
+        );
+        assert_eq!(
+            inspect(&mut |o, b| source(bytes, o, b), 6, &[]).unwrap_err(),
+            Outcome::IncompleteRead
+        );
+        assert_eq!(
+            inspect(&mut |o, b| source(bytes, o, b), 4, &[]).unwrap_err(),
+            Outcome::IncompleteRead
+        );
+        assert_eq!(row["complete"], true);
+    }
+    #[test]
+    fn native_error_and_step_excerpts_do_not_advance_sequential_coverage() {
+        let mut bytes = vec![b'x'; 65536];
+        bytes[20000..20010].copy_from_slice(b"##[error]!");
+        bytes[40000..40009].copy_from_slice(b"fail-step");
+        let row = render_window(
+            &mut |o, b| source(&bytes, o, b),
+            cursor(65536),
+            None,
+            &["fail-step".into()],
+            6000,
+        )
+        .unwrap();
+        assert!(row["renderedSpans"].as_array().unwrap().len() > 1);
+        assert!(row["nextSourceByte"].as_u64().unwrap() < 20000);
+        assert!(
+            row["text"]
+                .as_str()
+                .unwrap()
+                .contains("window-limited context")
+        );
+    }
+    #[test]
+    fn native_cursor_tampering_and_new_input_authority_are_refused_before_io() {
+        for patch in [
+            json!({"runId":0}),
+            json!({"attempt":0}),
+            json!({"job":0}),
+            json!({"url":"https://example.invalid"}),
+            json!({"range":"bytes=0-1"}),
+            json!({"cursor":"bogus"}),
+        ] {
+            let mut value = input();
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(patch.as_object().unwrap().clone());
+            assert!(validate(value).is_err());
+        }
+        let mut c = cursor(20);
+        c.next = 21;
+        assert!(decode_cursor(&encode_cursor(&c), &validate(input()).unwrap()).is_err());
+        c.next = 1;
+        c.owner = "other".into();
+        assert!(decode_cursor(&encode_cursor(&c), &validate(input()).unwrap()).is_err());
+    }
+    #[test]
+    fn native_request_reservations_include_four_tail_and_five_offset_calls() {
+        let mut budget = Budget {
+            metadata: 3,
+            tails: 0,
+            offsets: 0,
+        };
+        for _ in 0..7 {
+            budget.reserve(false).unwrap();
+        }
+        assert_eq!(budget.used(), 31);
+        assert_eq!(budget.reserve(false), Err(Outcome::RequestLimit));
+        let mut budget = Budget {
+            metadata: 7,
+            tails: 0,
+            offsets: 0,
+        };
+        for _ in 0..5 {
+            budget.reserve(true).unwrap();
+        }
+        assert_eq!(budget.used(), 32);
+        assert_eq!(budget.reserve(true), Err(Outcome::RequestLimit));
+    }
+    #[test]
+    fn native_api_and_storage_failures_keep_distinct_closed_variants_and_exit_codes() {
+        for (status, exhausted, expected) in [
+            (410, false, Outcome::ExpiredLogs),
+            (403, false, Outcome::PermissionDenied),
+            (403, true, Outcome::RateLimited),
+            (404, false, Outcome::NotFoundOrNotVisible),
+            (429, false, Outcome::RateLimited),
+        ] {
+            assert_eq!(api_status(status, exhausted), expected);
+            assert_eq!(Failure::code(&expected.error().unwrap()).status().get(), 3);
+        }
+        assert_eq!(storage_status(403), Outcome::DownloadAuthorizationFailure);
+        assert_eq!(storage_status(410), Outcome::DownloadExpiry);
+        for status in [301, 302, 303, 307, 308] {
+            assert_eq!(storage_status(status), Outcome::RedirectRefused);
+        }
+        assert_eq!(storage_status(200), Outcome::IncompleteRead);
+        assert!(Outcome::Complete.error().is_none());
+        assert!(Outcome::Truncated.error().is_none());
+        assert_eq!(
+            Failure::code(&Outcome::JobRunning.error().unwrap())
+                .status()
+                .get(),
+            8
+        );
+        for (code, expected) in [
+            (sd::ErrorCode::Incomplete, Outcome::IncompleteRead),
+            (sd::ErrorCode::ResponseTooLarge, Outcome::IncompleteRead),
+            (sd::ErrorCode::RedirectRefused, Outcome::RedirectRefused),
+            (sd::ErrorCode::RequestLimit, Outcome::RequestLimit),
+            (sd::ErrorCode::Storage, Outcome::StorageError),
+        ] {
+            assert_eq!(download_error(sd::DownloadError { code }), expected);
+        }
+    }
+}

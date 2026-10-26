@@ -63,6 +63,7 @@ macro_rules! capability {
                 out: &mut dyn Write,
             ) -> Result<(), ProviderError> {
                 let mut input = input.0;
+                if $id == crate::ids::LOGS_READ { return crate::logs::execute(input, base, send, out); }
                 if matches!($id, crate::ids::RUN_LIST | crate::ids::RUN_READ) {
                     return crate::actions::execute($id, input, base, send, out);
                 }
@@ -167,6 +168,16 @@ fn has_piped_body(id: &str) -> bool {
     )
 }
 
+capability!(
+    LogsRead,
+    LogsReadInput,
+    crate::ids::LOGS_READ,
+    "actions.logs.read",
+    "Bounded Actions job logs",
+    crate::logs::unused,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
 capability!(
     RunList,
     RunListInput,
@@ -463,6 +474,7 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
     match id {
         crate::ids::RUN_LIST => Proposal::to::<RunList>(RunListInput(input)),
         crate::ids::RUN_READ => Proposal::to::<RunRead>(RunReadInput(input)),
+        crate::ids::LOGS_READ => Proposal::to::<LogsRead>(LogsReadInput(input)),
         crate::ids::AUTH_STATUS => Proposal::to::<AuthStatus>(AuthStatusInput(input)),
         "gh.content.read" => Proposal::to::<ContentRead>(ContentReadInput(input)),
         "gh.pull-request.list" => Proposal::to::<PrList>(PrListInput(input)),

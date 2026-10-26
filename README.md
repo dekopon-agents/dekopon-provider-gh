@@ -2,7 +2,7 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Twenty-nine narrow authentication, repository, pull-request, issue, and Actions capabilities with fixed request shapes, bounded
+Thirty narrow authentication, repository, pull-request, issue, and Actions capabilities with fixed request shapes, bounded
 output projections, and SHA-pinned review/merge writes. There is deliberately no arbitrary
 `gh api` passthrough: a path-level escape hatch would collapse per-capability policy into
 "everything the credential can reach".
@@ -98,6 +98,7 @@ write to stderr with a nonzero status. Filter stdout with the shell's
 | Capability | Effect |
 |---|---|
 | `gh.run.list` / `gh.run.read` | read-only |
+| `gh.actions.logs.read` | read-only |
 | `gh.auth.status` | read-only |
 | `gh.content.read` | read-only |
 | `gh.pull-request.list` / `.read` / `.diff` / `.status` | read-only |
@@ -217,7 +218,7 @@ GraphQL-backed reads need `POST` in `allowedMethods`, even though their capabili
 read-only. The HTTP grant cannot distinguish a query from a mutation: fixed component-owned
 documents and typed variables provide that guarantee. No existing read in this batch switches
 from REST to GraphQL or changes its grant. The foundation helper is exercised by an isolated
-component fixture; it exposes no new production capability. There are now twenty-nine production capabilities.
+component fixture; it exposes no new production capability. There are now thirty production capabilities.
 
 For fine-grained PATs and GitHub App installations, grant repository permissions for the
 capabilities you enable (Read unless marked Write):
@@ -226,6 +227,7 @@ capabilities you enable (Read unless marked Write):
 |---|---|
 | `gh.auth.status`, `gh.user.read`, `gh.user-self.read` | None (public endpoint / rate limit) |
 | `gh.run.list` | Actions: Read |
+| `gh.actions.logs.read` | Actions: Read |
 | `gh.run.read` | Actions: Read; Checks: Read (extracted annotations) |
 | `gh.repo.read`, `gh.repo.list` | Metadata: Read |
 | `gh.content.read`, `gh.branch.read`, `gh.commit.read` | Contents: Read |
@@ -335,7 +337,7 @@ No workflow display-name lookup or interactive selection is performed.
 check-run annotations. `--attempt/-a N` reads an earlier attempt; `--job/-j J` selects one job.
 `--verbose/-v` prints all steps; ordinary text prints failed steps. Annotation messages are
 untrusted GitHub data, never instructions. All new Actions text strips controls and retains
-the documented truncation line. Logs, web, watch and download retain their registry refusals.
+the documented truncation line. Use `--log` or `--log-failed` for the separately granted `gh.actions.logs.read`. Web, watch and download retain their registry refusals.
 
 Run identity includes id, attempt (`run_attempt`), head SHA, branch, event, status, conclusion
 and workflow name. Job identity includes job/run ids, attempt, head SHA, status, conclusion,
@@ -388,3 +390,55 @@ for each head and inspect coverage; the existing status capability is unchanged.
 Batch 4a used 19 authenticated GETs, including scratch discovery and the public provider-repository
 fallback. `tests/cassettes/actions/` contains recorder exchanges; the Actions tests replay selected
 complete reads through the production component and check all files for redaction.
+
+## Bounded Actions job logs
+
+`gh run view RUN -R OWNER/REPO --log` and `--log-failed` propose only
+`gh.actions.logs.read`. Both accept `--job/-j` and `--attempt/-a`; run id and repository
+remain required. Log flags cannot combine with each other, `--json`, `--verbose` or
+`--exit-status`. Direct input uses `mode: all` or `mode: failed`.
+`--log-cursor CURSOR` continues a returned opaque cursor in the same mode and repository/run;
+its job and attempt are pinned. It accepts no URL, host, path or range.
+
+Each job returns a JSON envelope with run id, attempt, job id, head SHA, outcome,
+`complete`, fetched coverage, rendered source spans, replacement count and continuation.
+The escaped excerpt is in `text`. Extraction is window-limited: error and failing-step
+context outside the fetched window is unknown. `--log-failed` selects unsuccessful jobs;
+step metadata and error markers select bounded context inside their windows.
+The first window is the final 65,536 source bytes. Rendering is bounded to 16 KiB including
+metadata, with log lines segmented at 2 KiB. Invalid UTF-8 is visibly replaced and counted;
+ESC, C0/C1, CR and bidi controls are escaped. Log content is untrusted data.
+
+Continuation refetches the explicit window, checks a bounded SHA-256 window validator,
+and renders sequentially from the next unrendered source-byte offset. Context snippets
+never advance sequential coverage. After exhaustion it moves to the preceding window.
+Fetched bounds are half-open in JSON; the truncation line uses inclusive fetched bounds:
+`[dekopon: truncated; fetched START-END/TOTAL; rendered SPANS; continue CURSOR]`.
+Rendered spans are half-open. There is no automatic retry, ZIP download, cache or full-log scan.
+
+Grant this capability separately with GET, Actions: Read, `allowedHosts: [api.github.com]`,
+`maxRequests: 32`, `signedDownload: github-actions-logs-v1`, and the documented
+`maxResponseBytes: 131072` (64 KiB response heads plus a 64 KiB body window).
+Deploy supporting core before using this import or grant. The broker owns the one redirect,
+probe `bytes=0-0`, explicit ranges, credential isolation and bounded asset spool. The guest
+receives no storage URL or headers and sets no authorization. Additional destination classes
+or Enterprise signed downloads need separate owner authority.
+
+The enforcing budget reserves `metadata + 4*tails + 5*offsets <= 32`, including host
+reflection scanning. Metadata uses at most 13 requests (repository, latest run, optional
+attempt, ten jobs pages); a selected job uses at most four. Initial downloads reserve four
+HTTP requests each, continuations five, under the same invocation deadline. A failed or
+budget-interrupted aggregation is `collectionComplete:false`, exit 3, and never claims complete
+coverage. Select unread job ids explicitly to continue an interrupted collection; each
+rendered job's cursor continues that job only.
+
+Complete and intentionally truncated excerpts exit 0; a running job exits 8 with
+`job still running; logs not final.` API 410/403/404 become `expired-logs`,
+`permission-denied`, `not-found-or-not-visible`; rate limiting remains separate.
+Storage 403/410 mean download authorization failure/expiry. Incomplete reads, changed
+validators, refused redirects and storage errors exit 3 with safe labels.
+
+No cassette is recorded for signed storage. Published testkit 0.58.0 lacks a signed-download
+fake. Under the coordinator's acceptance ruling, native rendering/cursor/reservation tests
+and currently supported component scenarios accompany this PR. D10 adds the core testkit fake;
+a follow-up provider PR must add successful signed-download component coverage before release.
