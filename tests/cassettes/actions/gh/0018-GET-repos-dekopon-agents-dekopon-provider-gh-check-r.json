@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "request": {
+    "method": "GET",
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/check-runs/116656195559/annotations",
+    "query": "per_page=100&page=1",
+    "headers": {
+      "accept": "application/vnd.github+json",
+      "accept-encoding": "identity",
+      "authorization": "[redacted]",
+      "connection": "close",
+      "host": "127.0.0.1:8787",
+      "user-agent": "dekopon-gh-provider/0.1",
+      "x-github-api-version": "2022-11-28"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+      "cache-control": "private, max-age=60, s-maxage=60",
+      "content-security-policy": "default-src 'none'",
+      "content-type": "application/json; charset=utf-8",
+      "date": "Mon, 26 Oct 2026 08:35:11 GMT",
+      "etag": "\"17aa497a1b1c48e0a3ce6c8ecf6dab355edef98a338d50c02a10656baa190f28\"",
+      "github-authentication-token-expiration": "2026-10-26 11:40:12 UTC",
+      "referrer-policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+      "server": "envoy",
+      "strict-transport-security": "max-age=31536000; includeSubdomains; preload",
+      "vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+      "x-accepted-github-permissions": "checks=read",
+      "x-accepted-oauth-scopes": "",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "245",
+      "x-frame-options": "deny",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-github-edge-region": "iad",
+      "x-github-media-type": "github.v3; format=json",
+      "x-github-request-id": "A13F:267B7D:3996DC0:BC1CD9E:6ADF10BF",
+      "x-oauth-client-id": "Iv23liVemv8A9if9v0F2",
+      "x-oauth-scopes": "",
+      "x-ratelimit-limit": "15000",
+      "x-ratelimit-remaining": "14986",
+      "x-ratelimit-reset": "1793007307",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "14",
+      "x-xss-protection": "0"
+    },
+    "body": {
+      "json": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/dekopon-agents/dekopon-provider-gh/blob/20b3fe1faf232aee44446d010cc8e2d9e2e5f545/.github",
+          "start_line": 2,
+          "start_column": null,
+          "end_line": 2,
+          "end_column": null,
+          "annotation_level": "warning",
+          "title": "",
+          "message": "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@11d5960a326750d5838078e36cf38b85af677262. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/dekopon-agents/dekopon-provider-gh/blob/20b3fe1faf232aee44446d010cc8e2d9e2e5f545/.github",
+          "start_line": 546,
+          "start_column": null,
+          "end_line": 546,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "Process completed with exit code 1.",
+          "raw_details": ""
+        }
+      ]
+    }
+  }
+}

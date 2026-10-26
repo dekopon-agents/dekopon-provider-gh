@@ -1,0 +1,78 @@
+[
+  {
+    "path": "/repos/dekopon-agents/gh-parity-scratch",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/gh-parity-scratch/actions/runs?page=1&per_page=100",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/runs?page=1&per_page=100",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/workflows?page=1&per_page=100",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/runs/38802882220",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/runs/38802882220/attempts/2",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/runs/38802882220/attempts/2/jobs?page=1&per_page=100",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/jobs/116656759261",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/runs/38802882220/attempts/2/jobs?per_page=1&page=1",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/check-runs/116656759261",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/check-runs/116656759261/annotations?per_page=100&page=1",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/runs/38802882220/attempts/1",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/runs/38802882220/attempts/1/jobs?page=1&per_page=100",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/jobs/116656195559",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/runs/38802882220/attempts/1/jobs?per_page=1&page=1",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/check-runs/116656195559",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/check-runs/116656195559/annotations?per_page=100&page=1",
+    "status": 200
+  },
+  {
+    "path": "/repos/dekopon-agents/dekopon-provider-gh/actions/runs?page=2&per_page=100",
+    "status": 200
+  }
+]

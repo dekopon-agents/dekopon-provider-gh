@@ -203,11 +203,12 @@ fn supported_tree() -> Command {
                         .arg(json_arg()),
                 ),
         )
+        .subcommand(crate::actions::commands())
         .subcommand(issues())
         .subcommand(search_tree())
         .subcommand(pure_command("version", concat!("dekopon-provider-gh ", env!("CARGO_PKG_VERSION"))))
         .subcommand(pure_command("licenses", "Show component licenses (MIT OR Apache-2.0)"))
-        .subcommand(pure_command("actions", "GitHub Actions: workflows define automation; runs show workflow execution."))
+        .subcommand(pure_command("actions", "GitHub Actions: inspect history with gh run list and jobs with gh run view."))
         .subcommand(pure_command("accessibility", "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser."))
 }
 
@@ -220,7 +221,7 @@ fn pure_text(name: &str) -> Option<&'static str> {
             include_str!("../LICENSE-APACHE")
         )),
         "actions" => {
-            Some("GitHub Actions: workflows define automation; runs show workflow execution.")
+            Some("GitHub Actions: inspect history with gh run list and jobs with gh run view.")
         }
         "accessibility" => Some(
             "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser.",
@@ -568,6 +569,15 @@ fn dispatch(
     let mut input = Map::new();
 
     let capability = match (area, verb) {
+        ("run", "list" | "view") => {
+            insert_repo(&mut input, matches)?;
+            crate::actions::dispatch(verb, matches, &mut input)?;
+            if verb == "list" {
+                ids::RUN_LIST
+            } else {
+                ids::RUN_READ
+            }
+        }
         ("pr", "list") => {
             insert_repo(&mut input, matches)?;
             insert_text(&mut input, "state", matches.get_one::<String>("state"));
@@ -923,6 +933,8 @@ fn api_route(matches: &ArgMatches) -> Result<(&'static str, Value), ProviderErro
 /// at runtime reads it.
 #[cfg(test)]
 pub(crate) const DISPATCH_TABLE: &[(&str, &str, &str)] = &[
+    ("run", "list", ids::RUN_LIST),
+    ("run", "view", ids::RUN_READ),
     ("pr", "list", ids::PR_LIST),
     ("pr", "view", ids::PR_READ),
     ("pr", "diff", ids::PR_DIFF),

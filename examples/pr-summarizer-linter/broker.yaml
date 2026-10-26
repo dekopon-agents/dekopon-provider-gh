@@ -2,7 +2,7 @@
 #
 # It owns the socket, policy, constraint sets, GitHub credential, and audit chain. The gateway
 # holds none of those; it holds Slack credentials and access to a model endpoint.
-# The five grants below cover long flags and their upstream shorthands equally.
+# The seven grants below cover long flags and their upstream shorthands equally.
 #
 # Hygiene, all checked at startup and all fatal:
 #   chmod 0600 broker.yaml policies.cedar
@@ -141,6 +141,37 @@ constraintSets:
         maxRequests: 2
         maxRequestBytes: 16384
         maxResponseBytes: 262144
+        allowPlaintextLoopback: false
+
+  gh.run.list:
+    provider: gh
+    effect: read-only
+    risk: Low
+    credential: github-pat
+    constraints:
+      timeoutMs: 30000
+      maxOutputBytes: 4194304
+      http:
+        allowedHosts: [api.github.com]
+        allowedMethods: [GET]
+        maxRequests: 21
+        maxRequestBytes: 16384
+        maxResponseBytes: 4194304
+        allowPlaintextLoopback: false
+  gh.run.read:
+    provider: gh
+    effect: read-only
+    risk: Low
+    credential: github-pat
+    constraints:
+      timeoutMs: 30000
+      maxOutputBytes: 4194304
+      http:
+        allowedHosts: [api.github.com]
+        allowedMethods: [GET]
+        maxRequests: 29
+        maxRequestBytes: 16384
+        maxResponseBytes: 4194304
         allowPlaintextLoopback: false
 
 # Optional. Uncomment to export broker spans; the ingest token is read from

@@ -10,7 +10,7 @@ capabilities, injects a GitHub token bound to `api.github.com`, executes the `gh
 component, and hash-links every decision and result into an audit chain naming the person who
 asked. The token is never visible to the model, shell session, agent, or component that uses it.
 
-The provider still exports twenty-seven production capabilities; this example grants five.
+The provider still exports twenty-nine production capabilities; this example grants seven.
 Upstream shorthands select the same grants: `gh pr review ... -c -b <text>` is equivalent to
 `--comment --body <text>`, and `-F -` reads a piped body. Unsupported upstream operations refuse
 before HTTP; `gh --help` lists their reasons. `gh version`, `licenses`, `actions`, and
@@ -296,7 +296,7 @@ A byte or request refusal fails the whole read without partial output.
 
 ## Batch 1 grant choices
 
-The same five capability ids remain granted. The PR read grant allows two GETs, so text
+The five pre-Actions capability ids retain their grants. The PR read grant allows two GETs, so text
 `pr view --comments` can fetch its single comments page; the agent's normal metadata selection
 still makes one request. Diff name-only, patch and exclusions retain the one-GET grant.
 The COMMENT grant still allows one pre-read and one POST, with a 16384-byte request ceiling.
@@ -311,3 +311,24 @@ and up to eleven requests (ten lookup pages plus one mutation). PR numbers addit
 Pull requests: Read for GraphQL lookup. They use fixed documents and never accept a query or API path.
 They edit/delete issue comments and have no PR-head dependency. The compound edit-or-create id
 has its own grant because its fallback creates a comment. No read capability gains POST.
+
+## Actions read grants
+
+The example additionally grants `gh.run.list` (21 GETs) and `gh.run.read` (29 GETs),
+with Actions: Read and Checks: Read for extracted annotations. There are seven grants total.
+Use run list by PR branch or each head SHA to investigate history: `pr checks` reads only the
+current head and collapses repeated checks. Inspect coverage before claiming a complete history.
+Run view supports explicit attempts and jobs; a selected job reports its completed duration
+against the entire selected attempt's job count. Logs and artifacts are not fetched.
+These example grants do not change deployed homelab grants.
+
+Caller-chosen run-list limits, including the default 20, stop collection once that many
+eligible runs are available and appear as coverage notes with exit 0. The 21-GET grant is
+a worst-case ceiling; a one-page workflow catalog and sufficient first-page runs use three
+GETs. Count mismatches, unread annotation successors, and a page bound reached before the
+requested count remain incomplete (exit 3). Unknown start times retain the read with null
+durations and explicit partial duration coverage.
+
+Received run pages are checked in full for identity/count consistency before returning at a
+caller limit. A terminal count mismatch still exits 3 with retained rows, without another GET;
+a consistent page containing additional rows remains a normal limit note with exit 0.
