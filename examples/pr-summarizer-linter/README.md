@@ -328,3 +328,7 @@ a worst-case ceiling; a one-page workflow catalog and sufficient first-page runs
 GETs. Count mismatches, unread annotation successors, and a page bound reached before the
 requested count remain incomplete (exit 3). Unknown start times retain the read with null
 durations and explicit partial duration coverage.
+
+Received run pages are checked in full for identity/count consistency before returning at a
+caller limit. A terminal count mismatch still exits 3 with retained rows, without another GET;
+a consistent page containing additional rows remains a normal limit note with exit 0.

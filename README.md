@@ -356,7 +356,10 @@ remain mandatory even when selecting fields. JSON uses an envelope: list has `ru
 Coverage reports returned count, GitHub's raw `total_count`, an explicit `incomplete` boolean
 and reasons. GitHub's raw run count is not a claimed count after workflow-state filtering.
 A caller-selected list limit (including the default 20) stops paging once enough eligible rows
-exist; it is a `coverage.notes` entry, not incompleteness, and exits 0. Page-budget exhaustion
+exist; it is a `coverage.notes` entry, not incompleteness, and exits 0 when coverage is otherwise
+consistent. All identities in the received page are accounted for before returning at the
+limit: a terminal page whose cumulative unique count differs from `total_count` remains
+`count-mismatch` (exit 3), even when the requested number of rows was emitted. Page-budget exhaustion
 before the limit, count drift, and unread annotation successors are incomplete and return
 `incomplete-results` (exit 3) after bounded rows. A failed later run page preserves rows and
 reports `page-failed` plus its typed `pageError` code.

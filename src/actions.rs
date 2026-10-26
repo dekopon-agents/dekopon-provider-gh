@@ -377,21 +377,20 @@ fn pages_with(
                 if let Some(row) = project(item)? {
                     result.push(row);
                 }
-                if limit_note && result.len() == limit {
-                    break;
-                }
-            } else {
+            } else if !limit_note {
                 coverage.mark("limit");
             }
         }
         let next = crate::has_next_link(&response);
+        if limit_note
+            && ((!next && total != seen.len() as u64) || (next && total <= seen.len() as u64))
+        {
+            coverage.mark("count-mismatch");
+        }
         if result.len() >= limit {
             if limit_note {
-                if next || total > seen.len() as u64 {
+                if next || total > result.len() as u64 || seen.len() > result.len() {
                     coverage.notes.push("limit");
-                }
-                if total < seen.len() as u64 || (next && total == seen.len() as u64) {
-                    coverage.mark("count-mismatch");
                 }
             } else if next || total > result.len() as u64 {
                 coverage.mark("limit");

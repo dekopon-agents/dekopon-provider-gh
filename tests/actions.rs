@@ -1208,3 +1208,61 @@ async fn list_page_bounds_and_count_mismatches_remain_incomplete_below_the_reque
         );
     }
 }
+#[tokio::test(flavor = "multi_thread")]
+async fn caller_limits_preserve_terminal_count_mismatches_without_an_extra_get() {
+    for (received, total, incomplete) in [(2, 3, true), (3, 4, true), (3, 3, false)] {
+        for output in ["", "databaseId"] {
+            let rows = (0..received)
+                .map(|i| {
+                    let mut row = run_body(2);
+                    row["id"] = json!(7 + i);
+                    row
+                })
+                .collect::<Vec<_>>();
+            let page = get(
+                &format!("{ROOT}/actions/runs?page=1&per_page=100"),
+                json!({"total_count":total,"workflow_runs":rows}),
+            );
+            let (status, error, out) = invoke(
+                "gh.run.list",
+                json!({"owner":"octo","repo":"hello","limit":2,"_cliOutput":output}),
+                vec![get(ROOT, json!({"id":42})), workflows(), page],
+            )
+            .await;
+            assert_eq!(status, if incomplete { 3 } else { 0 }, "{error}");
+            if incomplete {
+                assert_eq!(error, "Actions results are incomplete; inspect coverage\n");
+            } else {
+                assert!(error.is_empty());
+            }
+            if output.is_empty() {
+                let text = String::from_utf8(out).unwrap();
+                assert!(text.contains(&format!("\"incomplete\":{incomplete}")));
+                assert_eq!(text.contains("count-mismatch"), incomplete);
+                assert!(text.contains("\"returnedCount\":2"));
+                assert_eq!(
+                    text.lines()
+                        .filter(|line| line.contains("\tattempt "))
+                        .count(),
+                    2
+                );
+            } else {
+                let value: Value = serde_json::from_slice(&out).unwrap();
+                assert_eq!(value["runs"].as_array().unwrap().len(), 2);
+                assert_eq!(value["coverage"]["returnedCount"], 2);
+                assert_eq!(value["coverage"]["total_count"], total);
+                assert_eq!(value["coverage"]["incomplete"], incomplete);
+                assert_eq!(value["requestsUsed"], 3);
+                assert_eq!(value["coverage"]["notes"], json!(["limit"]));
+                assert_eq!(
+                    value["coverage"]["reasons"],
+                    if incomplete {
+                        json!(["count-mismatch"])
+                    } else {
+                        json!([])
+                    }
+                );
+            }
+        }
+    }
+}
