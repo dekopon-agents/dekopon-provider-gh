@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-26
+
+### Fixed
+
+- Keep gh root help complete within the core cache limit and expose exclusions on focused help pages.
+
 ## [0.11.0] - 2026-10-25
 
 ### Added
