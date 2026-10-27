@@ -161,9 +161,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-capability"
-version = "0.58.0"
+version = "0.62.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5d41aaafbd5272acfc8da64e2d67f9cc7cf0a3e011dd4a22bdf7e14bb9aca29"
+checksum = "0c0e4e1e817bb9923d43720c1831b8d31141c284c280848d7a60310b0e14dad3"
 dependencies = [
  "dekopon-core",
  "serde",
@@ -173,9 +173,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-core"
-version = "0.58.0"
+version = "0.62.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "447ba70af772eedb34f9967e0022075d31d664f59a4a7d6a2a2199384349a868"
+checksum = "2a42b0d74f43e796d044ce936faeffe700adc44b814e992eb02e45ba46db30ce"
 dependencies = [
  "libc",
  "serde",
@@ -201,9 +201,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-provider-sdk"
-version = "0.58.0"
+version = "0.62.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5310c3b3876ab38bba17b528d452ca1fe6223d2f8a5078876d1c0c6e1048a3c"
+checksum = "d635c745a0df5dae06f2f425b518cb6bdabfb35779e06353ea34fe5b14957b7a"
 dependencies = [
  "clap",
  "dekopon-capability",
