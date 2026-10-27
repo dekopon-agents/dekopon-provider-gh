@@ -65,6 +65,12 @@ enum Outcome {
     SourceChanged,
     RedirectRefused,
     StorageError,
+    InvalidResponse,
+    InvalidRequest,
+    Unauthorized,
+    Unprocessable,
+    UnexpectedStatus,
+    HttpFailed,
     RequestLimit,
     Timeout,
 }
@@ -72,6 +78,18 @@ impl Outcome {
     fn error(self) -> Option<ProviderError> {
         let (code, label) = match self {
             Self::Complete | Self::Truncated => return None,
+            Self::InvalidResponse => return Some(crate::invalid_response()),
+            Self::InvalidRequest => (
+                "invalid-request",
+                "could not construct log metadata request",
+            ),
+            Self::Unauthorized => (
+                "unauthorized",
+                "credential rejected: expired, revoked or malformed",
+            ),
+            Self::Unprocessable => ("unprocessable", "endpoint refused the request as invalid"),
+            Self::UnexpectedStatus => return Some(crate::unexpected_status()),
+            Self::HttpFailed => return Some(crate::http_failed()),
             Self::JobRunning => ("job-running", "job still running; logs not final."),
             Self::ExpiredLogs => ("expired-logs", "expired-logs"),
             Self::PermissionDenied => ("permission-denied", "permission-denied"),
@@ -178,10 +196,15 @@ fn download_error(error: sd::DownloadError) -> Outcome {
         sd::ErrorCode::Storage | sd::ErrorCode::Internal => Outcome::StorageError,
     }
 }
-fn api_status(status: u16, exhausted: bool) -> Outcome {
-    match status {
+fn api_response(response: &sd::ApiResponse) -> Outcome {
+    let limited = response.headers.iter().any(|header| {
+        (header.name.eq_ignore_ascii_case("x-ratelimit-remaining") && header.value == b"0")
+            || (header.name.eq_ignore_ascii_case("retry-after")
+                && header.value.iter().any(|byte| !byte.is_ascii_whitespace()))
+    });
+    match response.status {
         410 => Outcome::ExpiredLogs,
-        403 if exhausted => Outcome::RateLimited,
+        403 if limited => Outcome::RateLimited,
         403 => Outcome::PermissionDenied,
         404 => Outcome::NotFoundOrNotVisible,
         429 => Outcome::RateLimited,
@@ -212,11 +235,18 @@ fn read_exact(source: &mut Source<'_>, offset: u64, bytes: &mut [u8]) -> Result<
     }
     Ok(())
 }
+#[derive(Debug, PartialEq, Eq)]
+struct ContextSpan {
+    start: u64,
+    end: u64,
+    marker: Option<(u64, u64)>,
+}
+
 fn inspect(
     source: &mut Source<'_>,
     length: u64,
     steps: &[String],
-) -> Result<(String, Vec<(u64, u64)>), Outcome> {
+) -> Result<(String, Vec<ContextSpan>), Outcome> {
     let mut hasher = Sha256::new();
     let mut buffer = [0; 2048];
     let mut offset = 0;
@@ -237,7 +267,12 @@ fn inspect(
                 .position(|bytes| bytes == needle.as_bytes())
             {
                 let absolute = offset.saturating_sub((overlap.len() - n) as u64) + index as u64;
-                let span = (absolute.saturating_sub(128), (absolute + 384).min(length));
+                let marker_end = absolute + needle.len() as u64;
+                let span = ContextSpan {
+                    start: absolute.saturating_sub(128),
+                    end: (absolute + 384).max(marker_end).min(length),
+                    marker: Some((absolute, marker_end)),
+                };
                 if !spans.contains(&span) {
                     spans.push(span);
                 }
@@ -251,7 +286,11 @@ fn inspect(
         return Err(Outcome::IncompleteRead);
     }
     if length > 0 {
-        spans.push((length.saturating_sub(512), length));
+        spans.push(ContextSpan {
+            start: length.saturating_sub(512),
+            end: length,
+            marker: None,
+        });
     }
     Ok((format!("{:x}", hasher.finalize()), spans))
 }
@@ -266,6 +305,60 @@ fn escape(c: char) -> String {
     } else {
         c.to_string()
     }
+}
+
+fn source_character(available: &[u8]) -> (char, usize, usize) {
+    let width = match available[0] {
+        0..=0x7f => 1,
+        0xc2..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf4 => 4,
+        _ => 1,
+    };
+    let valid = available
+        .get(..width)
+        .and_then(|b| std::str::from_utf8(b).ok())
+        .and_then(|s| s.chars().next());
+    let (c, consumed, replacement) = valid.map_or(('�', 1, 1), |c| (c, width, 0));
+    (c, consumed, replacement)
+}
+
+fn context_excerpt(
+    source: &mut Source<'_>,
+    span: &ContextSpan,
+    budget: usize,
+) -> Result<Option<(u64, String, u64, usize)>, Outcome> {
+    let mut start = span.start;
+    let mut allowance = budget.min(512);
+    if let Some((marker_start, marker_end)) = span.marker {
+        let (marker, represented, _) = excerpt(source, marker_start, marker_end, budget)?;
+        if represented != marker_end {
+            return Ok(None);
+        }
+        allowance = budget.min(512.max(marker.len()));
+        let prefix_budget = (allowance - marker.len()) / 2;
+        let mut prefix = [0; 128];
+        let length = (marker_start - start) as usize;
+        read_exact(source, start, &mut prefix[..length])?;
+        let mut tokens = Vec::new();
+        let mut offset = 0;
+        while offset < length {
+            let (character, consumed, _) = source_character(&prefix[offset..length]);
+            tokens.push((offset, escape(character).len()));
+            offset += consumed;
+        }
+        let mut escaped = 0;
+        start = marker_start;
+        for (offset, cost) in tokens.into_iter().rev() {
+            if escaped + cost > prefix_budget {
+                break;
+            }
+            escaped += cost;
+            start = span.start + offset as u64;
+        }
+    }
+    let (text, represented, count) = excerpt(source, start, span.end, allowance)?;
+    Ok(Some((start, text, represented, count)))
 }
 
 fn excerpt(
@@ -289,18 +382,7 @@ fn excerpt(
         }
         let index = (offset - block_start) as usize;
         let available = &buffer[index..block_len];
-        let width = match available[0] {
-            0..=0x7f => 1,
-            0xc2..=0xdf => 2,
-            0xe0..=0xef => 3,
-            0xf0..=0xf4 => 4,
-            _ => 1,
-        };
-        let valid = available
-            .get(..width)
-            .and_then(|b| std::str::from_utf8(b).ok())
-            .and_then(|s| s.chars().next());
-        let (c, consumed, replacement) = valid.map_or(('�', 1, 1), |c| (c, width, 0));
+        let (c, consumed, replacement) = source_character(available);
         let text = escape(c);
         let break_line = segment + text.len() > 2048;
         if output.len() + text.len() + usize::from(break_line) > budget {
@@ -339,15 +421,19 @@ fn render_window(
     cursor.next = cursor.start + next;
     let mut spans = vec![(sequential_start, cursor.next)];
     if previous.is_none() {
-        for (start, end) in snippets {
-            if start >= sequential_start - cursor.start && end <= next {
+        for span in snippets {
+            if span.start >= sequential_start - cursor.start && span.end <= next {
                 continue;
             }
             let remaining = budget.saturating_sub(text.len() + 32);
             if remaining < 16 {
                 break;
             }
-            let (snippet, represented, count) = excerpt(source, start, end, remaining.min(512))?;
+            let Some((start, snippet, represented, count)) =
+                context_excerpt(source, &span, remaining)?
+            else {
+                continue;
+            };
             if represented == start {
                 continue;
             }
@@ -462,13 +548,7 @@ fn fetch(
     }
     let response = acquire(input, job_id, previous, base, budget, &mut sd::download)?;
     match response {
-        sd::Response::Api(api) => Err(api_status(
-            api.status,
-            api.headers
-                .iter()
-                .any(|h| h.name.eq_ignore_ascii_case("x-ratelimit-remaining") && h.value == b"0"),
-        )
-        .into()),
+        sd::Response::Api(api) => Err(api_response(&api).into()),
         sd::Response::Storage {
             status,
             coverage,
@@ -544,6 +624,22 @@ fn fetch(
     }
 }
 
+fn metadata_outcome(error: crate::actions::LogMetadataError) -> Outcome {
+    use crate::actions::LogMetadataError;
+    match error {
+        LogMetadataError::NotFound => Outcome::NotFoundOrNotVisible,
+        LogMetadataError::PermissionDenied => Outcome::PermissionDenied,
+        LogMetadataError::RateLimited => Outcome::RateLimited,
+        LogMetadataError::RequestLimit => Outcome::RequestLimit,
+        LogMetadataError::Transport => Outcome::HttpFailed,
+        LogMetadataError::InvalidRequest => Outcome::InvalidRequest,
+        LogMetadataError::InvalidResponse => Outcome::InvalidResponse,
+        LogMetadataError::Unauthorized => Outcome::Unauthorized,
+        LogMetadataError::Unprocessable => Outcome::Unprocessable,
+        LogMetadataError::UnexpectedStatus => Outcome::UnexpectedStatus,
+    }
+}
+
 pub(crate) fn execute(
     value: Value,
     base: &Base,
@@ -560,13 +656,8 @@ pub(crate) fn execute(
         input.job = Some(crate::actions::JobId(c.job));
         input.attempt = Some(crate::actions::Attempt(c.attempt));
     }
-    let metadata = crate::actions::log_metadata(&input, base, send).map_err(|error| match error
-        .code_str()
-    {
-        "not-found-or-not-accessible" => Outcome::NotFoundOrNotVisible.error().expect("failure"),
-        "forbidden" => Outcome::PermissionDenied.error().expect("failure"),
-        _ => error,
-    })?;
+    let metadata = crate::actions::log_metadata(&input, base, send)
+        .map_err(|error| metadata_outcome(error).error().expect("metadata failure"))?;
     let mut budget = Budget {
         metadata: metadata["metadataRequests"]
             .as_u64()
@@ -797,6 +888,97 @@ mod tests {
         );
     }
     #[test]
+    fn native_escaped_prefixes_preserve_error_and_step_markers_without_advancing_sequential_coverage()
+     {
+        let mut bytes = vec![b'x'; 65536];
+        let baseline = render_window(
+            &mut |o, b| source(&bytes, o, b),
+            cursor(65536),
+            None,
+            &[],
+            6000,
+        )
+        .unwrap();
+        for (position, marker) in [
+            (20000, b"##[error]".as_slice()),
+            (40000, b"fail-step".as_slice()),
+        ] {
+            bytes[position - 128..position].fill(0x1b);
+            bytes[position..position + marker.len()].copy_from_slice(marker);
+        }
+        let row = render_window(
+            &mut |o, b| source(&bytes, o, b),
+            cursor(65536),
+            None,
+            &["fail-step".into()],
+            6000,
+        )
+        .unwrap();
+        let text = row["text"].as_str().unwrap();
+        assert!(text.contains("##[error]"));
+        assert!(text.contains("fail-step"));
+        assert!(text.contains("\\u{001b}"));
+        assert_eq!(row["nextSourceByte"], baseline["nextSourceByte"]);
+        assert_eq!(row["renderedSpans"][0], baseline["renderedSpans"][0]);
+        assert!(serde_json::to_vec(&row).unwrap().len() < OUTPUT);
+    }
+
+    #[test]
+    fn native_log_api_secondary_limits_are_classified_from_full_response_headers() {
+        for headers in [
+            vec![
+                sd::Header {
+                    name: "Retry-After".into(),
+                    value: b"60".to_vec(),
+                },
+                sd::Header {
+                    name: "x-ratelimit-remaining".into(),
+                    value: b"100".to_vec(),
+                },
+            ],
+            vec![sd::Header {
+                name: "x-ratelimit-remaining".into(),
+                value: b"0".to_vec(),
+            }],
+        ] {
+            let response = sd::ApiResponse {
+                status: 403,
+                headers,
+                body: b"untrusted response text".to_vec(),
+            };
+            assert_eq!(api_response(&response), Outcome::RateLimited);
+        }
+        let response = sd::ApiResponse {
+            status: 403,
+            headers: vec![sd::Header {
+                name: "x-ratelimit-remaining".into(),
+                value: b"100".to_vec(),
+            }],
+            body: vec![],
+        };
+        assert_eq!(api_response(&response), Outcome::PermissionDenied);
+    }
+
+    #[test]
+    fn native_metadata_failures_map_exhaustively_to_log_outcomes() {
+        use crate::actions::LogMetadataError as Error;
+        for (error, outcome) in [
+            (Error::NotFound, Outcome::NotFoundOrNotVisible),
+            (Error::PermissionDenied, Outcome::PermissionDenied),
+            (Error::RateLimited, Outcome::RateLimited),
+            (Error::RequestLimit, Outcome::RequestLimit),
+            (Error::Transport, Outcome::HttpFailed),
+            (Error::InvalidRequest, Outcome::InvalidRequest),
+            (Error::InvalidResponse, Outcome::InvalidResponse),
+            (Error::Unauthorized, Outcome::Unauthorized),
+            (Error::Unprocessable, Outcome::Unprocessable),
+            (Error::UnexpectedStatus, Outcome::UnexpectedStatus),
+        ] {
+            assert_eq!(metadata_outcome(error), outcome);
+        }
+    }
+
+    #[test]
     fn native_cursor_tampering_and_new_input_authority_are_refused_before_io() {
         for patch in [
             json!({"runId":0}),
@@ -915,7 +1097,19 @@ mod tests {
             (404, false, Outcome::NotFoundOrNotVisible),
             (429, false, Outcome::RateLimited),
         ] {
-            assert_eq!(api_status(status, exhausted), expected);
+            let response = sd::ApiResponse {
+                status,
+                headers: if exhausted {
+                    vec![sd::Header {
+                        name: "x-ratelimit-remaining".into(),
+                        value: b"0".to_vec(),
+                    }]
+                } else {
+                    vec![]
+                },
+                body: vec![],
+            };
+            assert_eq!(api_response(&response), expected);
             assert_eq!(Failure::code(&expected.error().unwrap()).status().get(), 3);
         }
         assert_eq!(storage_status(403), Outcome::DownloadAuthorizationFailure);

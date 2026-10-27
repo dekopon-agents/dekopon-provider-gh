@@ -14,9 +14,6 @@ impl ProviderError {
             message: message.into(),
         }
     }
-    pub(crate) fn code_str(&self) -> &str {
-        self.code
-    }
     #[cfg(test)]
     pub(crate) fn code(&self) -> &str {
         self.code
