@@ -440,7 +440,7 @@ Complete and intentionally truncated excerpts exit 0; a running job exits 8 with
 Storage 403/410 mean download authorization failure/expiry. Incomplete reads, changed
 validators, refused redirects and storage errors exit 3 with safe labels.
 
-No cassette is recorded for signed storage. Published testkit 0.58.0 lacks a signed-download
-fake. Under the coordinator's acceptance ruling, native rendering/cursor/reservation tests
-and currently supported component scenarios accompany this PR. D10 adds the core testkit fake;
-a follow-up provider PR must add successful signed-download component coverage before release.
+No cassette is recorded for signed storage. Successful signed-download component scenarios
+and conformance require a published SDK/testkit release carrying the signed-download import
+and fake. Keep this PR as draft until both exact pins move to that release and this PR includes
+the success-path component scenario. A failing conformance check is not accepted.

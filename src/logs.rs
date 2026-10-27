@@ -235,18 +235,52 @@ fn read_exact(source: &mut Source<'_>, offset: u64, bytes: &mut [u8]) -> Result<
     }
     Ok(())
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SourceSpan {
+    start: u64,
+    end: u64,
+}
+
+#[derive(Debug)]
+struct WindowInspection {
+    digest: String,
+    contexts: Vec<ContextSpan>,
+}
+
+struct SourceCharacter {
+    character: char,
+    source_bytes: usize,
+    replacements: usize,
+}
+
+struct PrefixToken {
+    source_offset: usize,
+    escaped_bytes: usize,
+}
+
+struct RenderedExcerpt {
+    text: String,
+    next_source_byte: u64,
+    invalid_utf8_replacements: usize,
+}
+
+struct RenderedContext {
+    start: u64,
+    excerpt: RenderedExcerpt,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct ContextSpan {
     start: u64,
     end: u64,
-    marker: Option<(u64, u64)>,
+    marker: Option<SourceSpan>,
 }
 
 fn inspect(
     source: &mut Source<'_>,
     length: u64,
     steps: &[String],
-) -> Result<(String, Vec<ContextSpan>), Outcome> {
+) -> Result<WindowInspection, Outcome> {
     let mut hasher = Sha256::new();
     let mut buffer = [0; 2048];
     let mut offset = 0;
@@ -271,7 +305,10 @@ fn inspect(
                 let span = ContextSpan {
                     start: absolute.saturating_sub(128),
                     end: (absolute + 384).max(marker_end).min(length),
-                    marker: Some((absolute, marker_end)),
+                    marker: Some(SourceSpan {
+                        start: absolute,
+                        end: marker_end,
+                    }),
                 };
                 if !spans.contains(&span) {
                     spans.push(span);
@@ -292,7 +329,10 @@ fn inspect(
             marker: None,
         });
     }
-    Ok((format!("{:x}", hasher.finalize()), spans))
+    Ok(WindowInspection {
+        digest: format!("{:x}", hasher.finalize()),
+        contexts: spans,
+    })
 }
 fn escape(c: char) -> String {
     if c == '\n' || c == '\t' {
@@ -307,7 +347,7 @@ fn escape(c: char) -> String {
     }
 }
 
-fn source_character(available: &[u8]) -> (char, usize, usize) {
+fn source_character(available: &[u8]) -> SourceCharacter {
     let width = match available[0] {
         0..=0x7f => 1,
         0xc2..=0xdf => 2,
@@ -319,46 +359,61 @@ fn source_character(available: &[u8]) -> (char, usize, usize) {
         .get(..width)
         .and_then(|b| std::str::from_utf8(b).ok())
         .and_then(|s| s.chars().next());
-    let (c, consumed, replacement) = valid.map_or(('�', 1, 1), |c| (c, width, 0));
-    (c, consumed, replacement)
+    valid.map_or(
+        SourceCharacter {
+            character: '�',
+            source_bytes: 1,
+            replacements: 1,
+        },
+        |character| SourceCharacter {
+            character,
+            source_bytes: width,
+            replacements: 0,
+        },
+    )
 }
 
 fn context_excerpt(
     source: &mut Source<'_>,
     span: &ContextSpan,
     budget: usize,
-) -> Result<Option<(u64, String, u64, usize)>, Outcome> {
+) -> Result<Option<RenderedContext>, Outcome> {
     let mut start = span.start;
     let mut allowance = budget.min(512);
-    if let Some((marker_start, marker_end)) = span.marker {
-        let (marker, represented, _) = excerpt(source, marker_start, marker_end, budget)?;
-        if represented != marker_end {
+    if let Some(marker) = span.marker {
+        let rendered_marker = excerpt(source, marker.start, marker.end, budget)?;
+        if rendered_marker.next_source_byte != marker.end {
             return Ok(None);
         }
-        allowance = budget.min(512.max(marker.len()));
-        let prefix_budget = (allowance - marker.len()) / 2;
+        allowance = budget.min(512.max(rendered_marker.text.len()));
+        let prefix_budget = (allowance - rendered_marker.text.len()) / 2;
         let mut prefix = [0; 128];
-        let length = (marker_start - start) as usize;
+        let length = (marker.start - start) as usize;
         read_exact(source, start, &mut prefix[..length])?;
         let mut tokens = Vec::new();
         let mut offset = 0;
         while offset < length {
-            let (character, consumed, _) = source_character(&prefix[offset..length]);
-            tokens.push((offset, escape(character).len()));
-            offset += consumed;
+            let decoded = source_character(&prefix[offset..length]);
+            tokens.push(PrefixToken {
+                source_offset: offset,
+                escaped_bytes: escape(decoded.character).len(),
+            });
+            offset += decoded.source_bytes;
         }
         let mut escaped = 0;
-        start = marker_start;
-        for (offset, cost) in tokens.into_iter().rev() {
-            if escaped + cost > prefix_budget {
+        start = marker.start;
+        for token in tokens.into_iter().rev() {
+            if escaped + token.escaped_bytes > prefix_budget {
                 break;
             }
-            escaped += cost;
-            start = span.start + offset as u64;
+            escaped += token.escaped_bytes;
+            start = span.start + token.source_offset as u64;
         }
     }
-    let (text, represented, count) = excerpt(source, start, span.end, allowance)?;
-    Ok(Some((start, text, represented, count)))
+    Ok(Some(RenderedContext {
+        start,
+        excerpt: excerpt(source, start, span.end, allowance)?,
+    }))
 }
 
 fn excerpt(
@@ -366,7 +421,7 @@ fn excerpt(
     start: u64,
     end: u64,
     budget: usize,
-) -> Result<(String, u64, usize), Outcome> {
+) -> Result<RenderedExcerpt, Outcome> {
     let mut output = String::new();
     let mut offset = start;
     let mut replacements = 0;
@@ -382,8 +437,8 @@ fn excerpt(
         }
         let index = (offset - block_start) as usize;
         let available = &buffer[index..block_len];
-        let (c, consumed, replacement) = source_character(available);
-        let text = escape(c);
+        let decoded = source_character(available);
+        let text = escape(decoded.character);
         let break_line = segment + text.len() > 2048;
         if output.len() + text.len() + usize::from(break_line) > budget {
             break;
@@ -393,11 +448,19 @@ fn excerpt(
             segment = 0;
         }
         output.push_str(&text);
-        segment = if c == '\n' { 0 } else { segment + text.len() };
-        offset += consumed as u64;
-        replacements += replacement;
+        segment = if decoded.character == '\n' {
+            0
+        } else {
+            segment + text.len()
+        };
+        offset += decoded.source_bytes as u64;
+        replacements += decoded.replacements;
     }
-    Ok((output, offset, replacements))
+    Ok(RenderedExcerpt {
+        text: output,
+        next_source_byte: offset,
+        invalid_utf8_replacements: replacements,
+    })
 }
 
 fn render_window(
@@ -408,20 +471,25 @@ fn render_window(
     budget: usize,
 ) -> Result<Value, Outcome> {
     let length = cursor.end - cursor.start;
-    let (digest, snippets) = inspect(source, length, steps)?;
-    if previous
-        .is_some_and(|p| p.start == cursor.start && p.end == cursor.end && p.digest != digest)
-    {
+    let inspection = inspect(source, length, steps)?;
+    if previous.is_some_and(|p| {
+        p.start == cursor.start && p.end == cursor.end && p.digest != inspection.digest
+    }) {
         return Err(Outcome::SourceChanged);
     }
-    cursor.digest = digest;
-    let (mut text, next, mut replacements) =
-        excerpt(source, cursor.next - cursor.start, length, budget / 2)?;
+    cursor.digest = inspection.digest;
+    let sequential = excerpt(source, cursor.next - cursor.start, length, budget / 2)?;
+    let mut text = sequential.text;
+    let next = sequential.next_source_byte;
+    let mut replacements = sequential.invalid_utf8_replacements;
     let sequential_start = cursor.next;
     cursor.next = cursor.start + next;
-    let mut spans = vec![(sequential_start, cursor.next)];
+    let mut spans = vec![SourceSpan {
+        start: sequential_start,
+        end: cursor.next,
+    }];
     if previous.is_none() {
-        for span in snippets {
+        for span in inspection.contexts {
             if span.start >= sequential_start - cursor.start && span.end <= next {
                 continue;
             }
@@ -429,18 +497,19 @@ fn render_window(
             if remaining < 16 {
                 break;
             }
-            let Some((start, snippet, represented, count)) =
-                context_excerpt(source, &span, remaining)?
-            else {
+            let Some(context) = context_excerpt(source, &span, remaining)? else {
                 continue;
             };
-            if represented == start {
+            if context.excerpt.next_source_byte == context.start {
                 continue;
             }
             text.push_str("\n[window-limited context]\n");
-            text.push_str(&snippet);
-            replacements += count;
-            spans.push((cursor.start + start, cursor.start + represented));
+            text.push_str(&context.excerpt.text);
+            replacements += context.excerpt.invalid_utf8_replacements;
+            spans.push(SourceSpan {
+                start: cursor.start + context.start,
+                end: cursor.start + context.excerpt.next_source_byte,
+            });
         }
     }
     let exhausted = cursor.next == cursor.end;
@@ -463,14 +532,14 @@ fn render_window(
             cursor.total,
             spans
                 .iter()
-                .map(|(a, b)| format!("{a}-{b}"))
+                .map(|span| format!("{}-{}", span.start, span.end))
                 .collect::<Vec<_>>()
                 .join(","),
             raw
         ));
     }
     Ok(
-        json!({"runId":cursor.run,"attempt":cursor.attempt,"jobId":cursor.job,"headSha":cursor.sha,"outcome":outcome,"complete":complete,"extraction":"window-limited","fetched":{"start":cursor.start,"endExclusive":cursor.end,"total":cursor.total},"renderedSpans":spans,"nextSourceByte":cursor.next,"invalidUtf8Replacements":replacements,"continuation":continuation,"text":text}),
+        json!({"runId":cursor.run,"attempt":cursor.attempt,"jobId":cursor.job,"headSha":cursor.sha,"outcome":outcome,"complete":complete,"extraction":"window-limited","fetched":{"start":cursor.start,"endExclusive":cursor.end,"total":cursor.total},"renderedSpans":spans.iter().map(|span| [span.start,span.end]).collect::<Vec<_>>(),"nextSourceByte":cursor.next,"invalidUtf8Replacements":replacements,"continuation":continuation,"text":text}),
     )
 }
 
@@ -484,18 +553,21 @@ fn acquire(
     download: &mut Download<'_>,
 ) -> Result<sd::Response, Outcome> {
     let window = if let Some(c) = previous {
-        let (start, length) = if c.next == c.end {
-            (
-                c.start.saturating_sub(u64::from(WINDOW)),
-                c.start.min(u64::from(WINDOW)) as u32,
-            )
+        let offset = if c.next == c.end {
+            sd::OffsetWindow {
+                start: c.start.saturating_sub(u64::from(WINDOW)),
+                length: c.start.min(u64::from(WINDOW)) as u32,
+            }
         } else {
-            (c.start, (c.end - c.start) as u32)
+            sd::OffsetWindow {
+                start: c.start,
+                length: (c.end - c.start) as u32,
+            }
         };
-        if length == 0 {
+        if offset.length == 0 {
             return Err(Outcome::IncompleteRead);
         }
-        sd::Window::Offset(sd::OffsetWindow { start, length })
+        sd::Window::Offset(offset)
     } else {
         sd::Window::Tail(WINDOW)
     };
@@ -814,26 +886,27 @@ mod tests {
         let mut bytes = b"\xff\x1b\0\r\n\t".to_vec();
         bytes
             .extend_from_slice("\u{0085}\u{202e}λ https://attacker.invalid/ run curl\n".as_bytes());
-        let (text, next, count) = excerpt(
+        let rendered = excerpt(
             &mut |o, b| source(&bytes, o, b),
             0,
             bytes.len() as u64,
             4096,
         )
         .unwrap();
-        assert_eq!(next, bytes.len() as u64);
-        assert_eq!(count, 1);
+        let text = &rendered.text;
+        assert_eq!(rendered.next_source_byte, bytes.len() as u64);
+        assert_eq!(rendered.invalid_utf8_replacements, 1);
         assert!(text.contains("�\\u{001b}\\u{0000}\\u{000d}\n\t\\u{0085}\\u{202e}λ"));
         assert!(text.contains("https://attacker.invalid/ run curl"));
         for budget in 1..20 {
-            let (_, next, _) = excerpt(
+            let rendered = excerpt(
                 &mut |o, b| source("λ\u{202e}".as_bytes(), o, b),
                 0,
                 5,
                 budget,
             )
             .unwrap();
-            assert!([0, 2, 5].contains(&next));
+            assert!([0, 2, 5].contains(&rendered.next_source_byte));
         }
     }
     #[test]

@@ -1,28 +1,21 @@
 # dekopon-brokerd — the only process in this example that holds any authority.
 #
-# It owns the socket, policy, constraint sets, GitHub credential, and audit chain. The gateway
-# holds none of those; it holds Slack credentials and access to a model endpoint.
 #
 # Hygiene, all checked at startup and all fatal:
 #   chmod 0600 broker.yaml policies.cedar
 #   chmod 0600 broker-credentials.yaml     # 0o077 — group/world *readable* is refused too
-#   chmod 0700 ~/.local/run/dekopon ~/.local/state/dekopon
+#   chmod 0700 ~/.local/run/dekopon ~/.local/share/dekopon-assets
 # Every relative path below resolves against this file's own directory, so the example runs from a
 # checkout without editing repository paths. The absolute `/home/xavier/...` paths are runtime
 # state and are the ones to change.
 apiVersion: dekopon.dev/brokerd/v1alpha1
 
 socketPath: /home/xavier/.local/run/dekopon/broker.sock
-auditPath: /home/xavier/.local/state/dekopon/audit.jsonl
-checkpointPath: /home/xavier/.local/state/dekopon/audit-checkpoint.json
-checkpointLockPath: /home/xavier/.local/state/dekopon/audit-checkpoint.lock
 
 assets:
   rootPath: /home/xavier/.local/share/dekopon-assets
   maxInFlightBytes: 67108864
 
-brokerPrincipal: local-broker
-policyRevision: pr-summarizer-linter-2026-01
 
 # Copy broker-credentials.yaml.example, fill in the PAT, and `chmod 600` it. Startup fails closed
 # if it is missing, group-readable, or names no `github-pat`.
@@ -50,149 +43,114 @@ identities:
       # Segment-boundary prefixes, service name first. This lets the gateway name Slack subjects
       # in this workspace; it resolves none of them to a principal.
       namespaces: [slack.t0123abcd]
-      # Chat operations additionally bind the configured transport/channel/conversation. This
-      # route is DM-only; transport-wide breadth avoids owner config depending on Slack's DM ID.
-      chatScopes:
-        - breadth: transportWide
-          kind: slack
-          transport: workspace-slack
+principals:
+  maintainer:
+    subjects: [slack.t0123abcd.u0123abcd]
 
-identityMappings:
-  # The only place a Slack user becomes a principal. An unmapped sender reaches nothing.
-  - subject: slack.t0123abcd.u0123abcd
-    principal: maintainer
+hostLimits:
+  maxOutputBytes: 4194304
 
-constraintSets:
-  # One entry per capability policy may reach. A capability with no entry is denied
-  # `unconstrained-capability` before Cedar is consulted.
-  #
-  # Every read also carries `credential: github-pat`: a private repository returns 404 without
-  # authentication. The credential is destination-bound to api.github.com and injected inside the
-  # broker's native HTTP engine; the model, shell session, and guest component never observe it.
-  gh.content.read:
-    provider: gh
-    effect: read-only
-    risk: Low
-    credential: github-pat
-    constraints:
-      timeoutMs: 10000
-      maxOutputBytes: 262144
-      http:
-        allowedHosts: [api.github.com]
-        allowedMethods: [GET]
-        maxRequests: 1
-        maxRequestBytes: 16384
-        maxResponseBytes: 2097152
-        allowPlaintextLoopback: false
-  gh.pull-request.read:
-    provider: gh
-    effect: read-only
-    risk: Low
-    credential: github-pat
-    constraints:
-      timeoutMs: 10000
-      maxOutputBytes: 32768
-      http:
-        allowedHosts: [api.github.com]
-        allowedMethods: [GET]
-        maxRequests: 2
-        maxRequestBytes: 16384
-        maxResponseBytes: 262144
-        allowPlaintextLoopback: false
-  gh.pull-request.diff:
-    provider: gh
-    effect: read-only
-    risk: Low
-    credential: github-pat
-    constraints:
-      timeoutMs: 10000
-      maxOutputBytes: 262144
-      http:
-        allowedHosts: [api.github.com]
-        allowedMethods: [GET]
-        maxRequests: 1
-        maxRequestBytes: 16384
-        maxResponseBytes: 2097152
-        allowPlaintextLoopback: false
-  gh.pull-request.status:
-    provider: gh
-    effect: read-only
-    risk: Low
-    credential: github-pat
-    constraints:
-      timeoutMs: 30000
-      maxOutputBytes: 131072
-      http:
-        allowedHosts: [api.github.com]
-        allowedMethods: [GET]
-        maxRequests: 10
-        maxRequestBytes: 16384
-        maxResponseBytes: 4194304
-        allowPlaintextLoopback: false
-  gh.pull-request.comment:
-    provider: gh
-    effect: external-write
-    risk: Medium
-    credential: github-pat
-    constraints:
-      timeoutMs: 15000
-      maxOutputBytes: 8192
-      http:
-        allowedHosts: [api.github.com]
-        # The write pre-reads the pull request, then posts one COMMENT review pinned to that head.
-        allowedMethods: [GET, POST]
-        maxRequests: 2
-        maxRequestBytes: 16384
-        maxResponseBytes: 262144
-        allowPlaintextLoopback: false
+capabilities:
+  gh:
+    capabilities:
+      # One entry per capability policy may reach. A capability with no entry is denied
+      # `unconstrained-capability` before Cedar is consulted.
+      #
+      # Every read also carries `credential: github-pat`: a private repository returns 404 without
+      # authentication. The credential is destination-bound to api.github.com and injected inside the
+      # broker's native HTTP engine; the model, shell session, and guest component never observe it.
+      gh.content.read:
+        credential: github-pat
+        constraints:
+          timeoutMs: 10000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [GET]
+            maxRequests: 1
+            maxRequestBytes: 16384
+            maxResponseBytes: 2097152
+            allowPlaintextLoopback: false
+      gh.pull-request.read:
+        credential: github-pat
+        constraints:
+          timeoutMs: 10000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [GET]
+            maxRequests: 2
+            maxRequestBytes: 16384
+            maxResponseBytes: 262144
+            allowPlaintextLoopback: false
+      gh.pull-request.diff:
+        credential: github-pat
+        constraints:
+          timeoutMs: 10000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [GET]
+            maxRequests: 1
+            maxRequestBytes: 16384
+            maxResponseBytes: 2097152
+            allowPlaintextLoopback: false
+      gh.pull-request.status:
+        credential: github-pat
+        constraints:
+          timeoutMs: 30000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [GET]
+            maxRequests: 10
+            maxRequestBytes: 16384
+            maxResponseBytes: 4194304
+            allowPlaintextLoopback: false
+      gh.pull-request.comment:
+        credential: github-pat
+        constraints:
+          timeoutMs: 15000
+          http:
+            allowedHosts: [api.github.com]
+            # The write pre-reads the pull request, then posts one COMMENT review pinned to that head.
+            allowedMethods: [GET, POST]
+            maxRequests: 2
+            maxRequestBytes: 16384
+            maxResponseBytes: 262144
+            allowPlaintextLoopback: false
 
-  gh.run.list:
-    provider: gh
-    effect: read-only
-    risk: Low
-    credential: github-pat
-    constraints:
-      timeoutMs: 30000
-      maxOutputBytes: 4194304
-      http:
-        allowedHosts: [api.github.com]
-        allowedMethods: [GET]
-        maxRequests: 21
-        maxRequestBytes: 16384
-        maxResponseBytes: 4194304
-        allowPlaintextLoopback: false
-  gh.run.read:
-    provider: gh
-    effect: read-only
-    risk: Low
-    credential: github-pat
-    constraints:
-      timeoutMs: 30000
-      maxOutputBytes: 4194304
-      http:
-        allowedHosts: [api.github.com]
-        allowedMethods: [GET]
-        maxRequests: 29
-        maxRequestBytes: 16384
-        maxResponseBytes: 4194304
-        allowPlaintextLoopback: false
+      gh.run.list:
+        credential: github-pat
+        constraints:
+          timeoutMs: 30000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [GET]
+            maxRequests: 21
+            maxRequestBytes: 16384
+            maxResponseBytes: 4194304
+            allowPlaintextLoopback: false
+      gh.run.read:
+        credential: github-pat
+        constraints:
+          timeoutMs: 30000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [GET]
+            maxRequests: 29
+            maxRequestBytes: 16384
+            maxResponseBytes: 4194304
+            allowPlaintextLoopback: false
 
-  gh.actions.logs.read:
-    provider: gh
-    effect: read-only
-    risk: Low
-    credential: github-pat
-    constraints:
-      timeoutMs: 30000
-      maxOutputBytes: 16384
-      http:
-        allowedHosts: [api.github.com]
-        allowedMethods: [GET]
-        maxRequests: 32
-        maxRequestBytes: 16384
-        maxResponseBytes: 131072
-        signedDownload: github-actions-logs-v1
-        allowPlaintextLoopback: false
+      gh.actions.logs.read:
+        credential: github-pat
+        constraints:
+          timeoutMs: 30000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [GET]
+            maxRequests: 32
+            maxRequestBytes: 16384
+            maxResponseBytes: 131072
+            signedDownload: github-actions-logs-v1
+            allowPlaintextLoopback: false
 
 # Optional. Uncomment to export broker spans; the ingest token is read from
 # OTEL_EXPORTER_OTLP_HEADERS by the SDK and never appears in this file.
