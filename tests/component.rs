@@ -83,7 +83,7 @@ fn manifest_keeps_read_and_write_grants_independent() {
             .iter()
             .filter(|c| c.risk == RiskLevel::High)
             .count(),
-        2
+        3
     );
     assert!((<Http as Needs>::IMPORTS).contains(ImportSet::HTTP));
     assert_eq!(<Gh as Provider>::COMMAND_WORDS, &["gh"]);

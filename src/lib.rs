@@ -335,7 +335,7 @@ fn capabilities() -> Vec<ProviderCapability> {
         write(
             ids::WORKFLOW_RUN,
             "Bounded workflow.run (at most 3 requests)",
-            RiskLevel::Medium,
+            RiskLevel::High,
             workflows::schema(ids::WORKFLOW_RUN),
         ),
         read(
@@ -1664,7 +1664,11 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             high_risk,
-            vec!["gh.pull-request.approve", "gh.pull-request.merge"]
+            vec![
+                "gh.workflow.run",
+                "gh.pull-request.approve",
+                "gh.pull-request.merge"
+            ]
         );
     }
 

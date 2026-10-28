@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-pub(crate) const FIELDS: &str = "id,name,path,state";
+pub(crate) const FIELDS: &str = "id,name,path,state,dynamic";
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ListInput {
@@ -43,6 +43,34 @@ struct Input {
 struct InputField {
     name: String,
     value: String,
+}
+struct StdinInputs(Vec<InputField>);
+impl<'de> Deserialize<'de> for StdinInputs {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct InputsVisitor;
+        impl<'de> serde::de::Visitor<'de> for InputsVisitor {
+            type Value = StdinInputs;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("an object with unique string input names")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut inputs: Vec<InputField> = Vec::new();
+                while let Some((name, value)) = map.next_entry::<String, String>()? {
+                    if inputs.len() >= 25 || inputs.iter().any(|field| field.name == name) {
+                        return Err(serde::de::Error::custom(
+                            "duplicate or excessive workflow inputs",
+                        ));
+                    }
+                    inputs.push(InputField { name, value });
+                }
+                Ok(StdinInputs(inputs))
+            }
+        }
+        deserializer.deserialize_map(InputsVisitor)
+    }
 }
 fn input_map(inputs: &[InputField]) -> Result<BTreeMap<&str, &str>, ProviderError> {
     if inputs.len() > 25 {
@@ -88,6 +116,7 @@ impl Input {
         input_map(&self.inputs)?;
         if (id != crate::ids::WORKFLOW_RUN && (!self.inputs.is_empty() || self.stdin_inputs))
             || (id != crate::ids::WORKFLOW_READ && self.yaml)
+            || (id == crate::ids::WORKFLOW_READ && self.reference.is_some() && !self.yaml)
             || ((id == crate::ids::WORKFLOW_ENABLE || id == crate::ids::WORKFLOW_DISABLE)
                 && self.reference.is_some())
             || (self.stdin_inputs && !self.inputs.is_empty())
@@ -125,14 +154,8 @@ fn row(value: &Value) -> Result<Value, ProviderError> {
         return Err(invalid_response());
     }
     let path = value["path"].as_str().ok_or_else(invalid_response)?;
-    let file = path
-        .strip_prefix(".github/workflows/")
-        .ok_or_else(invalid_response)?;
-    Workflow::File(file.to_owned())
-        .validate()
-        .map_err(|_| invalid_response())?;
     Ok(
-        json!({"id":actions::positive(value,"id")?,"name":actions::text(value,"name",256)?,"path":path,"state":state}),
+        json!({"id":actions::positive(value,"id")?,"name":actions::text(value,"name",256)?,"path":actions::clean(path,1024),"state":state,"dynamic":path.starts_with("dynamic/")}),
     )
 }
 pub(crate) fn execute(
@@ -157,12 +180,8 @@ pub(crate) fn execute(
         if bytes.len() > 4096 {
             return Err(invalid_input());
         }
-        let inputs: BTreeMap<String, String> =
-            serde_json::from_slice(&bytes).map_err(|_| invalid_input())?;
-        let inputs = inputs
-            .into_iter()
-            .map(|(name, value)| InputField { name, value })
-            .collect::<Vec<_>>();
+        let inputs: StdinInputs = serde_json::from_slice(&bytes).map_err(|_| invalid_input())?;
+        let inputs = inputs.0;
         input_map(&inputs)?;
         input["inputs"] = json!(inputs);
         input
@@ -279,7 +298,7 @@ pub(crate) fn run(
             }
         }
         Workflow::File(file) => {
-            if workflow["path"] != format!(".github/workflows/{file}") {
+            if raw["path"] != format!(".github/workflows/{file}") {
                 return Err(invalid_response());
             }
         }
@@ -288,11 +307,15 @@ pub(crate) fn run(
     if id == crate::ids::WORKFLOW_READ {
         let mut result = workflow;
         if input.yaml {
+            let raw_path = raw["path"].as_str().ok_or_else(invalid_response)?;
+            let file = raw_path
+                .strip_prefix(".github/workflows/")
+                .ok_or(Outcome::Conflict)?;
+            Workflow::File(file.to_owned())
+                .validate()
+                .map_err(|_| ProviderError::from(Outcome::Conflict))?;
             let reference = input.reference.as_deref();
-            let mut target = format!(
-                "{root}/contents/{}",
-                crate::encode_path(result["path"].as_str().ok_or_else(invalid_response)?)
-            );
+            let mut target = format!("{root}/contents/{}", crate::encode_path(raw_path));
             if let Some(reference) = reference {
                 target.push_str(&format!("?ref={}", crate::percent_encode(reference)));
             }
@@ -300,7 +323,7 @@ pub(crate) fn run(
             use base64::Engine;
             if content["encoding"] != "base64"
                 || content["type"] != "file"
-                || content["path"] != result["path"]
+                || content["path"] != raw["path"]
             {
                 return Err(invalid_response());
             }
@@ -327,15 +350,16 @@ pub(crate) fn run(
             let runs = raw["workflow_runs"]
                 .as_array()
                 .ok_or_else(invalid_response)?;
-            if runs.len() > 3 {
-                return Err(invalid_response());
-            }
+            let total = raw["total_count"].as_u64().ok_or_else(invalid_response)?;
+            let incomplete = runs.len() as u64 != total.min(3);
+            let returned = runs.len().min(3);
             result["runs"] = json!(
                 runs.iter()
+                    .take(3)
                     .map(|v| actions::run_row(v, None, None))
                     .collect::<Result<Vec<_>, _>>()?
             );
-            result["coverage"] = json!({"scope":"recent-runs","returnedCount":runs.len(),"total_count":raw["total_count"],"incomplete":false,"notes":["recent-three-only"]});
+            result["coverage"] = json!({"scope":"recent-runs","returnedCount":returned,"total_count":total,"incomplete":incomplete,"reasons":if incomplete {vec!["count-mismatch"]} else {vec![]},"notes":["recent-three-only"]});
         }
         result["requestsUsed"] = json!(reads.used);
         return Ok(result);

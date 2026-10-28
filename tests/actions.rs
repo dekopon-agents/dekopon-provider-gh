@@ -2679,9 +2679,13 @@ async fn b4b_invalid_inputs_and_refused_workflow_web_never_send_http() {
         ("gh.workflow.run", json!({"workflow":"../ci.yml"})),
         (
             "gh.workflow.run",
-            json!({"workflow":9,"inputs":{"bad\nkey":"x"}}),
+            json!({"workflow":9,"inputs":[{"name":"bad\nkey","value":"x"}]}),
         ),
-        ("gh.workflow.read", json!({"workflow":9,"ref":"bad?ref"})),
+        (
+            "gh.workflow.read",
+            json!({"workflow":9,"ref":"bad?ref","yaml":true}),
+        ),
+        ("gh.workflow.read", json!({"workflow":9,"ref":"main"})),
         ("gh.cache.delete", json!({"cacheId":0})),
         ("gh.cache.delete", json!({"all":true,"key":"x"})),
         ("gh.cache.list", json!({"key":"bad\nkey"})),
@@ -2728,14 +2732,75 @@ async fn b4b_state_conflicts_and_head_mismatches_stop_before_any_mutation() {
         assert_eq!(status, 3);
         assert!(out.is_empty());
     }
-    let (status, _, out) = invoke(
+    let (status, error, out) = invoke(
         "gh.run.delete",
         json!({"owner":"octo","repo":"hello","runId":7,"expectedHeadSha":"b".repeat(40)}),
         start(),
     )
     .await;
-    assert_ne!(status, 0);
+    assert_eq!(status, 1);
+    assert_eq!(error, "run head differs from expected SHA\n");
     assert!(out.is_empty());
+    for (id, extra, run, job) in [
+        (
+            "gh.run.rerun",
+            json!({}),
+            {
+                let mut run = run_body(2);
+                run["status"] = json!("in_progress");
+                run["conclusion"] = Value::Null;
+                run
+            },
+            None,
+        ),
+        (
+            "gh.run.delete",
+            json!({}),
+            {
+                let mut run = run_body(2);
+                run["status"] = json!("queued");
+                run["conclusion"] = Value::Null;
+                run
+            },
+            None,
+        ),
+        (
+            "gh.run.rerun",
+            json!({"failed":true}),
+            {
+                let mut run = run_body(2);
+                run["conclusion"] = json!("success");
+                run
+            },
+            None,
+        ),
+        (
+            "gh.run.rerun",
+            json!({"job":11}),
+            run_body(2),
+            Some(job_body(1, false)),
+        ),
+    ] {
+        let mut input = json!({"owner":"octo","repo":"hello","runId":7});
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let mut steps = vec![
+            get(ROOT, json!({"id":42})),
+            get(&format!("{ROOT}/actions/runs/7"), run),
+        ];
+        let expected = if let Some(job) = job {
+            steps.push(get(&format!("{ROOT}/actions/jobs/11"), job));
+            "endpoint returned an invalid resource\n"
+        } else {
+            "operation does not apply to the observed target state\n"
+        };
+        let (status, error, out) = invoke(id, input, steps).await;
+        assert_eq!(status, 3, "{id}: {error}");
+        assert_eq!(error, expected);
+        assert!(out.is_empty());
+    }
     for (id, state) in [
         ("gh.workflow.enable", "active"),
         ("gh.workflow.disable", "disabled_manually"),
@@ -2890,6 +2955,7 @@ async fn b4b_dispatch_failures_are_distinct_and_never_retry_the_write_or_echo_gi
 async fn b4b_hostile_workflow_and_cache_fields_are_bounded_and_inconsistent_pages_are_incomplete() {
     let mut workflow = b4b_workflow("active");
     workflow["name"] = json!("\u{1b}x".repeat(1000));
+    workflow["path"] = json!("dynamic/".to_owned() + &"x".repeat(1500) + "\u{1b}\n");
     let (status, error, out) = invoke(
         "gh.workflow.list",
         json!({"owner":"octo","repo":"hello"}),
@@ -2904,6 +2970,12 @@ async fn b4b_hostile_workflow_and_cache_fields_are_bounded_and_inconsistent_page
     .await;
     assert_eq!(status, 0, "{error}");
     let out: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(out["workflows"][0]["dynamic"], true);
+    let path = out["workflows"][0]["path"].as_str().unwrap();
+    assert!(path.len() < 1120);
+    assert!(!path.contains('\u{1b}'));
+    assert_eq!(path.matches('\n').count(), 1);
+    assert!(path.ends_with("[dekopon: truncated to 1024 bytes of 1508]"));
     let name = out["workflows"][0]["name"].as_str().unwrap();
     assert!(!name.contains('\u{1b}'));
     assert!(name.len() < 340);
@@ -2942,4 +3014,211 @@ async fn b4b_workflow_and_cache_inherited_repository_flags_preserve_the_same_pro
             assert_eq!(b4b_proposal(&argv, false).await, expected);
         }
     }
+}
+
+fn b4b_dynamic_workflow(state: &str) -> Value {
+    json!({"id":357596537,"name":"Dependabot Updates","path":"dynamic/dependabot/dependabot-updates","state":state})
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_file_and_dynamic_workflows_are_listed_and_dynamic_yaml_stops_after_metadata() {
+    let mut file = b4b_workflow("active");
+    let mut dynamic = b4b_dynamic_workflow("active");
+    let (status, error, out) = invoke(
+        "gh.workflow.list",
+        json!({"owner":"octo","repo":"hello"}),
+        vec![
+            get(ROOT, json!({"id":42})),
+            get(
+                &format!("{ROOT}/actions/workflows?page=1&per_page=100"),
+                json!({"total_count":2,"workflows":[file.clone(),dynamic.clone()]}),
+            ),
+        ],
+    )
+    .await;
+    assert_eq!(status, 0, "{error}");
+    file["dynamic"] = json!(false);
+    dynamic["dynamic"] = json!(true);
+    let out: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(out["workflows"], json!([file, dynamic]));
+    assert_eq!(out["requestsUsed"], 2);
+    let (status, error, out) = invoke(
+        "gh.workflow.read",
+        json!({"owner":"octo","repo":"hello","workflow":357596537,"yaml":true}),
+        vec![
+            get(ROOT, json!({"id":42})),
+            get(
+                &format!("{ROOT}/actions/workflows/357596537"),
+                b4b_dynamic_workflow("active"),
+            ),
+        ],
+    )
+    .await;
+    assert_eq!(status, 3);
+    assert_eq!(
+        error,
+        "operation does not apply to the observed target state\n"
+    );
+    assert!(out.is_empty());
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_dynamic_workflow_ids_reach_fixed_state_and_dispatch_endpoints() {
+    for (verb, state, method, suffix, body) in [
+        (
+            "run",
+            "active",
+            "POST",
+            "dispatches",
+            json!({"ref":"main","inputs":{}}),
+        ),
+        ("enable", "disabled_manually", "PUT", "enable", Value::Null),
+        ("disable", "active", "PUT", "disable", Value::Null),
+    ] {
+        let (status, error, out) = invoke(
+            &format!("gh.workflow.{verb}"),
+            json!({"owner":"octo","repo":"hello","workflow":357596537}),
+            vec![
+                get(ROOT, json!({"id":42,"default_branch":"main"})),
+                get(
+                    &format!("{ROOT}/actions/workflows/357596537"),
+                    b4b_dynamic_workflow(state),
+                ),
+                b4b_write(
+                    &format!("{ROOT}/actions/workflows/357596537/{suffix}"),
+                    method,
+                    body,
+                    204,
+                ),
+            ],
+        )
+        .await;
+        assert_eq!(status, 0, "{verb}: {error}");
+        let out: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(out["workflow"]["dynamic"], true);
+        assert_eq!(out["requestsUsed"], 3);
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_recent_run_coverage_validates_totals_and_marks_inconsistent_samples_incomplete() {
+    for (total, sample, incomplete) in [
+        (0, 0, false),
+        (1, 1, false),
+        (5, 3, false),
+        (5, 1, true),
+        (1, 2, true),
+        (0, 1, true),
+        (3, 4, true),
+    ] {
+        let runs = (0..sample)
+            .map(|n| {
+                let mut row = run_body(2);
+                row["id"] = json!(7 + n);
+                row["workflow_id"] = json!(357596537);
+                row
+            })
+            .collect::<Vec<_>>();
+        let (status, error, out) = invoke(
+            "gh.workflow.read",
+            json!({"owner":"octo","repo":"hello","workflow":357596537}),
+            vec![
+                get(ROOT, json!({"id":42})),
+                get(
+                    &format!("{ROOT}/actions/workflows/357596537"),
+                    b4b_dynamic_workflow("active"),
+                ),
+                get(
+                    &format!("{ROOT}/actions/workflows/357596537/runs?per_page=3&page=1"),
+                    json!({"total_count":total,"workflow_runs":runs}),
+                ),
+            ],
+        )
+        .await;
+        assert_eq!(status, if incomplete { 3 } else { 0 }, "{error}");
+        let out: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(out["runs"].as_array().unwrap().len(), sample.min(3));
+        assert_eq!(out["coverage"]["total_count"], total);
+        assert_eq!(out["coverage"]["incomplete"], incomplete);
+        assert_eq!(out["coverage"]["notes"], json!(["recent-three-only"]));
+        assert_eq!(
+            out["coverage"]["reasons"],
+            if incomplete {
+                json!(["count-mismatch"])
+            } else {
+                json!([])
+            }
+        );
+        assert_eq!(out["requestsUsed"], 3);
+    }
+    for total in [
+        Value::Null,
+        json!(-1),
+        json!(1.5),
+        json!("many"),
+        json!({"untrusted":"x".repeat(10000)}),
+    ] {
+        let (status, _, out) = invoke(
+            "gh.workflow.read",
+            json!({"owner":"octo","repo":"hello","workflow":9}),
+            vec![
+                get(ROOT, json!({"id":42})),
+                get(
+                    &format!("{ROOT}/actions/workflows/9"),
+                    b4b_workflow("active"),
+                ),
+                get(
+                    &format!("{ROOT}/actions/workflows/9/runs?per_page=3&page=1"),
+                    json!({"total_count":total,"workflow_runs":[]}),
+                ),
+            ],
+        )
+        .await;
+        assert_eq!(status, 3);
+        assert!(out.is_empty());
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_duplicate_stdin_names_and_view_refs_without_yaml_are_refused_before_http() {
+    let (status, _, out) = invoke_with_stdin(
+        "gh.workflow.run",
+        json!({"owner":"octo","repo":"hello","workflow":9,"_stdinInputs":true}),
+        vec![],
+        Some(br#"{"mode":"safe","mode":"deploy"}"#.to_vec()),
+    )
+    .await;
+    assert_eq!(status, 2);
+    assert!(out.is_empty());
+    for flag in ["--ref", "-r"] {
+        let args = ["workflow", "view", "9", "-R", "octo/hello", flag, "main"].map(str::to_owned);
+        match registry()
+            .await
+            .run_command("gh", &args, false)
+            .await
+            .unwrap()
+        {
+            CommandRunOutcome::Rendered { status, .. } => assert_eq!(status, 2),
+            CommandRunOutcome::Failed { error } => assert_eq!(error.code, "usage"),
+            other => panic!("view ref requires YAML: {other:?}"),
+        }
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_key_cache_deletion_rejects_more_than_twenty_discovered_targets_without_writing() {
+    let rows = (1..=21).map(b4b_cache).collect::<Vec<_>>();
+    let (status, error, out) = invoke(
+        "gh.cache.delete",
+        json!({"owner":"octo","repo":"hello","key":"build-linux"}),
+        vec![
+            get(ROOT, json!({"id":42})),
+            get(
+                &format!("{ROOT}/actions/caches?key=build-linux&page=1&per_page=100"),
+                json!({"total_count":21,"actions_caches":rows}),
+            ),
+        ],
+    )
+    .await;
+    assert_eq!(status, 3);
+    assert_eq!(
+        error,
+        "Actions discovery is incomplete; no further writes attempted\n"
+    );
+    assert!(out.is_empty());
 }

@@ -473,21 +473,26 @@ these endpoints, so the guard checks the pre-read only. Writes are never retried
 
 `gh workflow list -R OWNER/REPO` defaults to 50 active workflows; `--all/-a` includes
 disabled states and `--limit/-L` accepts 1–100. Closed `--json` fields are
-`id,name,path,state`. `gh workflow view WORKFLOW` reads metadata and at most three
-recent runs; its coverage scope explicitly describes that sample. `--yaml/-y` reads
+`id,name,path,state,dynamic`. Paths are bounded display text; built-in `dynamic/` workflows
+carry `dynamic: true` and can be selected by numeric id. `gh workflow view WORKFLOW` reads metadata and at most three
+recent runs; its coverage scope explicitly describes that sample. The nonnegative integer
+`total_count` must agree with the returned sample of up to three runs; a mismatch is incomplete. `--yaml/-y` reads
 only the fixed `.github/workflows/FILE` content, optionally at `--ref/-r REF`.
+`--ref` requires `--yaml`. Dynamic workflows have no repository YAML and return a
+conflict after metadata reads. Contents requests accept only validated workflow file paths.
 YAML is untrusted text, bounded to 64 KiB with the standard truncation marker.
 Workflow selectors are positive numeric ids or single `.yml`/`.yaml` filenames;
 display-name lookup and interactive selection are unavailable. `--web` remains refused.
 
 `gh workflow run WORKFLOW -R OWNER/REPO` pre-reads repository and workflow state,
 then dispatches once, using `--ref/-r` or the repository default branch (three requests).
+This capability is High risk: the selected ref runs repository workflow code with its secrets.
 `--field/-F NAME=VALUE` and `--raw-field/-f NAME=VALUE` build a string inputs map;
 file reads such as `-F name=@file` refuse. `--json` instead reads a string-valued JSON
 object from stdin, only after authorization, using the same bounded-input rule as
 `--body-file -`. It cannot combine with field flags. Direct typed `inputs` uses a closed array of `{name,value}` entries; argv and stdin
 are converted to that shape before dispatch. Input maps allow at most 25 entries,
-128-byte identifier keys and 4 KiB total serialized input. Duplicate field names refuse.
+128-byte identifier keys and 4 KiB total serialized input. Duplicate field names refuse, including repeated keys in JSON stdin.
 No workflow contents are read: GitHub's 422 dispatch validation is the typed validation
 outcome. `gh workflow enable/disable WORKFLOW` each pre-read workflow state then issue
 one PUT (three requests); already-active enable and already-disabled disable refuse.
@@ -504,7 +509,8 @@ failed successor pages and exhausted budgets are explicitly incomplete.
 `gh cache delete ID|KEY -R OWNER/REPO` first discovers cache identities through at most
 ten pages; id deletion uses one DELETE by id, key deletion one DELETE by exact key,
 optionally with `--ref/-r` (at most twelve requests). Numeric argv selects an id;
-direct typed input can explicitly select a numeric key. `--all/-a` requires complete
+direct typed input can explicitly select a numeric key. Key deletion requires complete
+discovery of at most twenty matching targets before its single write. `--all/-a` requires complete
 discovery of at most twenty targets before deleting each id once (at most 31 requests).
 Larger or inconsistent discovery returns incomplete before any deletion.
 `--succeed-on-no-caches` makes an empty match succeed without a write. A later failure

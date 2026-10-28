@@ -67,7 +67,7 @@ pub(crate) fn workflow_commands() -> Command {
             Command::new("view")
                 .arg(repo())
                 .arg(workflow())
-                .arg(value("ref", Some('r')))
+                .arg(value("ref", Some('r')).requires("yaml"))
                 .arg(flag("yaml", Some('y'))),
         )
         .subcommand(Command::new("enable").arg(repo()).arg(workflow()))

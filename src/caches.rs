@@ -235,6 +235,7 @@ pub(crate) fn run(
         )?;
         deleted.push(id.0);
     } else {
+        all_bound(rows.len())?;
         let mut target = format!(
             "{root}/actions/caches?key={}",
             crate::percent_encode(i.key.as_deref().ok_or_else(invalid_input)?)

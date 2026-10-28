@@ -252,6 +252,46 @@ pub(crate) fn unused(
 mod tests {
     use super::*;
     #[test]
+    fn native_moved_run_head_keeps_the_head_changed_code_after_exactly_two_reads() {
+        use crate::testutil::{json_response, scripted, step};
+        let count = std::rc::Rc::new(std::cell::Cell::new(0));
+        let repository_count = std::rc::Rc::clone(&count);
+        let run_count = std::rc::Rc::clone(&count);
+        let mut send = scripted(vec![
+            step(
+                move |request| {
+                    repository_count.set(repository_count.get() + 1);
+                    assert_eq!(request.method, "GET");
+                    assert_eq!(request.uri, "https://api.github.com/repos/octo/hello");
+                },
+                json_response(200, &json!({"id":42})),
+            ),
+            step(
+                move |request| {
+                    run_count.set(run_count.get() + 1);
+                    assert_eq!(request.method, "GET");
+                    assert_eq!(
+                        request.uri,
+                        "https://api.github.com/repos/octo/hello/actions/runs/7"
+                    );
+                },
+                json_response(
+                    200,
+                    &json!({"id":7,"run_attempt":2,"head_sha":"a".repeat(40),"status":"completed","conclusion":"success","event":"push","name":"CI","display_title":"CI","workflow_id":9,"html_url":"https://github.com/octo/hello/actions/runs/7"}),
+                ),
+            ),
+        ]);
+        let error = run(
+            crate::ids::RUN_DELETE,
+            json!({"owner":"octo","repo":"hello","runId":7,"expectedHeadSha":"b".repeat(40)}),
+            &crate::GITHUB_API,
+            &mut send,
+        )
+        .expect_err("head pin refusal");
+        assert_eq!(error.code(), "head-changed");
+        assert_eq!(count.get(), 2);
+    }
+    #[test]
     fn native_actions_outcomes_match_variants_without_printed_error_dispatch() {
         for (code, repository, expected) in [
             (403, false, Outcome::Permission),

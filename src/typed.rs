@@ -608,7 +608,7 @@ capability!(
     "Bounded workflow.run (at most 3 requests)",
     crate::workflows::unused,
     EffectKind::ExternalWrite,
-    RiskLevel::Medium
+    RiskLevel::High
 );
 
 capability!(
