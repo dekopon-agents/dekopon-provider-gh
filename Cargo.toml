@@ -35,3 +35,12 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "io-util", "
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(gh_foundation_fixture)"] }
+
+[patch.crates-io]
+dekopon-provider-sdk = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
+dekopon-provider-sdk-testkit = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
+dekopon-core = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
+dekopon-capability = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
+dekopon-broker-host = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
+dekopon-broker-protocol = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
+dekopon-http-host = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }

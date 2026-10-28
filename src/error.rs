@@ -54,6 +54,7 @@ impl Failure for ProviderError {
                 Code::new(self.code).exiting(3)
             }
             "unknown-capability" => Code::UNKNOWN_CAPABILITY,
+            "actions-conflict" => Code::new("actions-conflict").exiting(3),
             "merge-conflict" => Code::new("merge-conflict"),
             "pr-closed" => Code::new("pr-closed"),
             "pr-draft" => Code::new("pr-draft"),

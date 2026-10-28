@@ -158,3 +158,126 @@ capabilities:
 #   serviceName: dekopon-brokerd
 #   exportTimeoutMs: 5000
 #   telemetryPayloads: false
+
+# Optional batch 4b grants; uncomment only the individually authorized entries.
+#      gh.run.cancel:
+#        credential: github-pat
+#        constraints:
+#          timeoutMs: 30000
+#          http:
+#            allowedHosts: [api.github.com]
+#            allowedMethods: [GET, POST]
+#            maxRequests: 3
+#            maxRequestBytes: 16384
+#            maxResponseBytes: 4194304
+#            allowPlaintextLoopback: false
+#      gh.run.force-cancel:
+#        credential: github-pat
+#        constraints:
+#          timeoutMs: 30000
+#          http:
+#            allowedHosts: [api.github.com]
+#            allowedMethods: [GET, POST]
+#            maxRequests: 3
+#            maxRequestBytes: 16384
+#            maxResponseBytes: 4194304
+#            allowPlaintextLoopback: false
+#      gh.run.rerun:
+#        credential: github-pat
+#        constraints:
+#          timeoutMs: 30000
+#          http:
+#            allowedHosts: [api.github.com]
+#            allowedMethods: [GET, POST]
+#            maxRequests: 4
+#            maxRequestBytes: 16384
+#            maxResponseBytes: 4194304
+#            allowPlaintextLoopback: false
+#      gh.run.delete:
+#        credential: github-pat
+#        constraints:
+#          timeoutMs: 30000
+#          http:
+#            allowedHosts: [api.github.com]
+#            allowedMethods: [GET, DELETE]
+#            maxRequests: 3
+#            maxRequestBytes: 16384
+#            maxResponseBytes: 4194304
+#            allowPlaintextLoopback: false
+#      gh.workflow.list:
+#        credential: github-pat
+#        constraints:
+#          timeoutMs: 30000
+#          http:
+#            allowedHosts: [api.github.com]
+#            allowedMethods: [GET]
+#            maxRequests: 11
+#            maxRequestBytes: 16384
+#            maxResponseBytes: 4194304
+#            allowPlaintextLoopback: false
+#      gh.workflow.read:
+#        credential: github-pat
+#        constraints:
+#          timeoutMs: 30000
+#          http:
+#            allowedHosts: [api.github.com]
+#            allowedMethods: [GET]
+#            maxRequests: 3
+#            maxRequestBytes: 16384
+#            maxResponseBytes: 4194304
+#            allowPlaintextLoopback: false
+#      gh.workflow.run:
+#        credential: github-pat
+#        constraints:
+#          timeoutMs: 30000
+#          http:
+#            allowedHosts: [api.github.com]
+#            allowedMethods: [GET, POST]
+#            maxRequests: 3
+#            maxRequestBytes: 16384
+#            maxResponseBytes: 4194304
+#            allowPlaintextLoopback: false
+#      gh.workflow.enable:
+#        credential: github-pat
+#        constraints:
+#          timeoutMs: 30000
+#          http:
+#            allowedHosts: [api.github.com]
+#            allowedMethods: [GET, PUT]
+#            maxRequests: 3
+#            maxRequestBytes: 16384
+#            maxResponseBytes: 4194304
+#            allowPlaintextLoopback: false
+#      gh.workflow.disable:
+#        credential: github-pat
+#        constraints:
+#          timeoutMs: 30000
+#          http:
+#            allowedHosts: [api.github.com]
+#            allowedMethods: [GET, PUT]
+#            maxRequests: 3
+#            maxRequestBytes: 16384
+#            maxResponseBytes: 4194304
+#            allowPlaintextLoopback: false
+#      gh.cache.list:
+#        credential: github-pat
+#        constraints:
+#          timeoutMs: 30000
+#          http:
+#            allowedHosts: [api.github.com]
+#            allowedMethods: [GET]
+#            maxRequests: 11
+#            maxRequestBytes: 16384
+#            maxResponseBytes: 4194304
+#            allowPlaintextLoopback: false
+#      gh.cache.delete:
+#        credential: github-pat
+#        constraints:
+#          timeoutMs: 30000
+#          http:
+#            allowedHosts: [api.github.com]
+#            allowedMethods: [GET, DELETE]
+#            maxRequests: 31
+#            maxRequestBytes: 16384
+#            maxResponseBytes: 4194304
+#            allowPlaintextLoopback: false

@@ -2,7 +2,7 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Thirty narrow authentication, repository, pull-request, issue, and Actions capabilities with fixed request shapes, bounded
+Forty-one narrow authentication, repository, pull-request, issue, and Actions capabilities with fixed request shapes, bounded
 output projections, and SHA-pinned review/merge writes. There is deliberately no arbitrary
 `gh api` passthrough: a path-level escape hatch would collapse per-capability policy into
 "everything the credential can reach".
@@ -441,3 +441,89 @@ Storage 403/410 mean download authorization failure/expiry. Incomplete reads, ch
 validators, refused redirects and storage errors exit 3 with safe labels.
 
 Signed storage is covered by scripted signed-download component tests and has no cassette.
+
+## Actions writes, workflows and caches
+
+`gh run cancel RUN -R OWNER/REPO` and `--force` require distinct grants:
+`gh.run.cancel` and `gh.run.force-cancel`. Each reads repository visibility and the run
+before one POST (three requests). Completed runs refuse. `gh run delete RUN` similarly
+pre-reads then performs one DELETE, only for completed runs (three requests).
+`gh run rerun RUN` requires `gh.run.rerun`; `--failed` and `--job/-j ID` are exclusive,
+and `--debug/-d` enables debug logging. Rerun requires a completed run. Selecting a job
+also reads and verifies its run, attempt and head SHA before the POST (four requests;
+otherwise three). Run writes accept `--match-head-commit SHA` / typed `expectedHeadSha`.
+They report the observed attempt and SHA; GitHub provides no atomic SHA condition for
+these endpoints, so the guard checks the pre-read only. Writes are never retried.
+
+`gh workflow list -R OWNER/REPO` defaults to 50 active workflows; `--all/-a` includes
+disabled states and `--limit/-L` accepts 1–100. Closed `--json` fields are
+`id,name,path,state`. `gh workflow view WORKFLOW` reads metadata and at most three
+recent runs; its coverage scope explicitly describes that sample. `--yaml/-y` reads
+only the fixed `.github/workflows/FILE` content, optionally at `--ref/-r REF`.
+YAML is untrusted text, bounded to 64 KiB with the standard truncation marker.
+Workflow selectors are positive numeric ids or single `.yml`/`.yaml` filenames;
+display-name lookup and interactive selection are unavailable. `--web` remains refused.
+
+`gh workflow run WORKFLOW -R OWNER/REPO` pre-reads repository and workflow state,
+then dispatches once, using `--ref/-r` or the repository default branch (three requests).
+`--field/-F NAME=VALUE` and `--raw-field/-f NAME=VALUE` build a string inputs map;
+file reads such as `-F name=@file` refuse. `--json` instead reads a string-valued JSON
+object from stdin, only after authorization, using the same bounded-input rule as
+`--body-file -`. It cannot combine with field flags. Direct typed `inputs` uses a closed array of `{name,value}` entries; argv and stdin
+are converted to that shape before dispatch. Input maps allow at most 25 entries,
+128-byte identifier keys and 4 KiB total serialized input. Duplicate field names refuse.
+No workflow contents are read: GitHub's 422 dispatch validation is the typed validation
+outcome. `gh workflow enable/disable WORKFLOW` each pre-read workflow state then issue
+one PUT (three requests); already-active enable and already-disabled disable refuse.
+
+`gh cache list -R OWNER/REPO` defaults to 30 results (`--limit/-L` 1–100).
+`--key/-k`, `--ref/-r`, `--order/-O asc|desc` and
+`--sort/-S last_accessed_at|created_at|size_in_bytes` are closed filters.
+The default sort is last access descending. Closed `--json` fields are
+`id,key,ref,sizeInBytes,createdAt,lastAccessedAt`. Keys are bounded to 512 bytes.
+Both list capabilities make at most eleven GETs: repository plus ten 100-row pages.
+They reuse Actions coverage: caller-selected limits are notes; count drift, duplicates,
+failed successor pages and exhausted budgets are explicitly incomplete.
+
+`gh cache delete ID|KEY -R OWNER/REPO` first discovers cache identities through at most
+ten pages; id deletion uses one DELETE by id, key deletion one DELETE by exact key,
+optionally with `--ref/-r` (at most twelve requests). Numeric argv selects an id;
+direct typed input can explicitly select a numeric key. `--all/-a` requires complete
+discovery of at most twenty targets before deleting each id once (at most 31 requests).
+Larger or inconsistent discovery returns incomplete before any deletion.
+`--succeed-on-no-caches` makes an empty match succeed without a write. A later failure
+can leave earlier deletions applied; there is no retry or rollback.
+
+New operations distinguish permission/invisible repository, target not found, inapplicable
+state/conflict, rate limit, dispatch validation and incomplete results. GitHub response
+text is untrusted, projected and bounded; upstream error bodies are never echoed.
+Existing run reads retain their existing error and output contract.
+
+Grant each new id separately; none is enabled in the example by default. Every grant
+uses only the existing GitHub API authority, GET for pre-reads, and the listed write
+method. The coordinator's `actions-grants` OWNER-QUEUE item owns deployment grants;
+this PR writes no homelab grant.
+
+| Capability | Effect | Methods | Maximum requests | Fine-grained permission |
+|---|---|---|---:|---|
+| `gh.run.cancel` | external-write | GET, POST | 3 | Actions: Write |
+| `gh.run.force-cancel` | external-write | GET, POST | 3 | Actions: Write |
+| `gh.run.rerun` | external-write | GET, POST | 4 | Actions: Write |
+| `gh.run.delete` | external-write | GET, DELETE | 3 | Actions: Write |
+| `gh.workflow.list` | read-only | GET | 11 | Actions: Read |
+| `gh.workflow.read` | read-only | GET | 3 | Actions: Read; Contents: Read for YAML |
+| `gh.workflow.run` | external-write | GET, POST | 3 | Actions: Write |
+| `gh.workflow.enable` | external-write | GET, PUT | 3 | Actions: Write |
+| `gh.workflow.disable` | external-write | GET, PUT | 3 | Actions: Write |
+| `gh.cache.list` | read-only | GET | 11 | Actions: Read |
+| `gh.cache.delete` | external-write | GET, DELETE | 31 | Actions: Write |
+
+This draft temporarily patches the SDK/testkit and matching test types to
+`sdk/capabilities-64`. It must remain draft until the coordinator announces the SDK
+release, all exact Dekopon pins move together, the patches are removed and gates pass.
+
+Batch 4b recorded four authenticated GETs against `dekopon-agents/gh-parity-scratch`
+with cassette `4308b585`: repository, empty workflow/cache lists and a missing workflow
+read. Scratch has no workflows, so successful workflow/YAML reads and every write are
+covered by scripts, not claimed as live evidence. `tests/cassettes/actions-b4b/` replays
+these reads through the production component and shares the credential-window redaction test.

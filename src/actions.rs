@@ -92,12 +92,12 @@ impl std::fmt::Display for JobId {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum Workflow {
+pub(crate) enum Workflow {
     Id(u64),
     File(String),
 }
 impl Workflow {
-    fn validate(&self) -> Result<(), ProviderError> {
+    pub(crate) fn validate(&self) -> Result<(), ProviderError> {
         match self {
             Self::Id(id) if *id > 0 => Ok(()),
             Self::File(file)
@@ -215,7 +215,7 @@ impl ReadInput {
         selection(self.output.as_deref(), READ_FIELDS)
     }
 }
-fn selection(value: Option<&str>, allowed: &str) -> Result<(), ProviderError> {
+pub(crate) fn selection(value: Option<&str>, allowed: &str) -> Result<(), ProviderError> {
     if let Some(value) = value {
         let mut seen = HashSet::new();
         if value.len() > 512
@@ -251,14 +251,15 @@ fn date_range(s: &str) -> bool {
         .unwrap_or(s))
 }
 
-struct Reads<'a> {
-    base: &'a Base,
-    send: &'a mut dyn FnMut(Request) -> Result<Response, HttpError>,
-    used: usize,
-    max: usize,
+pub(crate) struct Reads<'a> {
+    pub(crate) base: &'a Base,
+    pub(crate) send: &'a mut dyn FnMut(Request) -> Result<Response, HttpError>,
+    pub(crate) used: usize,
+    pub(crate) max: usize,
+    pub(crate) target_errors: bool,
 }
 impl Reads<'_> {
-    fn get(&mut self, path: &str) -> Result<Response, ProviderError> {
+    pub(crate) fn get(&mut self, path: &str) -> Result<Response, ProviderError> {
         if self.used >= self.max {
             return Err(ProviderError::new(
                 "request-ceiling",
@@ -275,13 +276,18 @@ impl Reads<'_> {
         if response.status == 200 {
             return Ok(response);
         }
+        if self.target_errors
+            && let Some(error) = crate::action_writes::status(&response, false)
+        {
+            return Err(error.into());
+        }
         if let Some(error) = action_status(&response) {
             return Err(error.into());
         }
         Err(crate::status_error(&response))
     }
 
-    fn value(&mut self, path: &str) -> Result<Value, ProviderError> {
+    pub(crate) fn value(&mut self, path: &str) -> Result<Value, ProviderError> {
         crate::decode(&self.get(path)?.body)
     }
 }
@@ -297,7 +303,7 @@ fn action_status(response: &Response) -> Option<ActionError> {
 }
 
 #[derive(Default)]
-struct Coverage {
+pub(crate) struct Coverage {
     returned: usize,
     total: Option<u64>,
     reasons: Vec<&'static str>,
@@ -310,11 +316,11 @@ impl Coverage {
             self.reasons.push(reason);
         }
     }
-    fn json(&self) -> Value {
+    pub(crate) fn json(&self) -> Value {
         json!({"returnedCount":self.returned,"total_count":self.total,"incomplete":!self.reasons.is_empty(),"reasons":self.reasons,"notes":self.notes,"pageError":self.page_error})
     }
 }
-fn pages(
+pub(crate) fn pages(
     reads: &mut Reads<'_>,
     path: &str,
     field: &str,
@@ -325,7 +331,7 @@ fn pages(
         Ok(Some(value.clone()))
     })
 }
-fn pages_with(
+pub(crate) fn pages_with(
     reads: &mut Reads<'_>,
     path: &str,
     field: &str,
@@ -410,7 +416,7 @@ fn pages_with(
     coverage.returned = result.len();
     Ok((result, coverage))
 }
-fn root(owner: &str, repo: &str) -> String {
+pub(crate) fn root(owner: &str, repo: &str) -> String {
     format!(
         "/repos/{}/{}",
         crate::percent_encode(owner),
@@ -435,6 +441,7 @@ pub(crate) fn list(
         send,
         used: 0,
         max: ListInput::MAX_REQUESTS,
+        target_errors: false,
     };
     let root = root(&input.owner, &input.repo);
     repository(&mut reads, &root)?;
@@ -530,22 +537,22 @@ pub(crate) fn list(
 fn string<'a>(v: &'a Value, key: &str) -> Result<&'a str, ProviderError> {
     v[key].as_str().ok_or_else(invalid_response)
 }
-fn positive(v: &Value, key: &str) -> Result<u64, ProviderError> {
+pub(crate) fn positive(v: &Value, key: &str) -> Result<u64, ProviderError> {
     v[key]
         .as_u64()
         .filter(|id| *id > 0)
         .ok_or_else(invalid_response)
 }
-fn clean(s: &str, max: usize) -> String {
+pub(crate) fn clean(s: &str, max: usize) -> String {
     crate::marked_text(
         &s.chars().filter(|c| !c.is_control()).collect::<String>(),
         max,
     )
 }
-fn text(v: &Value, key: &str, max: usize) -> Result<String, ProviderError> {
+pub(crate) fn text(v: &Value, key: &str, max: usize) -> Result<String, ProviderError> {
     Ok(clean(string(v, key)?, max))
 }
-fn stamp(v: &Value, key: &str) -> Result<Value, ProviderError> {
+pub(crate) fn stamp(v: &Value, key: &str) -> Result<Value, ProviderError> {
     match &v[key] {
         Value::Null => Ok(Value::Null),
         Value::String(s) if s.len() <= 64 => {
@@ -583,7 +590,7 @@ fn state(v: &Value) -> Result<(&str, Value), ProviderError> {
     }
     Ok((status, conclusion))
 }
-fn run_row(
+pub(crate) fn run_row(
     run: &Value,
     expected_id: Option<u64>,
     expected_attempt: Option<u32>,
@@ -666,6 +673,7 @@ pub(crate) fn read(
         send,
         used: 0,
         max,
+        target_errors: false,
     };
     let root = root(&input.owner, &input.repo);
     repository(&mut reads, &root)?;
@@ -781,13 +789,13 @@ pub(crate) enum LogMetadataError {
 }
 
 struct LogMetadataReads<'a> {
-    base: &'a Base,
-    send: &'a mut dyn FnMut(Request) -> Result<Response, HttpError>,
-    used: usize,
+    pub(crate) base: &'a Base,
+    pub(crate) send: &'a mut dyn FnMut(Request) -> Result<Response, HttpError>,
+    pub(crate) used: usize,
 }
 impl LogMetadataReads<'_> {
     const MAX_REQUESTS: usize = 13;
-    fn get(&mut self, path: &str) -> Result<Response, LogMetadataError> {
+    pub(crate) fn get(&mut self, path: &str) -> Result<Response, LogMetadataError> {
         if self.used >= Self::MAX_REQUESTS {
             return Err(LogMetadataError::RequestLimit);
         }
@@ -812,7 +820,7 @@ impl LogMetadataReads<'_> {
             _ => Err(LogMetadataError::UnexpectedStatus),
         }
     }
-    fn value(&mut self, path: &str) -> Result<Value, LogMetadataError> {
+    pub(crate) fn value(&mut self, path: &str) -> Result<Value, LogMetadataError> {
         serde_json::from_slice(&self.get(path)?.body).map_err(|_| LogMetadataError::InvalidResponse)
     }
     fn jobs(&mut self, path: &str) -> Result<(Vec<Value>, Coverage), LogMetadataError> {
@@ -1476,6 +1484,7 @@ mod tests {
                 send: &mut send,
                 used: 0,
                 max: 1,
+                target_errors: false,
             };
             let error = reads.get("/repos/o/r").expect_err("typed failure");
             assert_eq!(error.code(), expected_code.code());

