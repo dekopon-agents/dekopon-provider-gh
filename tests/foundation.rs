@@ -72,12 +72,10 @@ fn fixture_component() -> std::path::PathBuf {
 fn valid_refusal_argv(command: &str) -> Vec<String> {
     let mut words: Vec<_> = command.split_whitespace().map(str::to_owned).collect();
     let args: &[&str] = match command {
-        "run list" | "pr list" | "issue list" | "repo read-dir" | "pr edit" | "issue edit" => {
-            &["-R", "octo/hello"]
-        }
-        "run view" | "pr view" | "pr checks" | "pr diff" | "issue view" | "issue comment" => {
-            &["7", "-R", "octo/hello"]
-        }
+        "workflow list" | "cache list" | "run list" | "pr list" | "issue list"
+        | "repo read-dir" | "pr edit" | "issue edit" => &["-R", "octo/hello"],
+        "workflow view" | "run view" | "pr view" | "pr checks" | "pr diff" | "issue view"
+        | "issue comment" => &["7", "-R", "octo/hello"],
         "repo read-file" => &["README.md", "-R", "octo/hello"],
         "repo view" => &["octo/hello"],
         "repo list" => &["octo"],
