@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-28
+
+### Added
+
+- Cancel Actions runs with a separately granted force-cancel operation.
+- Delete Actions caches by id, exact key or a bounded complete collection.
+- Delete completed Actions runs after checking their identity and state.
+- Disable workflows after checking their current state.
+- Discover Actions writes, workflow controls and caches from gh actions help.
+- Dispatch active workflows with bounded fields or JSON stdin inputs.
+- Enable workflows after checking their current state.
+- Inspect workflow metadata, recent runs and bounded YAML at a selected ref.
+- List Actions caches with typed filters and bounded coverage.
+- List workflows with bounded coverage and closed JSON fields.
+- Rerun completed Actions runs or selected jobs with optional debug logging.
+- Read bounded Actions job logs with --log, --log-failed and source-byte continuation.
+- Read Actions run history with typed filters and explicit coverage.
+- Inspect run attempts, jobs, failed steps and bounded check annotations without fetching logs.
+
+### Fixed
+
+- Invalid gh JSON selections now name the valid command fields, and leaf help explains field discovery.
+- Report an API 401 on Actions job logs as unauthorized and other unexpected statuses as unexpected-status.
+- Find repeated error markers and long failing-step names that cross a log read chunk.
+
 ## [0.11.1] - 2026-10-26
 
 ### Fixed
