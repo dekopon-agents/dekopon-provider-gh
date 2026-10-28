@@ -34,8 +34,11 @@ use dekopon_provider_sdk::{EffectKind, ProviderCapability, RiskLevel};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
+mod action_writes;
 mod actions;
+mod actions_cli;
 mod auth;
+mod caches;
 pub mod commands;
 mod content;
 mod diff;
@@ -53,6 +56,7 @@ mod reviews;
 mod search;
 pub mod typed;
 mod unavailable;
+mod workflows;
 
 const GITHUB_API: Base = Base::from_static("https://api.github.com");
 
@@ -114,6 +118,17 @@ const MAX_LABELS: usize = 20;
 /// renaming a capability is a compile error rather than an exit code a model discovers
 /// mid-session.
 pub(crate) mod ids {
+    pub(crate) const CACHE_DELETE: &str = "gh.cache.delete";
+    pub(crate) const CACHE_LIST: &str = "gh.cache.list";
+    pub(crate) const WORKFLOW_DISABLE: &str = "gh.workflow.disable";
+    pub(crate) const WORKFLOW_ENABLE: &str = "gh.workflow.enable";
+    pub(crate) const WORKFLOW_RUN: &str = "gh.workflow.run";
+    pub(crate) const WORKFLOW_READ: &str = "gh.workflow.read";
+    pub(crate) const WORKFLOW_LIST: &str = "gh.workflow.list";
+    pub(crate) const RUN_DELETE: &str = "gh.run.delete";
+    pub(crate) const RUN_RERUN: &str = "gh.run.rerun";
+    pub(crate) const RUN_FORCE_CANCEL: &str = "gh.run.force-cancel";
+    pub(crate) const RUN_CANCEL: &str = "gh.run.cancel";
     pub(crate) const RUN_LIST: &str = "gh.run.list";
     pub(crate) const LOGS_READ: &str = "gh.actions.logs.read";
     pub(crate) const RUN_READ: &str = "gh.run.read";
@@ -155,6 +170,17 @@ impl Provider for Gh {
     const COMMAND_WORDS: &'static [&'static str] = &["gh"];
     type Args = commands::GhArgs;
     type Capabilities = (
+        typed::CacheDelete,
+        typed::CacheList,
+        typed::WorkflowDisable,
+        typed::WorkflowEnable,
+        typed::WorkflowRun,
+        typed::WorkflowRead,
+        typed::WorkflowList,
+        typed::RunDelete,
+        typed::RunRerun,
+        typed::RunForceCancel,
+        typed::RunCancel,
         typed::RunList,
         typed::RunRead,
         typed::LogsRead,
@@ -215,6 +241,17 @@ where
     let send: &mut dyn FnMut(Request) -> Result<Response, HttpError> = &mut send;
     let base = &GITHUB_API;
     match capability.as_str() {
+        ids::CACHE_DELETE => caches::run(ids::CACHE_DELETE, input, base, send),
+        ids::CACHE_LIST => caches::run(ids::CACHE_LIST, input, base, send),
+        ids::WORKFLOW_DISABLE => workflows::run(ids::WORKFLOW_DISABLE, input, base, send),
+        ids::WORKFLOW_ENABLE => workflows::run(ids::WORKFLOW_ENABLE, input, base, send),
+        ids::WORKFLOW_RUN => workflows::run(ids::WORKFLOW_RUN, input, base, send),
+        ids::WORKFLOW_READ => workflows::run(ids::WORKFLOW_READ, input, base, send),
+        ids::WORKFLOW_LIST => workflows::run(ids::WORKFLOW_LIST, input, base, send),
+        ids::RUN_DELETE => action_writes::run(ids::RUN_DELETE, input, base, send),
+        ids::RUN_RERUN => action_writes::run(ids::RUN_RERUN, input, base, send),
+        ids::RUN_FORCE_CANCEL => action_writes::run(ids::RUN_FORCE_CANCEL, input, base, send),
+        ids::RUN_CANCEL => action_writes::run(ids::RUN_CANCEL, input, base, send),
         ids::RUN_LIST => actions::list(input, base, send),
         ids::RUN_READ => actions::read(input, base, send),
         ids::CONTENT_READ => content::read(input, base, send),
@@ -272,6 +309,69 @@ fn capabilities() -> Vec<ProviderCapability> {
     };
 
     let mut capabilities = vec![
+        write(
+            ids::CACHE_DELETE,
+            "Bounded cache.delete (at most 31 requests)",
+            RiskLevel::Medium,
+            caches::schema(ids::CACHE_DELETE),
+        ),
+        read(
+            ids::CACHE_LIST,
+            "Bounded cache.list (at most 11 requests)",
+            caches::schema(ids::CACHE_LIST),
+        ),
+        write(
+            ids::WORKFLOW_DISABLE,
+            "Bounded workflow.disable (at most 3 requests)",
+            RiskLevel::Medium,
+            workflows::schema(ids::WORKFLOW_DISABLE),
+        ),
+        write(
+            ids::WORKFLOW_ENABLE,
+            "Bounded workflow.enable (at most 3 requests)",
+            RiskLevel::Medium,
+            workflows::schema(ids::WORKFLOW_ENABLE),
+        ),
+        write(
+            ids::WORKFLOW_RUN,
+            "Bounded workflow.run (at most 3 requests)",
+            RiskLevel::High,
+            workflows::schema(ids::WORKFLOW_RUN),
+        ),
+        read(
+            ids::WORKFLOW_READ,
+            "Bounded workflow.read (at most 3 requests)",
+            workflows::schema(ids::WORKFLOW_READ),
+        ),
+        read(
+            ids::WORKFLOW_LIST,
+            "Bounded workflow.list (at most 11 requests)",
+            workflows::schema(ids::WORKFLOW_LIST),
+        ),
+        write(
+            ids::RUN_DELETE,
+            "Bounded run.delete (at most 3 requests)",
+            RiskLevel::Medium,
+            action_writes::schema(ids::RUN_DELETE),
+        ),
+        write(
+            ids::RUN_RERUN,
+            "Bounded run.rerun (at most 4 requests)",
+            RiskLevel::Medium,
+            action_writes::schema(ids::RUN_RERUN),
+        ),
+        write(
+            ids::RUN_FORCE_CANCEL,
+            "Bounded run.force-cancel (at most 3 requests)",
+            RiskLevel::Medium,
+            action_writes::schema(ids::RUN_FORCE_CANCEL),
+        ),
+        write(
+            ids::RUN_CANCEL,
+            "Bounded run.cancel (at most 3 requests)",
+            RiskLevel::Medium,
+            action_writes::schema(ids::RUN_CANCEL),
+        ),
         read(
             ids::LOGS_READ,
             "Bounded Actions job logs (shared 32-request budget)",
@@ -1506,7 +1606,7 @@ mod tests {
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 30);
+        assert_eq!(manifest.capabilities.len(), 41);
 
         let external_writes = manifest
             .capabilities
@@ -1517,6 +1617,14 @@ mod tests {
         assert_eq!(
             external_writes,
             vec![
+                "gh.cache.delete",
+                "gh.workflow.disable",
+                "gh.workflow.enable",
+                "gh.workflow.run",
+                "gh.run.delete",
+                "gh.run.rerun",
+                "gh.run.force-cancel",
+                "gh.run.cancel",
                 "gh.pull-request.approve",
                 "gh.pull-request.comment",
                 "gh.pull-request.request-changes",
@@ -1556,7 +1664,11 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             high_risk,
-            vec!["gh.pull-request.approve", "gh.pull-request.merge"]
+            vec![
+                "gh.workflow.run",
+                "gh.pull-request.approve",
+                "gh.pull-request.merge"
+            ]
         );
     }
 
@@ -1650,7 +1762,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 30);
+        assert_eq!(manifest.capabilities.len(), 41);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()

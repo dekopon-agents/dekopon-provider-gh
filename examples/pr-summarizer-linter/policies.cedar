@@ -38,3 +38,16 @@ when { context has agent && context.agent == "pr-summarizer-linter"
     && context has via && context.via == "dekopon-gatewayd"
     && context has transportKind && context.transportKind == "slack"
     && context has transport && context.transport == "workspace-slack" };
+
+// Optional batch 4b capabilities (disabled; enable individually with broker grants):
+// gh.run.cancel
+// gh.run.force-cancel
+// gh.run.rerun
+// gh.run.delete
+// gh.workflow.list
+// gh.workflow.read
+// gh.workflow.run
+// gh.workflow.enable
+// gh.workflow.disable
+// gh.cache.list
+// gh.cache.delete

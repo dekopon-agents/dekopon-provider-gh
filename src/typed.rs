@@ -63,6 +63,13 @@ macro_rules! capability {
                 out: &mut dyn Write,
             ) -> Result<(), ProviderError> {
                 let mut input = input.0;
+                if $id == crate::ids::RUN_DELETE { let result=crate::action_writes::run($id,input,base,send)?; serde_json::to_writer(&mut *out,&result).map_err(|_|crate::invalid_response())?; out.write_all(b"\n").map_err(|_|crate::invalid_response())?; return Ok(()); }
+                if $id == crate::ids::RUN_RERUN { let result=crate::action_writes::run($id,input,base,send)?; serde_json::to_writer(&mut *out,&result).map_err(|_|crate::invalid_response())?; out.write_all(b"\n").map_err(|_|crate::invalid_response())?; return Ok(()); }
+                if $id == crate::ids::RUN_FORCE_CANCEL { let result=crate::action_writes::run($id,input,base,send)?; serde_json::to_writer(&mut *out,&result).map_err(|_|crate::invalid_response())?; out.write_all(b"\n").map_err(|_|crate::invalid_response())?; return Ok(()); }
+                if $id == crate::ids::RUN_CANCEL { let result=crate::action_writes::run($id,input,base,send)?; serde_json::to_writer(&mut *out,&result).map_err(|_|crate::invalid_response())?; out.write_all(b"\n").map_err(|_|crate::invalid_response())?; return Ok(()); }
+                if $id.starts_with("gh.workflow.") { return crate::workflows::execute($id,input,base,send,out); }
+                if $id.starts_with("gh.cache.") { return crate::caches::execute($id,input,base,send,out); }
+
                 if $id == crate::ids::LOGS_READ { return crate::logs::execute(input, base, send, out); }
                 if matches!($id, crate::ids::RUN_LIST | crate::ids::RUN_READ) {
                     return crate::actions::execute($id, input, base, send, out);
@@ -472,6 +479,19 @@ capability!(
 
 pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
     match id {
+        crate::ids::CACHE_DELETE => Proposal::to::<CacheDelete>(CacheDeleteInput(input)),
+        crate::ids::CACHE_LIST => Proposal::to::<CacheList>(CacheListInput(input)),
+        crate::ids::WORKFLOW_DISABLE => {
+            Proposal::to::<WorkflowDisable>(WorkflowDisableInput(input))
+        }
+        crate::ids::WORKFLOW_ENABLE => Proposal::to::<WorkflowEnable>(WorkflowEnableInput(input)),
+        crate::ids::WORKFLOW_RUN => Proposal::to::<WorkflowRun>(WorkflowRunInput(input)),
+        crate::ids::WORKFLOW_READ => Proposal::to::<WorkflowRead>(WorkflowReadInput(input)),
+        crate::ids::WORKFLOW_LIST => Proposal::to::<WorkflowList>(WorkflowListInput(input)),
+        crate::ids::RUN_DELETE => Proposal::to::<RunDelete>(RunDeleteInput(input)),
+        crate::ids::RUN_RERUN => Proposal::to::<RunRerun>(RunRerunInput(input)),
+        crate::ids::RUN_FORCE_CANCEL => Proposal::to::<RunForceCancel>(RunForceCancelInput(input)),
+        crate::ids::RUN_CANCEL => Proposal::to::<RunCancel>(RunCancelInput(input)),
         crate::ids::RUN_LIST => Proposal::to::<RunList>(RunListInput(input)),
         crate::ids::RUN_READ => Proposal::to::<RunRead>(RunReadInput(input)),
         crate::ids::LOGS_READ => Proposal::to::<LogsRead>(LogsReadInput(input)),
@@ -513,3 +533,124 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
         _ => unreachable!("the command dispatch uses only declared IDs"),
     }
 }
+
+capability!(
+    RunCancel,
+    RunCancelInput,
+    crate::ids::RUN_CANCEL,
+    "run.cancel",
+    "Bounded run.cancel (at most 3 requests)",
+    crate::action_writes::unused,
+    EffectKind::ExternalWrite,
+    RiskLevel::Medium
+);
+
+capability!(
+    RunForceCancel,
+    RunForceCancelInput,
+    crate::ids::RUN_FORCE_CANCEL,
+    "run.force-cancel",
+    "Bounded run.force-cancel (at most 3 requests)",
+    crate::action_writes::unused,
+    EffectKind::ExternalWrite,
+    RiskLevel::Medium
+);
+
+capability!(
+    RunRerun,
+    RunRerunInput,
+    crate::ids::RUN_RERUN,
+    "run.rerun",
+    "Bounded run.rerun (at most 4 requests)",
+    crate::action_writes::unused,
+    EffectKind::ExternalWrite,
+    RiskLevel::Medium
+);
+
+capability!(
+    RunDelete,
+    RunDeleteInput,
+    crate::ids::RUN_DELETE,
+    "run.delete",
+    "Bounded run.delete (at most 3 requests)",
+    crate::action_writes::unused,
+    EffectKind::ExternalWrite,
+    RiskLevel::Medium
+);
+
+capability!(
+    WorkflowList,
+    WorkflowListInput,
+    crate::ids::WORKFLOW_LIST,
+    "workflow.list",
+    "Bounded workflow.list (at most 11 requests)",
+    crate::workflows::unused,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+
+capability!(
+    WorkflowRead,
+    WorkflowReadInput,
+    crate::ids::WORKFLOW_READ,
+    "workflow.read",
+    "Bounded workflow.read (at most 3 requests)",
+    crate::workflows::unused,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+
+capability!(
+    WorkflowRun,
+    WorkflowRunInput,
+    crate::ids::WORKFLOW_RUN,
+    "workflow.run",
+    "Bounded workflow.run (at most 3 requests)",
+    crate::workflows::unused,
+    EffectKind::ExternalWrite,
+    RiskLevel::High
+);
+
+capability!(
+    WorkflowEnable,
+    WorkflowEnableInput,
+    crate::ids::WORKFLOW_ENABLE,
+    "workflow.enable",
+    "Bounded workflow.enable (at most 3 requests)",
+    crate::workflows::unused,
+    EffectKind::ExternalWrite,
+    RiskLevel::Medium
+);
+
+capability!(
+    WorkflowDisable,
+    WorkflowDisableInput,
+    crate::ids::WORKFLOW_DISABLE,
+    "workflow.disable",
+    "Bounded workflow.disable (at most 3 requests)",
+    crate::workflows::unused,
+    EffectKind::ExternalWrite,
+    RiskLevel::Medium
+);
+
+capability!(
+    CacheList,
+    CacheListInput,
+    crate::ids::CACHE_LIST,
+    "cache.list",
+    "Bounded cache.list (at most 11 requests)",
+    crate::caches::unused,
+    EffectKind::ReadOnly,
+    RiskLevel::Low
+);
+
+capability!(
+    CacheDelete,
+    CacheDeleteInput,
+    crate::ids::CACHE_DELETE,
+    "cache.delete",
+    "Bounded cache.delete (at most 31 requests)",
+    crate::caches::unused,
+    EffectKind::ExternalWrite,
+    RiskLevel::Medium
+);

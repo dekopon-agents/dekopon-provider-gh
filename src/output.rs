@@ -20,6 +20,8 @@ pub(crate) const CHECKS: &str =
 
 pub(crate) fn fields(area: &str, verb: &str) -> Option<String> {
     let common = match (area, verb) {
+        ("workflow", "list") => crate::workflows::FIELDS,
+        ("cache", "list") => crate::caches::FIELDS,
         ("run", "list") => crate::actions::LIST_FIELDS,
         ("run", "view") => crate::actions::READ_FIELDS,
         ("auth", "status") => "limit,remaining,reset,tokenExpiration,scopes",
@@ -60,6 +62,8 @@ pub(crate) fn validate_selection(
         return Err(crate::invalid_input());
     };
     let (area, verb) = match (id, kind.and_then(Value::as_str)) {
+        ("gh.workflow.list", None) => ("workflow", "list"),
+        ("gh.cache.list", None) => ("cache", "list"),
         ("gh.run.list", None) => ("run", "list"),
         ("gh.run.read", None) => ("run", "view"),
         ("gh.auth.status", None) => ("auth", "status"),

@@ -316,3 +316,16 @@ durations and explicit partial duration coverage.
 Received run pages are checked in full for identity/count consistency before returning at a
 caller limit. A terminal count mismatch still exits 3 with retained rows, without another GET;
 a consistent page containing additional rows remains a normal limit note with exit 0.
+
+### Optional batch 4b grants
+
+The eleven new Actions capabilities are disabled by default. Use the per-id methods,
+permission and request bounds in the root README's “Actions writes, workflows and caches”
+table when deliberately enabling one. The commented broker entries are templates only;
+add matching Cedar actions and agent capability entries explicitly. Deployment grant
+changes belong to the coordinator's `actions-grants` OWNER-QUEUE item.
+
+`gh.workflow.run` is High risk because its selected ref executes workflow code with
+repository secrets. Workflow view requires `--yaml` with `--ref`; built-in dynamic
+workflows support metadata reads but have no repository YAML. Key-form cache deletion
+and `--all` each refuse discovery exceeding twenty matching targets before writing.

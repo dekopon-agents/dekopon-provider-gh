@@ -203,12 +203,14 @@ fn supported_tree() -> Command {
                         .arg(json_arg()),
                 ),
         )
-        .subcommand(crate::actions::commands())
+        .subcommand(crate::actions_cli::run_commands(crate::actions::commands()))
+        .subcommand(crate::actions_cli::workflow_commands())
+        .subcommand(crate::actions_cli::cache_commands())
         .subcommand(issues())
         .subcommand(search_tree())
         .subcommand(pure_command("version", concat!("dekopon-provider-gh ", env!("CARGO_PKG_VERSION"))))
         .subcommand(pure_command("licenses", "Show component licenses (MIT OR Apache-2.0)"))
-        .subcommand(pure_command("actions", "GitHub Actions: inspect history with gh run list, jobs with gh run view, and bounded job logs with --log or --log-failed (gh.actions.logs.read); continue with --log-cursor."))
+        .subcommand(pure_command("actions", "GitHub Actions: gh run list/view/cancel/rerun/delete; gh workflow list/view/run/enable/disable; gh cache list/delete. Bounded job logs (gh.actions.logs.read): gh run view --log or --log-failed; continue with --log-cursor."))
         .subcommand(pure_command("accessibility", "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser."))
 }
 
@@ -221,7 +223,7 @@ fn pure_text(name: &str) -> Option<&'static str> {
             include_str!("../LICENSE-APACHE")
         )),
         "actions" => Some(
-            "GitHub Actions: inspect history with gh run list, jobs with gh run view, and bounded job logs with --log or --log-failed (gh.actions.logs.read); continue with --log-cursor.",
+            "GitHub Actions: gh run list/view/cancel/rerun/delete; gh workflow list/view/run/enable/disable; gh cache list/delete. Bounded job logs (gh.actions.logs.read): gh run view --log or --log-failed; continue with --log-cursor.",
         ),
         "accessibility" => Some(
             "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser.",
@@ -570,6 +572,10 @@ fn dispatch(
     let mut input = Map::new();
 
     let capability = match (area, verb) {
+        ("run", "cancel" | "delete" | "rerun") | ("workflow", _) | ("cache", _) => {
+            insert_repo(&mut input, matches)?;
+            crate::actions_cli::dispatch(area, verb, matches, &mut input, stdin_piped)?
+        }
         ("run", "list" | "view") => {
             insert_repo(&mut input, matches)?;
             crate::actions::dispatch(verb, matches, &mut input)?;
@@ -936,6 +942,16 @@ fn api_route(matches: &ArgMatches) -> Result<(&'static str, Value), ProviderErro
 /// at runtime reads it.
 #[cfg(test)]
 pub(crate) const DISPATCH_TABLE: &[(&str, &str, &str)] = &[
+    ("cache", "delete", ids::CACHE_DELETE),
+    ("cache", "list", ids::CACHE_LIST),
+    ("workflow", "disable", ids::WORKFLOW_DISABLE),
+    ("workflow", "enable", ids::WORKFLOW_ENABLE),
+    ("workflow", "run", ids::WORKFLOW_RUN),
+    ("workflow", "view", ids::WORKFLOW_READ),
+    ("workflow", "list", ids::WORKFLOW_LIST),
+    ("run", "delete", ids::RUN_DELETE),
+    ("run", "rerun", ids::RUN_RERUN),
+    ("run", "cancel", ids::RUN_CANCEL),
     ("run", "list", ids::RUN_LIST),
     ("run", "view", ids::RUN_READ),
     ("pr", "list", ids::PR_LIST),

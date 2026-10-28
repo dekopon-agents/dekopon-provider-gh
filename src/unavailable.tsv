@@ -191,7 +191,6 @@ syntax	attestation download	-	digest-alg/d:value limit/L:value owner/o:value pre
 syntax	attestation inspect	-	format:value
 syntax	attestation trusted-root	-	tuf-url:value verify-only:bool
 syntax	attestation verify	-	bundle/b:value cert-identity:value cert-identity-regex/i:value cert-oidc-issuer:value deny-self-hosted-runners:bool digest-alg/d:value format:value limit/L:value no-public-good:bool owner/o:value predicate-type:value repo/R:value signer-digest:value signer-repo:value signer-workflow:value source-digest:value source-ref:value
-syntax	cache list	-	json:value key/k:value limit/L:value order/O:value ref/r:value repo/R:value sort/S:value
 syntax	codespace create	-	branch/b:value devcontainer-path:value display-name/d:value idle-timeout:value location/l:value machine/m:value repo/R:value retention-period:value
 syntax	codespace list	-	json:value limit/L:value org/o:value repo/R:value user/u:value
 syntax	codespace view	-	codespace/c:value json:value repo/R:value repo-owner:value
@@ -244,8 +243,6 @@ syntax	run view	-	attempt/a:value exit-status:bool job/j:value json:value repo/R
 syntax	secret list	-	app/a:value env/e:value json:value org/o:value repo/R:value user/u:bool
 syntax	variable get	-	env/e:value json:value org/o:value repo/R:value
 syntax	variable list	-	env/e:value json:value org/o:value repo/R:value
-syntax	workflow list	-	all/a:bool json:value limit/L:value repo/R:value
-syntax	workflow view	-	ref/r:value repo/R:value yaml/y:bool
 syntax	codespace	-		group	cs
 syntax	extension	-		group	extensions ext
 syntax	skill	-		group	skills
@@ -256,10 +253,10 @@ syntax	pr	-	repo/R:value	group		repo
 syntax	issue	-	repo/R:value	group		repo
 syntax	release	-	repo/R:value	group		repo
 syntax	run	-	repo/R:value	group		repo
-syntax	workflow	-	repo/R:value	group		repo
-syntax	cache	-	repo/R:value	group		repo
 syntax	secret	-	repo/R:value	group		repo
 syntax	variable	-	repo/R:value	group		repo
 syntax	label	-	repo/R:value	group		repo
 syntax	repo autolink	-	repo/R:value	group		repo
 syntax	repo deploy-key	-	repo/R:value	group		repo
+syntax	workflow	-	repo/R:value	group		repo
+syntax	cache	-	repo/R:value	group		repo

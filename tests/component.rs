@@ -13,7 +13,7 @@ fn component() -> std::path::PathBuf {
 #[test]
 fn manifest_keeps_read_and_write_grants_independent() {
     let manifest = provider::manifest::<Gh>().expect("closed manifest");
-    assert_eq!(manifest.capabilities.len(), 30);
+    assert_eq!(manifest.capabilities.len(), 41);
     assert!(
         manifest
             .capabilities
@@ -37,6 +37,14 @@ fn manifest_keeps_read_and_write_grants_independent() {
         assert!(cap.id.as_str().starts_with("gh."));
     }
     let writes = [
+        "gh.run.cancel",
+        "gh.run.force-cancel",
+        "gh.run.rerun",
+        "gh.run.delete",
+        "gh.workflow.run",
+        "gh.workflow.enable",
+        "gh.workflow.disable",
+        "gh.cache.delete",
         "gh.pull-request.approve",
         "gh.pull-request.comment",
         "gh.pull-request.request-changes",
@@ -75,7 +83,7 @@ fn manifest_keeps_read_and_write_grants_independent() {
             .iter()
             .filter(|c| c.risk == RiskLevel::High)
             .count(),
-        2
+        3
     );
     assert!((<Http as Needs>::IMPORTS).contains(ImportSet::HTTP));
     assert_eq!(<Gh as Provider>::COMMAND_WORDS, &["gh"]);
