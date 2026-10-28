@@ -210,7 +210,7 @@ fn supported_tree() -> Command {
         .subcommand(search_tree())
         .subcommand(pure_command("version", concat!("dekopon-provider-gh ", env!("CARGO_PKG_VERSION"))))
         .subcommand(pure_command("licenses", "Show component licenses (MIT OR Apache-2.0)"))
-        .subcommand(pure_command("actions", "GitHub Actions: gh run list/view/cancel/rerun/delete; gh workflow list/view/run/enable/disable; gh cache list/delete. Bounded job logs: gh run view --log or --log-failed; continue with --log-cursor."))
+        .subcommand(pure_command("actions", "GitHub Actions: gh run list/view/cancel/rerun/delete; gh workflow list/view/run/enable/disable; gh cache list/delete. Bounded job logs (gh.actions.logs.read): gh run view --log or --log-failed; continue with --log-cursor."))
         .subcommand(pure_command("accessibility", "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser."))
 }
 
@@ -223,7 +223,7 @@ fn pure_text(name: &str) -> Option<&'static str> {
             include_str!("../LICENSE-APACHE")
         )),
         "actions" => Some(
-            "GitHub Actions: gh run list/view/cancel/rerun/delete; gh workflow list/view/run/enable/disable; gh cache list/delete. Bounded job logs: gh run view --log or --log-failed; continue with --log-cursor.",
+            "GitHub Actions: gh run list/view/cancel/rerun/delete; gh workflow list/view/run/enable/disable; gh cache list/delete. Bounded job logs (gh.actions.logs.read): gh run view --log or --log-failed; continue with --log-cursor.",
         ),
         "accessibility" => Some(
             "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser.",
