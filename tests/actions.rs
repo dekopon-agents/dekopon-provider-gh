@@ -2930,3 +2930,16 @@ async fn b4b_hostile_workflow_and_cache_fields_are_bounded_and_inconsistent_page
     assert_eq!(out["coverage"]["reasons"], json!(["count-mismatch"]));
     assert!(out["caches"][0]["key"].as_str().unwrap().len() < 600);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn b4b_workflow_and_cache_inherited_repository_flags_preserve_the_same_proposal() {
+    for area in ["workflow", "cache"] {
+        let expected = b4b_proposal(&[area, "list", "-R", "octo/hello"], false).await;
+        for argv in [
+            vec![area, "-R", "octo/hello", "list"],
+            vec![area, "--repo", "octo/hello", "list"],
+        ] {
+            assert_eq!(b4b_proposal(&argv, false).await, expected);
+        }
+    }
+}
