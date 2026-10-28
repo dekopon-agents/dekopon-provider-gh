@@ -58,7 +58,6 @@ pub(crate) fn workflow_commands() -> Command {
         .subcommand_required(true)
         .subcommand(
             Command::new("list")
-                .visible_alias("ls")
                 .arg(repo())
                 .arg(limit())
                 .arg(flag("all", Some('a')))
@@ -97,7 +96,6 @@ pub(crate) fn cache_commands() -> Command {
         .subcommand_required(true)
         .subcommand(
             Command::new("list")
-                .visible_alias("ls")
                 .arg(repo())
                 .arg(limit())
                 .arg(json_arg())

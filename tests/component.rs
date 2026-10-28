@@ -37,6 +37,14 @@ fn manifest_keeps_read_and_write_grants_independent() {
         assert!(cap.id.as_str().starts_with("gh."));
     }
     let writes = [
+        "gh.run.cancel",
+        "gh.run.force-cancel",
+        "gh.run.rerun",
+        "gh.run.delete",
+        "gh.workflow.run",
+        "gh.workflow.enable",
+        "gh.workflow.disable",
+        "gh.cache.delete",
         "gh.pull-request.approve",
         "gh.pull-request.comment",
         "gh.pull-request.request-changes",
