@@ -1785,6 +1785,20 @@ async fn api_storage_and_redirect_failures_keep_distinct_typed_outcomes_without_
             0,
         ),
         (
+            api_then(api(401, &[], vec![])),
+            any(),
+            "unauthorized",
+            "credential rejected: expired, revoked or malformed\n",
+            0,
+        ),
+        (
+            api_then(api(500, &[], vec![])),
+            any(),
+            "unexpected-status",
+            "endpoint returned an unexpected status\n",
+            0,
+        ),
+        (
             api_then(api(403, &[], vec![])),
             any(),
             "permission-denied",

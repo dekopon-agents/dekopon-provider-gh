@@ -440,7 +440,4 @@ Complete and intentionally truncated excerpts exit 0; a running job exits 8 with
 Storage 403/410 mean download authorization failure/expiry. Incomplete reads, changed
 validators, refused redirects and storage errors exit 3 with safe labels.
 
-No cassette is recorded for signed storage. Successful signed-download component scenarios
-and conformance require a published SDK/testkit release carrying the signed-download import
-and fake. Keep this PR as draft until both exact pins move to that release and this PR includes
-the success-path component scenario. A failing conformance check is not accepted.
+Signed storage is covered by scripted signed-download component tests and has no cassette.

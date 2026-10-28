@@ -303,8 +303,7 @@ against the entire selected attempt's job count. Ordinary run reads fetch no log
 `maxResponseBytes: 131072`. The dedicated `assets.rootPath` spool is broker-owned, 0700,
 and separate from broker state and provider paths. It retains API-only credential destinations; storage redirects
 are native and unauthenticated. Use `--log` or `--log-failed` and inspect window and collection
-coverage. Supporting core, passing signed-download conformance and the success-path component scenario
-are required before this provider PR leaves draft.
+coverage. Signed storage is covered by scripted signed-download component tests and has no cassette.
 These example grants do not change deployed homelab grants.
 
 Caller-chosen run-list limits, including the default 20, stop collection once that many
