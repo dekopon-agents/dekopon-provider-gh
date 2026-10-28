@@ -34,7 +34,7 @@ Every supported operation maps to exactly one `gh.*` capability. The rewrite is 
 `gh.pull-request.read --number 7` takes. Naming a capability the caller was not granted produces a
 denial, not an escalation.
 
-`--body-file -` is the one argument whose value is piped into the word. Proposal records only a
+`--body-file -` and `gh workflow run --json` consume piped input. Proposal records only a
 marker; the authorized invocation reads at most 4 KiB of UTF-8 from stdin before any HTTP call.
 Nothing piped is a usage error rather than an empty comment. `gh api` accepts only four named GET routes (`user`, `users/LOGIN`, `repos/OWNER/REPO/branches/BRANCH`,
 `repos/OWNER/REPO/commits/REF`). `gh api user` requires the separate `gh.user-self.read` grant;
@@ -98,6 +98,11 @@ write to stderr with a nonzero status. Filter stdout with the shell's
 | Capability | Effect |
 |---|---|
 | `gh.run.list` / `gh.run.read` | read-only |
+| `gh.run.cancel` / `.force-cancel` / `.rerun` / `.delete` | external-write |
+| `gh.workflow.list` / `.read` | read-only |
+| `gh.workflow.run` / `.enable` / `.disable` | external-write |
+| `gh.cache.list` | read-only |
+| `gh.cache.delete` | external-write |
 | `gh.actions.logs.read` | read-only |
 | `gh.auth.status` | read-only |
 | `gh.content.read` | read-only |
@@ -226,6 +231,17 @@ capabilities you enable (Read unless marked Write):
 | Capability | Fine-grained permission |
 |---|---|
 | `gh.auth.status`, `gh.user.read`, `gh.user-self.read` | None (public endpoint / rate limit) |
+| `gh.run.cancel` | Actions: Write |
+| `gh.run.force-cancel` | Actions: Write |
+| `gh.run.rerun` | Actions: Write |
+| `gh.run.delete` | Actions: Write |
+| `gh.workflow.list` | Actions: Read |
+| `gh.workflow.read` | Actions: Read; Contents: Read for YAML |
+| `gh.workflow.run` | Actions: Write |
+| `gh.workflow.enable` | Actions: Write |
+| `gh.workflow.disable` | Actions: Write |
+| `gh.cache.list` | Actions: Read |
+| `gh.cache.delete` | Actions: Write |
 | `gh.run.list` | Actions: Read |
 | `gh.actions.logs.read` | Actions: Read |
 | `gh.run.read` | Actions: Read; Checks: Read (extracted annotations) |
