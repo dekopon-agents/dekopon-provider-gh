@@ -2768,8 +2768,18 @@ fn b4b_component_http_script_preserves_permission_rate_limit_and_redirect_refusa
         (429, "Actions rate limit is exhausted\n"),
         (302, "GitHub returned an unexpected HTTP status\n"),
     ] {
-        let h = Harness::<Gh>::get(component()).http(api(status, &[], vec![]));
+        let h = Harness::<Gh>::get(component()).http(HttpScript::new(
+            "localhost",
+            "GET",
+            Response {
+                status,
+                headers: vec![],
+                body: vec![],
+            },
+        ));
+        let base = format!("{}/gh", h.origin().unwrap());
         let output = h
+            .settings(json!({"baseUrl":base.clone()}))
             .call(
                 "gh.workflow.run",
                 json!({"owner":"octo","repo":"hello","workflow":9}),
@@ -2781,7 +2791,7 @@ fn b4b_component_http_script_preserves_permission_rate_limit_and_redirect_refusa
         }
         assert_eq!(output.http_calls.len(), 1);
         let req = output.http_request.unwrap();
-        assert_eq!(req.uri, format!("https://api.github.com{ROOT}"));
+        assert_eq!(req.uri, format!("{base}{ROOT}"));
         assert_eq!(req.method, "GET");
         assert!(
             !req.headers

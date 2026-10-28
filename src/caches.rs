@@ -213,9 +213,7 @@ pub(crate) fn run(
     }
     let mut deleted = Vec::new();
     if i.all {
-        if rows.len() > 20 {
-            return Err(Outcome::Incomplete.into());
-        }
+        all_bound(rows.len())?;
         for cache in rows {
             let id = actions::positive(&cache, "id")?;
             writes::write(
@@ -323,4 +321,22 @@ pub(crate) fn unused(
     _: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
 ) -> Result<Value, ProviderError> {
     Err(invalid_input())
+}
+
+fn all_bound(count: usize) -> Result<(), Outcome> {
+    if count > 20 {
+        Err(Outcome::Incomplete)
+    } else {
+        Ok(())
+    }
+}
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn native_bulk_delete_rejects_oversized_discovery_with_the_incomplete_variant() {
+        assert!(matches!(
+            super::all_bound(21),
+            Err(super::Outcome::Incomplete)
+        ));
+    }
 }
