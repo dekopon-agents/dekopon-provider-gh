@@ -72,13 +72,13 @@ impl From<ActionError> for ProviderError {
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(transparent)]
-struct RunId(u64);
+pub(crate) struct RunId(pub(crate) u64);
 #[derive(Clone, Copy, Deserialize)]
 #[serde(transparent)]
-struct JobId(u64);
+pub(crate) struct JobId(pub(crate) u64);
 #[derive(Clone, Copy, Deserialize)]
 #[serde(transparent)]
-struct Attempt(u32);
+pub(crate) struct Attempt(pub(crate) u32);
 impl std::fmt::Display for RunId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -766,6 +766,167 @@ pub(crate) fn read(
     run["requestsUsed"] = json!(reads.used);
     Ok(run)
 }
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum LogMetadataError {
+    NotFound,
+    PermissionDenied,
+    RateLimited,
+    RequestLimit,
+    Transport,
+    InvalidRequest,
+    InvalidResponse,
+    Unauthorized,
+    Unprocessable,
+    UnexpectedStatus,
+}
+
+struct LogMetadataReads<'a> {
+    base: &'a Base,
+    send: &'a mut dyn FnMut(Request) -> Result<Response, HttpError>,
+    used: usize,
+}
+impl LogMetadataReads<'_> {
+    const MAX_REQUESTS: usize = 13;
+    fn get(&mut self, path: &str) -> Result<Response, LogMetadataError> {
+        if self.used >= Self::MAX_REQUESTS {
+            return Err(LogMetadataError::RequestLimit);
+        }
+        let uri = crate::url(self.base, path).map_err(|_| LogMetadataError::InvalidRequest)?;
+        let request = crate::github_request("GET", uri, crate::ACCEPT_JSON)
+            .map_err(|_| LogMetadataError::InvalidRequest)?;
+        self.used += 1;
+        let response = (self.send)(request).map_err(|_| LogMetadataError::Transport)?;
+        match response.status {
+            200 => Ok(response),
+            401 => Err(LogMetadataError::Unauthorized),
+            403 if crate::rate_limit_exhausted(&response)
+                || crate::header_text(&response, "retry-after")
+                    .is_some_and(|value| !value.trim().is_empty()) =>
+            {
+                Err(LogMetadataError::RateLimited)
+            }
+            403 => Err(LogMetadataError::PermissionDenied),
+            404 => Err(LogMetadataError::NotFound),
+            422 => Err(LogMetadataError::Unprocessable),
+            429 => Err(LogMetadataError::RateLimited),
+            _ => Err(LogMetadataError::UnexpectedStatus),
+        }
+    }
+    fn value(&mut self, path: &str) -> Result<Value, LogMetadataError> {
+        serde_json::from_slice(&self.get(path)?.body).map_err(|_| LogMetadataError::InvalidResponse)
+    }
+    fn jobs(&mut self, path: &str) -> Result<(Vec<Value>, Coverage), LogMetadataError> {
+        let mut result = Vec::new();
+        let mut coverage = Coverage::default();
+        let mut seen = HashSet::new();
+        for page in 1..=10 {
+            let response = self.get(&format!("{path}page={page}&per_page=100"))?;
+            let value: Value = serde_json::from_slice(&response.body)
+                .map_err(|_| LogMetadataError::InvalidResponse)?;
+            let total = value["total_count"]
+                .as_u64()
+                .ok_or(LogMetadataError::InvalidResponse)?;
+            let items = value["jobs"]
+                .as_array()
+                .ok_or(LogMetadataError::InvalidResponse)?;
+            if items.len() > 100 || total < items.len() as u64 {
+                return Err(LogMetadataError::InvalidResponse);
+            }
+            if coverage
+                .total
+                .replace(total)
+                .is_some_and(|old| old != total)
+            {
+                coverage.mark("count-changed");
+            }
+            for item in items {
+                let id = positive(item, "id").map_err(|_| LogMetadataError::InvalidResponse)?;
+                if !seen.insert(id) {
+                    coverage.mark("duplicate-id");
+                    continue;
+                }
+                result.push(item.clone());
+            }
+            let next = crate::has_next_link(&response);
+            if result.len() >= 1000 {
+                if next || total > result.len() as u64 {
+                    coverage.mark("limit");
+                }
+                break;
+            }
+            if !next {
+                if total != seen.len() as u64 {
+                    coverage.mark("count-mismatch");
+                }
+                break;
+            }
+            if page == 10 {
+                coverage.mark("page-bound");
+            }
+        }
+        coverage.returned = result.len();
+        Ok((result, coverage))
+    }
+}
+
+pub(crate) fn log_metadata(
+    input: &crate::logs::Input,
+    base: &Base,
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+) -> Result<Value, LogMetadataError> {
+    let mut reads = LogMetadataReads {
+        base,
+        send,
+        used: 0,
+    };
+    let root = root(&input.owner, &input.repo);
+    positive(&reads.value(&root)?, "id").map_err(|_| LogMetadataError::InvalidResponse)?;
+    let latest = reads.value(&format!("{root}/actions/runs/{}", input.run_id))?;
+    let latest = run_row(&latest, Some(input.run_id.0), None)
+        .map_err(|_| LogMetadataError::InvalidResponse)?;
+    let latest_attempt = latest["attempt"]
+        .as_u64()
+        .ok_or(LogMetadataError::InvalidResponse)? as u32;
+    let attempt = input.attempt.map_or(latest_attempt, |v| v.0);
+    if attempt > latest_attempt {
+        return Err(LogMetadataError::NotFound);
+    }
+    let run = if input.attempt.is_some() {
+        let raw = reads.value(&format!(
+            "{root}/actions/runs/{}/attempts/{attempt}",
+            input.run_id
+        ))?;
+        let row = run_row(&raw, Some(input.run_id.0), Some(attempt))
+            .map_err(|_| LogMetadataError::InvalidResponse)?;
+        if row["headSha"] != latest["headSha"] {
+            return Err(LogMetadataError::InvalidResponse);
+        }
+        row
+    } else {
+        latest
+    };
+    let (raw, coverage) = if let Some(job) = input.job {
+        let raw = reads.value(&format!("{root}/actions/jobs/{job}"))?;
+        if positive(&raw, "id").map_err(|_| LogMetadataError::InvalidResponse)? != job.0 {
+            return Err(LogMetadataError::InvalidResponse);
+        }
+        (vec![raw], Coverage::default())
+    } else {
+        reads.jobs(&format!(
+            "{root}/actions/runs/{}/attempts/{attempt}/jobs?",
+            input.run_id
+        ))?
+    };
+    let jobs = raw
+        .iter()
+        .map(|raw| job_row(raw, &run))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| LogMetadataError::InvalidResponse)?;
+    Ok(
+        json!({"runId":input.run_id.0,"attempt":attempt,"headSha":run["headSha"],"jobs":jobs,"coverage":coverage.json(),"metadataRequests":reads.used}),
+    )
+}
+
 fn check_id(raw: &Value, root: &str) -> Result<u64, ProviderError> {
     let value = string(raw, "check_run_url")?;
     let (prefix, id) = value.rsplit_once('/').ok_or_else(invalid_response)?;
@@ -1082,6 +1243,14 @@ pub(crate) fn commands() -> Command {
                 .short('j')
                 .value_parser(clap::value_parser!(u64).range(1..)),
         )
+        .arg(boolean("log", None).conflicts_with_all([
+            "log-failed",
+            "json",
+            "verbose",
+            "exit-status",
+        ]))
+        .arg(boolean("log-failed", None).conflicts_with_all(["json", "verbose", "exit-status"]))
+        .arg(Arg::new("log-cursor").long("log-cursor"))
         .arg(boolean("verbose", Some('v')))
         .arg(boolean("exit-status", None))
         .arg(
@@ -1138,8 +1307,27 @@ pub(crate) fn dispatch(
                 input.insert(field.into(), json!(true));
             }
         }
-        let value: ReadInput = serde_json::from_value(json!(input)).map_err(|_| invalid_input())?;
-        value.validate()?;
+        if matches.get_flag("log") || matches.get_flag("log-failed") {
+            input.insert(
+                "mode".into(),
+                json!(if matches.get_flag("log-failed") {
+                    "failed"
+                } else {
+                    "all"
+                }),
+            );
+            if let Some(cursor) = matches.get_one::<String>("log-cursor") {
+                input.insert("cursor".into(), json!(cursor));
+            }
+            crate::logs::validate(json!(input))?;
+        } else {
+            if matches.contains_id("log-cursor") {
+                return Err(invalid_input());
+            }
+            let value: ReadInput =
+                serde_json::from_value(json!(input)).map_err(|_| invalid_input())?;
+            value.validate()?;
+        }
     }
     Ok(())
 }
@@ -1148,6 +1336,78 @@ pub(crate) fn dispatch(
 mod tests {
     use super::*;
     use dekopon_provider_sdk::provider::Failure;
+    #[test]
+    fn native_log_metadata_transport_preserves_typed_failures_and_exact_requests() {
+        for (status, headers, body, expected) in [
+            (
+                403,
+                vec![],
+                b"{}".to_vec(),
+                LogMetadataError::PermissionDenied,
+            ),
+            (
+                403,
+                vec![
+                    dekopon_provider_sdk::provider::Header::text("x-ratelimit-remaining", "0")
+                        .unwrap(),
+                ],
+                b"{}".to_vec(),
+                LogMetadataError::RateLimited,
+            ),
+            (
+                403,
+                vec![
+                    dekopon_provider_sdk::provider::Header::text("Retry-After", "60").unwrap(),
+                    dekopon_provider_sdk::provider::Header::text("x-ratelimit-remaining", "100")
+                        .unwrap(),
+                ],
+                b"{}".to_vec(),
+                LogMetadataError::RateLimited,
+            ),
+            (404, vec![], b"{}".to_vec(), LogMetadataError::NotFound),
+            (429, vec![], b"{}".to_vec(), LogMetadataError::RateLimited),
+            (401, vec![], b"{}".to_vec(), LogMetadataError::Unauthorized),
+            (422, vec![], b"{}".to_vec(), LogMetadataError::Unprocessable),
+            (
+                500,
+                vec![],
+                b"{}".to_vec(),
+                LogMetadataError::UnexpectedStatus,
+            ),
+            (
+                200,
+                vec![],
+                b"bad json".to_vec(),
+                LogMetadataError::InvalidResponse,
+            ),
+        ] {
+            let input = crate::logs::validate(
+                json!({"owner":"octo","repo":"hello","runId":7,"mode":"all"}),
+            )
+            .unwrap();
+            let mut calls = 0;
+            let error = log_metadata(&input, &crate::GITHUB_API, &mut |request| {
+                calls += 1;
+                assert_eq!(request.uri, "https://api.github.com/repos/octo/hello");
+                assert_eq!(request.method, "GET");
+                assert!(
+                    !request
+                        .headers
+                        .iter()
+                        .any(|header| header.name.eq_ignore_ascii_case("authorization"))
+                );
+                Ok(Response {
+                    status,
+                    headers: headers.clone(),
+                    body: body.clone(),
+                })
+            })
+            .unwrap_err();
+            assert_eq!(error, expected);
+            assert_eq!(calls, 1);
+        }
+    }
+
     #[test]
     fn native_action_error_variants_preserve_distinct_codes_and_statuses() {
         for (variant, code, status) in [
@@ -1168,6 +1428,15 @@ mod tests {
         for (status, headers, variant) in [
             (404, vec![], ActionError::NotFoundOrNotAccessible),
             (403, vec![], ActionError::Permission),
+            (
+                403,
+                vec![
+                    dekopon_provider_sdk::provider::Header::text("Retry-After", "60").unwrap(),
+                    dekopon_provider_sdk::provider::Header::text("x-ratelimit-remaining", "100")
+                        .unwrap(),
+                ],
+                ActionError::Permission,
+            ),
             (429, vec![], ActionError::RateLimit),
         ] {
             assert_eq!(

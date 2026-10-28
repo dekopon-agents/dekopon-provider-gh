@@ -34,6 +34,16 @@ impl Failure for ProviderError {
             "usage" => Code::USAGE,
             "request-too-large" => Code::new("request-too-large").exiting(2),
             "checks-pending" => Code::new("checks-pending").exiting(8),
+            "job-running" => Code::new("job-running").exiting(8),
+            "expired-logs"
+            | "permission-denied"
+            | "not-found-or-not-visible"
+            | "download-authorization-failure"
+            | "download-expiry"
+            | "incomplete-read"
+            | "source-changed"
+            | "redirect-refused"
+            | "storage-error" => Code::new(self.code).exiting(3),
             "run-failed" => Code::new("run-failed").exiting(1),
             "not-found-or-not-accessible" => Code::new("not-found-or-not-accessible").exiting(3),
             "checks-failed" => Code::new("checks-failed").exiting(1),

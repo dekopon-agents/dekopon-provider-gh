@@ -7,8 +7,6 @@
 // schema generated from broker.yaml's declared world, so a typo in a principal, provider, or
 // capability refuses startup instead of becoming a rule that silently never matches.
 //
-// The @id annotations are what audit records carry as `policy_ids`. Without them Cedar names
-// policies positionally, which is unstable when a statement is inserted.
 
 // Session gate: may this person drive this agent at all, and through which gateway? This is checked
 // before `capabilitiesFor` answers, so an unauthorized sender is refused before a model call costs
@@ -17,7 +15,9 @@
 permit(principal == Dekopon::Principal::"maintainer",
        action == Dekopon::Action::"agent.prompt",
        resource == Dekopon::Agent::"pr-summarizer-linter")
-when { context has via && context.via == "dekopon-gatewayd" };
+when { context has via && context.via == "dekopon-gatewayd"
+    && context has transportKind && context.transportKind == "slack"
+    && context has transport && context.transport == "workspace-slack" };
 
 // Capability surface: driving the agent implies none of these actions, and holding these actions
 // implies no session. Command shorthands propose these same capability actions. `context.via` keeps attested and direct authority disjoint; `context.agent`
@@ -31,7 +31,10 @@ permit(principal == Dekopon::Principal::"maintainer",
                   Dekopon::Action::"gh.pull-request.status",
                   Dekopon::Action::"gh.run.list",
                   Dekopon::Action::"gh.run.read",
+                  Dekopon::Action::"gh.actions.logs.read",
                   Dekopon::Action::"gh.pull-request.comment"],
        resource == Dekopon::Provider::"gh")
 when { context has agent && context.agent == "pr-summarizer-linter"
-    && context has via && context.via == "dekopon-gatewayd" };
+    && context has via && context.via == "dekopon-gatewayd"
+    && context has transportKind && context.transportKind == "slack"
+    && context has transport && context.transport == "workspace-slack" };

@@ -130,7 +130,6 @@ flag	repo read-file	X7	jq/q:value template/t:value
 flag	repo view	W5	web/w:bool
 flag	repo view	X7	jq/q:value template/t:value
 flag	run list	X7	jq/q:value template/t:value		ls
-flag	run view	W10	log:bool log-failed:bool
 flag	run view	W5	web/w:bool
 flag	run view	X7	jq/q:value template/t:value
 flag	workflow list	X7	jq/q:value template/t:value		ls

@@ -191,7 +191,7 @@ fn broker_host_cache_preserves_the_real_component_root_page_byte_for_byte() {
     let registry = registry(&runtime);
     let root = page(&runtime, &registry, &["--help"]);
     let cached = registry.command_word_help();
-    eprintln!("broker-host =0.45.0 cached {} root bytes", root.len());
+    eprintln!("broker-host =0.58.0 cached {} root bytes", root.len());
     assert_eq!(cached.get("gh"), Some(&root));
     assert!(!cached["gh"].contains("[--help truncated"));
 }

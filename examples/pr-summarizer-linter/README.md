@@ -5,12 +5,11 @@ answer while the pull request gets one `COMMENT` review containing the summary, 
 findings, and check status.
 
 The gateway authenticates the message and vouches for the sender; it decides nothing. The broker
-maps that Slack subject to the principal `maintainer`, checks Cedar policy, exposes five narrow
+maps that Slack subject to the principal `maintainer`, checks Cedar policy, exposes eight narrow
 capabilities, injects a GitHub token bound to `api.github.com`, executes the `gh` WebAssembly
-component, and hash-links every decision and result into an audit chain naming the person who
-asked. The token is never visible to the model, shell session, agent, or component that uses it.
+component, and attributes decisions and effects to the authenticated person in structured telemetry. The token is never visible to the model, shell session, agent, or component that uses it.
 
-The provider still exports twenty-nine production capabilities; this example grants seven.
+The provider still exports thirty production capabilities; this example grants eight.
 Upstream shorthands select the same grants: `gh pr review ... -c -b <text>` is equivalent to
 `--comment --body <text>`, and `-F -` reads a piped body. Unsupported upstream operations refuse
 before HTTP; `gh --help` lists their reasons. `gh version`, `licenses`, `actions`, and
@@ -34,6 +33,26 @@ Nothing here is a mock: these are the files a deployment runs, and the constrain
 and refuses to start on. The allow/deny table these files declare was asserted by
 `crates/dekopon-brokerd/tests/examples.rs` while the provider lived in the dekopon tree; the
 example came here with the component, and nothing in dekopon exercises it any more.
+
+## Broker startup validation
+
+The broker configuration uses the current `capabilities.gh.capabilities` and `principals`
+formats. Effects and risk come from the provider manifest. The attestor retains its Slack
+namespace; Cedar restricts both the session and capability surface to Slack transport
+`workspace-slack`. The gateway's direct-message route remains unchanged.
+
+All eight HTTP grants, timeouts and credential bindings retain their values. The supported
+host-wide output ceiling is 4 MiB, the largest former per-capability ceiling; individual
+provider projections remain bounded, including the 16 KiB log envelope. Legacy per-capability
+output ceilings and audit/checkpoint configuration keys are removed.
+
+```console
+dekopon-brokerd check broker.yaml --output json
+```
+
+The offline startup check validates configuration, provider loading, Cedar policy and grants.
+It reports the selected `github-pat` credential as a boot requirement without reading a token
+or touching runtime paths. Boot still requires the owner-provided credentials file.
 
 ## What “lint” means here
 
@@ -77,7 +96,7 @@ provider input paths and therefore cannot restrict `owner/repo` itself.
 
 Classic PAT and GitHub App installation-token setup, plus the credential error messages, are
 covered in the [provider authentication guide](../../README.md#credentials-and-authentication-status).
-`gh auth status --json limit,remaining,reset` uses the separate read-only `gh.auth.status` capability. This five-capability reviewer
+`gh auth status --json limit,remaining,reset` uses the separate read-only `gh.auth.status` capability. This reviewer
 does not grant it: to enable it, an owner must add it to the catalog and policy and give it its own
 Low-risk, read-only constraint set with the same credential and one GET request. A successful
 quota check does not establish access to a particular repository.
@@ -97,7 +116,8 @@ hard links, and wrong ownership. `broker-credentials.yaml` is ignored by Git.
 
 | Placeholder | File | Replace with |
 |---|---|---|
-| `/home/xavier/.local/{run,state}/dekopon/…` | `broker.yaml` | Your socket, audit, and checkpoint paths |
+| `/home/xavier/.local/run/dekopon/…` | `broker.yaml` | Your socket path |
+| `/home/xavier/.local/share/dekopon-assets` | `broker.yaml` | A dedicated broker-owned asset spool |
 | `/home/xavier/.local/run/dekopon/broker.sock` | `gatewayd.yaml` | The same socket path |
 | `uid: 501` | `broker.yaml` | Your UID (`id -u`) |
 | `serverUid: 501` | `gatewayd.yaml` | The same UID |
@@ -129,10 +149,6 @@ the provider manifest and its own constraint sets.
 dekopon-brokerd --config broker.yaml
 ```
 
-```json
-{"level":"INFO","event":"broker_started","audit_records":0,"audit_head":"none","target":"dekopon_brokerd"}
-```
-
 Before binding its socket, the broker strictly validates policy, checks that every permitted
 capability has a matching constraint set, loads the destination-bound credential, and verifies the
 provider manifest. A mismatch is a startup failure, not a surprise during a review.
@@ -152,7 +168,7 @@ dekopon-gatewayd --config gatewayd.yaml
 ```
 
 `capability.count: 0` is intentional. The startup probe asks what the gateway’s own direct identity
-may do; both Cedar statements require an attested sender and agent. The gateway reaches the five
+may do; both Cedar statements require an attested sender and agent. The gateway reaches the eight
 capabilities only while vouching for an allowed Slack subject. `gh repo list OWNER` is a separate
 `gh.repo.list` read grant; this example does not grant it.
 
@@ -206,49 +222,12 @@ The route is `mode: persistent`, so a follow-up like “explain the first findin
 Nothing is written to disk or sent to the broker, and an idle timeout or changed grant drops the
 history.
 
-## 7. Inspect the audit chain
+## 7. Inspect execution traces
 
-```console
-tail -1 ~/.local/state/dekopon/audit.jsonl | jq .
-```
-
-The terminal comment record has this shape (hashes abbreviated):
-
-```json
-{
-  "sequence": 10,
-  "previousHash": "sha256:1d0a…",
-  "event": {
-    "type": "execution",
-    "invocation": "dekopond-session-9f1c4a7b0e35d268-5",
-    "trace": "dekopond-session-9f1c4a7b0e35d268",
-    "principal": "maintainer",
-    "actor": { "type": "agent", "agent": "pr-summarizer-linter" },
-    "via": "dekopon-gatewayd",
-    "attested_subject": "slack.t0123abcd.u0123abcd",
-    "capability": "gh.pull-request.comment",
-    "provider": "gh",
-    "policy_revision": "pr-summarizer-linter-2026-01",
-    "policy_ids": ["pr-summarizer-linter-gh-surface"],
-    "effect": "external-write",
-    "risk": "Medium",
-    "credential": "github-pat",
-    "outcome": "Succeeded",
-    "output_digest": "sha256:9ab4…",
-    "http_calls": [
-      { "method": "GET", "authority": "api.github.com", "status": 200,
-        "credentialInjected": true },
-      { "method": "POST", "authority": "api.github.com", "status": 200,
-        "credentialInjected": true }
-    ]
-  },
-  "recordHash": "sha256:c7e2…"
-}
-```
-
-The chain records trusted attribution, policy identity, bounded HTTP metadata, outcome, and output
-digest. It does not record the Slack message, repository path, diff, source, comment body, URL path
-or query, headers, token, or provider output. Earlier decision/execution pairs share the trace ID.
+Enable the optional broker telemetry block for authorization and provider-effect spans.
+Correlate a review using its trace id in the configured collector. Current core does not use
+the legacy audit/checkpoint file settings. Keep the collector within the deployment's trust
+boundary; provider credentials and signed download URLs remain broker-side.
 
 ## Refusals worth knowing
 
@@ -276,7 +255,7 @@ isolation from another process under that UID. A dedicated gateway UID remains c
 Prompt injection is not solved. Repository text can manipulate model output and remain in a
 persistent conversation until its bounds evict it. Containment comes from explicit capabilities,
 trusted identity mapping, per-message authorization, broker-held credentials, constrained provider
-execution, and audit — not from trusting the summary.
+execution, and trusted attribution — not from trusting the summary.
 
 ## Related
 
@@ -315,11 +294,17 @@ has its own grant because its fallback creates a comment. No read capability gai
 ## Actions read grants
 
 The example additionally grants `gh.run.list` (21 GETs) and `gh.run.read` (29 GETs),
-with Actions: Read and Checks: Read for extracted annotations. There are seven grants total.
+with Actions: Read and Checks: Read for extracted annotations. The separate `gh.actions.logs.read` grant brings the total to eight.
 Use run list by PR branch or each head SHA to investigate history: `pr checks` reads only the
 current head and collapses repeated checks. Inspect coverage before claiming a complete history.
 Run view supports explicit attempts and jobs; a selected job reports its completed duration
-against the entire selected attempt's job count. Logs and artifacts are not fetched.
+against the entire selected attempt's job count. Ordinary run reads fetch no logs or artifacts. The separate log capability needs Actions: Read,
+`maxRequests: 32`, `signedDownload: github-actions-logs-v1` and
+`maxResponseBytes: 131072`. The dedicated `assets.rootPath` spool is broker-owned, 0700,
+and separate from broker state and provider paths. It retains API-only credential destinations; storage redirects
+are native and unauthenticated. Use `--log` or `--log-failed` and inspect window and collection
+coverage. Supporting core, passing signed-download conformance and the success-path component scenario
+are required before this provider PR leaves draft.
 These example grants do not change deployed homelab grants.
 
 Caller-chosen run-list limits, including the default 20, stop collection once that many

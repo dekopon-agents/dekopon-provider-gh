@@ -44,6 +44,7 @@ pub mod graphql;
 mod issue_comments;
 mod issues;
 mod list_filters;
+mod logs;
 mod output;
 mod pulls;
 mod qualifiers;
@@ -114,6 +115,7 @@ const MAX_LABELS: usize = 20;
 /// mid-session.
 pub(crate) mod ids {
     pub(crate) const RUN_LIST: &str = "gh.run.list";
+    pub(crate) const LOGS_READ: &str = "gh.actions.logs.read";
     pub(crate) const RUN_READ: &str = "gh.run.read";
     pub(crate) const AUTH_STATUS: &str = "gh.auth.status";
     pub(crate) const CONTENT_READ: &str = "gh.content.read";
@@ -155,6 +157,7 @@ impl Provider for Gh {
     type Capabilities = (
         typed::RunList,
         typed::RunRead,
+        typed::LogsRead,
         typed::ContentRead,
         typed::PrList,
         typed::PrRead,
@@ -269,6 +272,11 @@ fn capabilities() -> Vec<ProviderCapability> {
     };
 
     let mut capabilities = vec![
+        read(
+            ids::LOGS_READ,
+            "Bounded Actions job logs (shared 32-request budget)",
+            logs::schema(),
+        ),
         read(
             ids::RUN_LIST,
             "Bounded Actions run history (at most 21 GETs)",
@@ -1498,7 +1506,7 @@ mod tests {
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 29);
+        assert_eq!(manifest.capabilities.len(), 30);
 
         let external_writes = manifest
             .capabilities
@@ -1642,7 +1650,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 29);
+        assert_eq!(manifest.capabilities.len(), 30);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()

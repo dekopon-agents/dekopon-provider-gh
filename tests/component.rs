@@ -13,7 +13,7 @@ fn component() -> std::path::PathBuf {
 #[test]
 fn manifest_keeps_read_and_write_grants_independent() {
     let manifest = provider::manifest::<Gh>().expect("closed manifest");
-    assert_eq!(manifest.capabilities.len(), 29);
+    assert_eq!(manifest.capabilities.len(), 30);
     assert!(
         manifest
             .capabilities
@@ -1417,7 +1417,9 @@ fn component_checks_http_host_refusal_is_not_a_verdict() -> Result<(), Box<dyn s
             assert!(matches!(
                 *failure.error,
                 dekopon_broker_host::BrokerHostError::HostCallRejected {
-                    reason: "host-call-limit",
+                    reason: dekopon_broker_host::HostCallRejection::Http(
+                        dekopon_http_host::PolicyViolation::HostCallLimit
+                    ),
                     ..
                 }
             ));

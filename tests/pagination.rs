@@ -190,6 +190,7 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
                 },
                 allow_plaintext_loopback: true,
                 propagate_trace: false,
+                signed_download: None,
                 request_templates: vec![],
             }),
             asset: None,
@@ -209,8 +210,7 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
     let result = registry
         .invoke_with_test_imports(
             authorized,
-            None,
-            None,
+            Default::default(),
             AssetInputs {
                 streams: Some(Streams {
                     stdin: None,
@@ -255,13 +255,23 @@ async fn run(case: Case) -> Result<(), Box<dyn std::error::Error>> {
             );
             match (case, *failure.error) {
                 (Case::Oversized, BrokerHostError::HostCallRejected { reason, .. }) => {
-                    assert_eq!(reason, "byte-limit");
+                    assert_eq!(
+                        reason,
+                        dekopon_broker_host::HostCallRejection::Http(
+                            dekopon_http_host::PolicyViolation::ByteLimit
+                        )
+                    );
                 }
                 (
                     Case::Requests | Case::Budget,
                     BrokerHostError::HostCallRejected { reason, .. },
                 ) => {
-                    assert_eq!(reason, "host-call-limit");
+                    assert_eq!(
+                        reason,
+                        dekopon_broker_host::HostCallRejection::Http(
+                            dekopon_http_host::PolicyViolation::HostCallLimit
+                        )
+                    );
                 }
                 (
                     Case::Origin | Case::Path | Case::Cap | Case::ForeignId,

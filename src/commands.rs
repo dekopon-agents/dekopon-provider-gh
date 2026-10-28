@@ -208,7 +208,7 @@ fn supported_tree() -> Command {
         .subcommand(search_tree())
         .subcommand(pure_command("version", concat!("dekopon-provider-gh ", env!("CARGO_PKG_VERSION"))))
         .subcommand(pure_command("licenses", "Show component licenses (MIT OR Apache-2.0)"))
-        .subcommand(pure_command("actions", "GitHub Actions: inspect history with gh run list and jobs with gh run view."))
+        .subcommand(pure_command("actions", "GitHub Actions: inspect history with gh run list, jobs with gh run view, and bounded job logs with --log or --log-failed (gh.actions.logs.read); continue with --log-cursor."))
         .subcommand(pure_command("accessibility", "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser."))
 }
 
@@ -220,9 +220,9 @@ fn pure_text(name: &str) -> Option<&'static str> {
             "\n",
             include_str!("../LICENSE-APACHE")
         )),
-        "actions" => {
-            Some("GitHub Actions: inspect history with gh run list and jobs with gh run view.")
-        }
+        "actions" => Some(
+            "GitHub Actions: inspect history with gh run list, jobs with gh run view, and bounded job logs with --log or --log-failed (gh.actions.logs.read); continue with --log-cursor.",
+        ),
         "accessibility" => Some(
             "This provider uses plain text and JSON over pipes; it has no interactive terminal or browser.",
         ),
@@ -574,6 +574,8 @@ fn dispatch(
             crate::actions::dispatch(verb, matches, &mut input)?;
             if verb == "list" {
                 ids::RUN_LIST
+            } else if matches.get_flag("log") || matches.get_flag("log-failed") {
+                ids::LOGS_READ
             } else {
                 ids::RUN_READ
             }
@@ -863,8 +865,8 @@ fn dispatch(
             Value::from(matches.get_one::<u64>("limit").copied().unwrap_or(30)),
         );
     }
-    if let Some(fields) =
-        crate::output::fields(area, verb).filter(|_| area != "auth" || matches.contains_id("json"))
+    if let Some(fields) = crate::output::fields(area, verb)
+        .filter(|_| capability != ids::LOGS_READ && (area != "auth" || matches.contains_id("json")))
     {
         let selection = match matches.get_one::<String>("json") {
             Some(value) if value.is_empty() => {
