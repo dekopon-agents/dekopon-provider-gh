@@ -183,6 +183,10 @@ fn every_visible_registry_exclusion_has_a_reason_on_real_component_group_help() 
     }
     let leaf = page(&runtime, &registry, &["pr", "view", "--help"]);
     assert!(leaf.contains("gh pr view --web/-w (needs a browser or local application)"));
+    for verb in ["view", "checks"] {
+        let leaf = page(&runtime, &registry, &["pr", verb, "--help"]);
+        assert!(leaf.contains("bare --json lists valid fields and exits 2"));
+    }
 }
 
 #[test]

@@ -1017,3 +1017,72 @@ fn upstream_shorthands_and_four_finite_routes_keep_their_typed_proposals_in_the_
     }
     Ok(())
 }
+
+#[test]
+fn invalid_json_selections_return_exact_command_fields_without_http_or_proposals()
+-> Result<(), Box<dyn std::error::Error>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let registry = runtime.block_on(BrokerProviderRegistry::load(
+        [component()],
+        BrokerHostLimits::default(),
+    ))?;
+    for (verb, fields, selected, capability, first) in [
+        (
+            "checks",
+            "bucket,completedAt,description,event,link,name,startedAt,state,workflow",
+            "name,state,bucket,link",
+            "gh.pull-request.status",
+            "name",
+        ),
+        (
+            "view",
+            "assignees,author,baseRefName,baseRefOid,body,closedAt,createdAt,headRefName,headRefOid,isDraft,labels,mergedAt,number,state,title,updatedAt,url,files,reviews,latestReviews,comments",
+            "number,title,files",
+            "gh.pull-request.read",
+            "title",
+        ),
+    ] {
+        let duplicate = format!("{first},{first}");
+        let trailing_empty = format!("{first},");
+        for selection in [
+            None,
+            Some("conclusion"),
+            Some(duplicate.as_str()),
+            Some(trailing_empty.as_str()),
+            Some(""),
+        ] {
+            let mut words = vec!["pr", verb, "7", "-R", "octo/hello", "--json"];
+            words.extend(selection);
+            let words: Vec<_> = words.into_iter().map(str::to_owned).collect();
+            for proposal in [false, true] {
+                let CommandRunOutcome::Failed { error } =
+                    runtime.block_on(registry.run_command("gh", &words, proposal))?
+                else {
+                    panic!("invalid selection must fail before proposal");
+                };
+                assert_eq!(error.code, "usage");
+                let reason = if selection.is_none_or(str::is_empty) {
+                    "--json requires fields"
+                } else {
+                    "invalid --json field selection; valid fields"
+                };
+                assert_eq!(error.message, format!("gh pr {verb}: {reason}: {fields}"));
+            }
+        }
+        let words: Vec<_> = ["pr", verb, "7", "-R", "octo/hello", "--json", selected]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let CommandRunOutcome::Proposed {
+            capability: id,
+            input,
+            ..
+        } = runtime.block_on(registry.run_command("gh", &words, true))?
+        else {
+            panic!("valid selection must propose");
+        };
+        assert_eq!(id.as_str(), capability);
+        assert_eq!(input["_cliOutput"], selected);
+    }
+    Ok(())
+}

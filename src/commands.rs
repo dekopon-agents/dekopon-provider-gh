@@ -474,6 +474,7 @@ fn json_arg() -> Arg {
     Arg::new("json")
         .long("json")
         .value_name("FIELDS")
+        .help("Select fields; bare --json lists valid fields and exits 2")
         .num_args(0..=1)
         .default_missing_value("")
 }
@@ -885,7 +886,7 @@ fn dispatch(
                 for field in value.split(',') {
                     if !fields.split(',').any(|allowed| allowed == field) || !seen.insert(field) {
                         return Err(usage(format!(
-                            "gh {command}: invalid --json field selection"
+                            "gh {command}: invalid --json field selection; valid fields: {fields}"
                         )));
                     }
                 }
@@ -1708,6 +1709,7 @@ mod tests {
     fn native_json_field_selection_is_closed_before_proposal() {
         for (area, verb, args, listed) in [
             ("pr", "view", vec!["7", "-R", "o/r"], "headRefOid"),
+            ("pr", "checks", vec!["7", "-R", "o/r"], "bucket"),
             ("issue", "list", vec!["-R", "o/r"], "assignees"),
             ("repo", "view", vec!["o/r"], "defaultBranchRef"),
             (
@@ -1723,16 +1725,37 @@ mod tests {
             let error = refuse(&words);
             assert_eq!(error.code(), "usage");
             assert!(error.message().contains(listed), "{error:?}");
-            for selection in ["", "title,title", "unknown", "title,"] {
+            let fields = crate::output::fields(area, verb).unwrap();
+            assert_eq!(
+                error.message(),
+                format!("gh {area} {verb}: --json requires fields: {fields}")
+            );
+            let first = fields.split(',').next().unwrap();
+            for selection in [
+                String::new(),
+                format!("{first},{first}"),
+                "unknown".to_owned(),
+                format!("{first},"),
+                "conclusion".to_owned(),
+            ] {
                 let mut words = vec![area, verb];
                 words.extend(&args);
                 words.push("--json");
-                words.push(selection);
+                words.push(&selection);
                 let outcome =
                     dekopon_provider_sdk::provider::command::<crate::Gh>(&argv(&words), false);
-                assert!(
-                    matches!(outcome, dekopon_provider_sdk::CommandRunOutcome::Failed { error } if error.code == "usage"),
-                    "{words:?}"
+                let dekopon_provider_sdk::CommandRunOutcome::Failed { error } = outcome else {
+                    panic!("invalid selection must fail before proposal: {words:?}");
+                };
+                assert_eq!(error.code, "usage");
+                let reason = if selection.is_empty() {
+                    "--json requires fields"
+                } else {
+                    "invalid --json field selection; valid fields"
+                };
+                assert_eq!(
+                    error.message,
+                    format!("gh {area} {verb}: {reason}: {fields}")
                 );
                 assert_eq!(
                     dekopon_provider_sdk::provider::Code::USAGE.status().get(),
