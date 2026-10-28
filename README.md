@@ -534,9 +534,8 @@ this PR writes no homelab grant.
 | `gh.cache.list` | read-only | GET | 11 | Actions: Read |
 | `gh.cache.delete` | external-write | GET, DELETE | 31 | Actions: Write |
 
-This draft temporarily patches the SDK/testkit and matching test types to
-`sdk/capabilities-64`. It must remain draft until the coordinator announces the SDK
-release, all exact Dekopon pins move together, the patches are removed and gates pass.
+The provider and isolated fixture use published Dekopon 0.64.0 dependencies.
+The SDK supports up to 64 capabilities; this provider exports 41.
 
 Batch 4b recorded four authenticated GETs against `dekopon-agents/gh-parity-scratch`
 with cassette `4308b585`: repository, empty workflow/cache lists and a missing workflow

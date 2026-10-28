@@ -590,8 +590,9 @@ checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
 
 [[package]]
 name = "dekopon-broker-host"
-version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34194c8ee06411a0510a0e4400d536b722a15cc51bff2a854c439fef37917636"
 dependencies = [
  "dekopon-broker-protocol",
  "dekopon-capability",
@@ -615,8 +616,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-broker-protocol"
-version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41dd84e3a419b87eed44c776056b8c11fb679f5de342c1536d364b7d04aeaad4"
 dependencies = [
  "dekopon-capability",
  "dekopon-core",
@@ -630,8 +632,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-capability"
-version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c58d4e9f083e23609c07c6293d35a6752342a165e476553ff17254da4210fea"
 dependencies = [
  "dekopon-core",
  "serde",
@@ -641,8 +644,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-core"
-version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaa24cb9fb6fd4c37b76f6a3ed9686f45f45b2cc22c13a4df4b4a4dee0adf25a"
 dependencies = [
  "base64 0.23.1",
  "libc",
@@ -675,8 +679,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-http-host"
-version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cdbb57d9c0ccd3742ddfb7e5ca4affd7e66da4bad360cf3aecfb27651bc4308"
 dependencies = [
  "aho-corasick",
  "base64 0.23.1",
@@ -700,8 +705,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-provider-sdk"
-version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfb5cee76cb8358a375c6bc33d4948a2472c163730dcdf623939ac662ce43de1"
 dependencies = [
  "clap",
  "dekopon-capability",
@@ -714,8 +720,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-provider-sdk-testkit"
-version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f297f02a2ea62cfcf42ee586e014dbc087a78ae8c361132543cb11dbb7639f32"
 dependencies = [
  "axum",
  "dekopon-broker-host",
@@ -739,8 +746,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-storage-host"
-version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "712a309707da8f09090852a884b7e82eff9b1c6024e8b34c0c6c51869579efe1"
 dependencies = [
  "dekopon-capability",
  "dekopon-core",
@@ -756,8 +764,9 @@ dependencies = [
 
 [[package]]
 name = "dekopon-telemetry"
-version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6af71368955695ba37f0f69b51841948a4c7f8f9f0874983750318d54ef49ef6"
 dependencies = [
  "opentelemetry",
  "parking_lot",

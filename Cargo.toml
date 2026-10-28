@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 base64 = "0.22.1"
-dekopon-provider-sdk = "=0.63.0"
+dekopon-provider-sdk = "=0.64.0"
 clap = { version = "=4.6.6", features = ["derive"] }
 schemars = "=1.2.2"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -25,22 +25,13 @@ regex = "1.12.3"
 sha2 = "0.10.9"
 
 [dev-dependencies]
-dekopon-provider-sdk-testkit = "=0.63.0"
-dekopon-broker-host = "=0.63.0"
-dekopon-http-host = "=0.63.0"
+dekopon-provider-sdk-testkit = "=0.64.0"
+dekopon-broker-host = "=0.64.0"
+dekopon-http-host = "=0.64.0"
 
-dekopon-capability = "=0.63.0"
-dekopon-core = "=0.63.0"
+dekopon-capability = "=0.64.0"
+dekopon-core = "=0.64.0"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "io-util", "macros", "time", "sync"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(gh_foundation_fixture)"] }
-
-[patch.crates-io]
-dekopon-provider-sdk = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
-dekopon-provider-sdk-testkit = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
-dekopon-core = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
-dekopon-capability = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
-dekopon-broker-host = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
-dekopon-broker-protocol = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
-dekopon-http-host = { git = "https://github.com/dekopon-agents/dekopon", branch = "sdk/capabilities-64" }
