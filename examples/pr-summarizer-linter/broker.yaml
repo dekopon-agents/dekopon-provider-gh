@@ -1,6 +1,4 @@
 # dekopon-brokerd — the only process in this example that holds any authority.
-#
-#
 # Hygiene, all checked at startup and all fatal:
 #   chmod 0600 broker.yaml policies.cedar
 #   chmod 0600 broker-credentials.yaml     # 0o077 — group/world *readable* is refused too

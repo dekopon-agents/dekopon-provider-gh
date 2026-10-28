@@ -203,13 +203,14 @@ fn api_response(response: &sd::ApiResponse) -> Outcome {
                 && header.value.iter().any(|byte| !byte.is_ascii_whitespace()))
     });
     match response.status {
+        401 => Outcome::Unauthorized,
         410 => Outcome::ExpiredLogs,
         403 if limited => Outcome::RateLimited,
         403 => Outcome::PermissionDenied,
         404 => Outcome::NotFoundOrNotVisible,
         429 => Outcome::RateLimited,
         301 | 302 | 303 | 307 | 308 => Outcome::RedirectRefused,
-        _ => Outcome::StorageError,
+        _ => Outcome::UnexpectedStatus,
     }
 }
 fn storage_status(status: u16) -> Outcome {
@@ -286,22 +287,30 @@ fn inspect(
     let mut offset = 0;
     let mut spans = Vec::new();
     let mut overlap = Vec::new();
+    let needles = std::iter::once("##[error]")
+        .chain(steps.iter().map(String::as_str))
+        .filter(|needle| !needle.is_empty())
+        .collect::<Vec<_>>();
+    let keep = needles.iter().map(|needle| needle.len()).max().unwrap_or(1) - 1;
+    let mut searched = vec![0u64; needles.len()];
     while offset < length {
         let n = (length - offset).min(buffer.len() as u64) as usize;
         read_exact(source, offset, &mut buffer[..n])?;
         hasher.update(&buffer[..n]);
         overlap.extend_from_slice(&buffer[..n]);
-        let needles = std::iter::once("##[error]").chain(steps.iter().map(String::as_str));
-        for needle in needles {
-            if spans.len() >= 3 || needle.is_empty() {
-                break;
-            }
-            if let Some(index) = overlap
-                .windows(needle.len())
-                .position(|bytes| bytes == needle.as_bytes())
-            {
-                let absolute = offset.saturating_sub((overlap.len() - n) as u64) + index as u64;
+        let base = offset - (overlap.len() - n) as u64;
+        for (needle, from) in needles.iter().zip(searched.iter_mut()) {
+            while spans.len() < 3 {
+                let skip = (*from).saturating_sub(base) as usize;
+                let Some(index) = overlap.get(skip..).and_then(|rest| {
+                    rest.windows(needle.len())
+                        .position(|bytes| bytes == needle.as_bytes())
+                }) else {
+                    break;
+                };
+                let absolute = base + (skip + index) as u64;
                 let marker_end = absolute + needle.len() as u64;
+                *from = marker_end;
                 let span = ContextSpan {
                     start: absolute.saturating_sub(128),
                     end: (absolute + 384).max(marker_end).min(length),
@@ -315,7 +324,7 @@ fn inspect(
                 }
             }
         }
-        overlap = overlap[overlap.len().saturating_sub(256)..].to_vec();
+        overlap.drain(..overlap.len().saturating_sub(keep));
         offset += n as u64;
     }
     let mut extra = [0];
@@ -1162,6 +1171,54 @@ mod tests {
     }
 
     #[test]
+    fn native_repeated_markers_and_long_step_names_crossing_chunks_are_each_found_once() {
+        let step = "s".repeat(299) + "!";
+        let mut bytes = vec![b'x'; 8192];
+        bytes[100..109].copy_from_slice(b"##[error]");
+        bytes[1500..1509].copy_from_slice(b"##[error]");
+        bytes[1780..2080].copy_from_slice(step.as_bytes());
+        let inspection = inspect(
+            &mut |o, b| source(&bytes, o, b),
+            8192,
+            std::slice::from_ref(&step),
+        )
+        .unwrap();
+        let markers = inspection
+            .contexts
+            .iter()
+            .filter_map(|span| span.marker)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            markers,
+            [
+                SourceSpan {
+                    start: 100,
+                    end: 109
+                },
+                SourceSpan {
+                    start: 1500,
+                    end: 1509
+                },
+                SourceSpan {
+                    start: 1780,
+                    end: 2080
+                },
+            ]
+        );
+        let mut repeated = vec![b'x'; 8192];
+        for start in [2040, 4090, 6000, 7000] {
+            repeated[start..start + 9].copy_from_slice(b"##[error]");
+        }
+        let inspection = inspect(&mut |o, b| source(&repeated, o, b), 8192, &[]).unwrap();
+        let starts = inspection
+            .contexts
+            .iter()
+            .filter_map(|span| span.marker.map(|marker| marker.start))
+            .collect::<Vec<_>>();
+        assert_eq!(starts, [2040, 4090, 6000]);
+    }
+
+    #[test]
     fn native_api_and_storage_failures_keep_distinct_closed_variants_and_exit_codes() {
         for (status, exhausted, expected) in [
             (410, false, Outcome::ExpiredLogs),
@@ -1169,6 +1226,9 @@ mod tests {
             (403, true, Outcome::RateLimited),
             (404, false, Outcome::NotFoundOrNotVisible),
             (429, false, Outcome::RateLimited),
+            (401, false, Outcome::Unauthorized),
+            (500, false, Outcome::UnexpectedStatus),
+            (200, false, Outcome::UnexpectedStatus),
         ] {
             let response = sd::ApiResponse {
                 status,
