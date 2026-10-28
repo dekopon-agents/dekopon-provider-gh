@@ -162,7 +162,7 @@ dependencies = [
 [[package]]
 name = "dekopon-capability"
 version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#49340ffc418b0df8ea482738ad729eff5881f5ba"
+source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
 dependencies = [
  "dekopon-core",
  "serde",
@@ -173,7 +173,7 @@ dependencies = [
 [[package]]
 name = "dekopon-core"
 version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#49340ffc418b0df8ea482738ad729eff5881f5ba"
+source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
 dependencies = [
  "libc",
  "serde",
@@ -200,7 +200,7 @@ dependencies = [
 [[package]]
 name = "dekopon-provider-sdk"
 version = "0.63.0"
-source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#49340ffc418b0df8ea482738ad729eff5881f5ba"
+source = "git+https://github.com/dekopon-agents/dekopon?branch=sdk%2Fcapabilities-64#ed6533f9c7eab44c64ff06310abdc785bfa12885"
 dependencies = [
  "clap",
  "dekopon-capability",
