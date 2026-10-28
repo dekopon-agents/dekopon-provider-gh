@@ -225,7 +225,7 @@ history.
 ## 7. Inspect execution traces
 
 Enable the optional broker telemetry block for authorization and provider-effect spans.
-Correlate a review using its trace id in the configured collector. Core 0.58.0 does not use
+Correlate a review using its trace id in the configured collector. Current core does not use
 the legacy audit/checkpoint file settings. Keep the collector within the deployment's trust
 boundary; provider credentials and signed download URLs remain broker-side.
 

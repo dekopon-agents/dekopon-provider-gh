@@ -13,7 +13,7 @@ path = "lib.rs"
 
 [dependencies]
 dekopon-gh-provider = { path = "../.." }
-dekopon-provider-sdk = "=0.62.0"
+dekopon-provider-sdk = "=0.63.0"
 clap = { version = "=4.6.6", features = ["derive"] }
 schemars = "=1.2.2"
 serde = { version = "1.0.229", features = ["derive"] }
