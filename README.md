@@ -298,10 +298,6 @@ Each tag publishes `gh-provider.wasm` two ways:
   `gh attestation verify gh-provider.wasm --repo dekopon-agents/dekopon-provider-gh`;
 - an **OCI artifact** at `ghcr.io/dekopon-agents/provider-gh`, pullable by tag or digest.
 
-The release workflow rebuilds the component a second time into a clean target directory and
-byte-compares before publishing, so a tag that ships is a tag that reproduced. Attestation proves
-who built the artifact; the rebuild proves what it was built from.
-
 ## Building
 
 Both pins are exact, because neither Rust codegen nor component encoding is stable across
