@@ -181,8 +181,7 @@ and install it on the intended account and repositories. An owner-side process u
 private key to sign a JWT and
 [generate an installation access token](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
 Store the installation token in the broker's credential binding, not the JWT or private key.
-Installation tokens expire after one hour; renew them owner-side and restart the broker to load the
-replacement before expiration. This provider does not mint or refresh tokens.
+This provider does not mint or refresh tokens.
 
 For either credential kind, use the broker's owner-only credentials file and bind its symbolic
 name to each granted capability's constraint set. Bind its destinations to `api.github.com`, or
@@ -244,11 +243,11 @@ capabilities you enable (Read unless marked Write):
 | `gh.cache.delete` | Actions: Write |
 | `gh.run.list` | Actions: Read |
 | `gh.actions.logs.read` | Actions: Read |
-| `gh.run.read` | Actions: Read; Checks: Read (extracted annotations) |
+| `gh.run.read` | Actions: Read; Checks: Read for annotations (GitHub Apps only; fine-grained PATs have none, classic PATs use `repo`) |
 | `gh.repo.read`, `gh.repo.list` | Metadata: Read |
 | `gh.content.read`, `gh.branch.read`, `gh.commit.read` | Contents: Read |
 | `gh.pull-request.list`, `.read`, `.diff` | Pull requests: Read |
-| `gh.pull-request.status` | Pull requests: Read; Checks: Read; Actions: Read; Commit statuses: Read |
+| `gh.pull-request.status` | Pull requests: Read; Actions: Read; Commit statuses: Read; Checks: Read (GitHub Apps only; fine-grained PATs have none, classic PATs use `repo`) |
 | `gh.pull-request.approve`, `.comment`, `.request-changes` | Pull requests: Write |
 | `gh.pull-request.merge` | Pull requests: Write; Contents: Write |
 | `gh.issue.read`, `.list` | Issues: Read |

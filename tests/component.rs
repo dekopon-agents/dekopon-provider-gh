@@ -331,31 +331,31 @@ fn component_search_scope_and_grant_are_independent() -> Result<(), Box<dyn std:
             "prs",
             "gh.search.prs",
             &["-R", "octo/hello"][..],
-            "/search/issues?q=fix%20repo%3Aocto%2Fhello%20is%3Apr&page=1&per_page=100",
+            "/search/issues?q=fix%20repo%3Aocto%2Fhello%20is%3Apr&page=1&per_page=30",
         ),
         (
             "issues",
             "gh.search.issues",
             &["-R", "octo/hello"][..],
-            "/search/issues?q=fix%20repo%3Aocto%2Fhello%20is%3Aissue&page=1&per_page=100",
+            "/search/issues?q=fix%20repo%3Aocto%2Fhello%20is%3Aissue&page=1&per_page=30",
         ),
         (
             "repos",
             "gh.search.repos",
             &["--owner", "octo"][..],
-            "/search/repositories?q=fix%20user%3Aocto&page=1&per_page=100",
+            "/search/repositories?q=fix%20user%3Aocto&page=1&per_page=30",
         ),
         (
             "code",
             "gh.search.code",
             &["-R", "octo/hello"][..],
-            "/search/code?q=fix%20repo%3Aocto%2Fhello&page=1&per_page=100",
+            "/search/code?q=fix%20repo%3Aocto%2Fhello&page=1&per_page=30",
         ),
         (
             "commits",
             "gh.search.commits",
             &["-R", "octo/hello"][..],
-            "/search/commits?q=fix%20repo%3Aocto%2Fhello&page=1&per_page=100",
+            "/search/commits?q=fix%20repo%3Aocto%2Fhello&page=1&per_page=30",
         ),
     ] {
         let mut words = vec!["search", verb, "fix"];
@@ -448,7 +448,7 @@ fn component_owner_scope_and_login_only_assignees_are_projected()
             },
             capability.as_str(),
             input,
-            &format!("/search/issues?q=fix%20user%3A{owner}%20is%3Aissue&page=1&per_page=100"),
+            &format!("/search/issues?q=fix%20user%3A{owner}%20is%3Aissue&page=1&per_page=30"),
         )?;
         assert_eq!(output.status, 0, "{}", output.stderr);
         assert_eq!(
@@ -472,7 +472,7 @@ fn component_search_incomplete_refuses_without_success_array()
         },
         "gh.search.code",
         json!({"owner":"octo","repo":"hello","query":"fix","_cliLimit":30,"_cliOutput":"sha"}),
-        "/search/code?q=fix%20repo%3Aocto%2Fhello&page=1&per_page=100",
+        "/search/code?q=fix%20repo%3Aocto%2Fhello&page=1&per_page=30",
     )?;
     assert_ne!(output.status, 0);
     assert!(output.stdout.is_empty());
@@ -549,7 +549,7 @@ fn component_list_exhausts_without_next_even_with_rewritten_last_link()
         },
         capability.as_str(),
         input,
-        "/repos/octo/hello/issues?state=open&page=1&per_page=100",
+        "/repos/octo/hello/issues?state=open&page=1&per_page=30",
     )?;
     assert_eq!(result.status, 0, "{}", result.stderr);
     assert_eq!(
@@ -778,7 +778,7 @@ fn component_list_json_is_an_array_with_nested_logins_and_nulls()
         },
         capability.as_str(),
         input,
-        "/repos/octo/hello/pulls?state=open&page=1&per_page=100",
+        "/repos/octo/hello/pulls?state=open&page=1&per_page=30",
     )?;
     assert_eq!(output.status, 0, "{}", output.stderr);
     assert_eq!(
@@ -799,7 +799,7 @@ fn component_list_json_is_an_array_with_nested_logins_and_nulls()
         },
         capability.as_str(),
         input,
-        "/repos/octo/hello/pulls?state=open&page=1&per_page=100",
+        "/repos/octo/hello/pulls?state=open&page=1&per_page=30",
     )?;
     assert_eq!(text.status, 0, "{}", text.stderr);
     assert_eq!(text.stdout, b"7\tShip\tfeature\t2026-01-01T00:00:00Z\n");
@@ -822,7 +822,7 @@ fn component_pr_and_issue_fields_render_command_shapes() -> Result<(), Box<dyn s
                 "assignees,author,baseRefOid,body,closedAt,headRefName,isDraft,labels,state,url",
             ],
             "gh.pull-request.list",
-            "/repos/octo/hello/pulls?state=open&page=1&per_page=100",
+            "/repos/octo/hello/pulls?state=open&page=1&per_page=30",
             json!([pr]),
             json!([{"assignees":[{"login":"dev"}],"author":{"login":"octo"},"baseRefOid":"b".repeat(40),"body":null,"closedAt":null,"headRefName":"topic","isDraft":true,"labels":[{"name":"ready"}],"state":"OPEN","url":"https://github.com/octo/hello/pull/7"}]),
         ),
@@ -865,14 +865,14 @@ fn component_pr_and_issue_fields_render_command_shapes() -> Result<(), Box<dyn s
                 "assignees,author,body,closedAt,createdAt,labels,number,state,title,updatedAt,url",
             ],
             "gh.issue.list",
-            "/repos/octo/hello/issues?state=open&page=1&per_page=100",
+            "/repos/octo/hello/issues?state=open&page=1&per_page=30",
             json!([issue.clone()]),
             json!([{"assignees":[{"login":"dev"}],"author":{"login":"octo"},"body":"details","closedAt":"2026-01-02T00:00:00Z","createdAt":"2026-01-01T00:00:00Z","labels":[{"name":"bug"}],"number":9,"state":"CLOSED","title":"Fix","updatedAt":"2026-01-02T00:00:00Z","url":"https://github.com/octo/hello/issues/9"}]),
         ),
         (
             &["issue", "list", "-R", "octo/hello"],
             "gh.issue.list",
-            "/repos/octo/hello/issues?state=open&page=1&per_page=100",
+            "/repos/octo/hello/issues?state=open&page=1&per_page=30",
             json!([issue]),
             json!("9\tFix\tbug\t2026-01-02T00:00:00Z\n"),
         ),

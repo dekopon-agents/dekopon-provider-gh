@@ -1146,7 +1146,7 @@ mod tests {
             let mut merged = pull_body(2, "closed", false, true);
             merged["merged_at"] = json!("2026-01-02T00:00:00Z");
             let uri = if cli {
-                "https://api.github.com/repos/octo/hello/pulls?state=closed&page=1&per_page=100"
+                "https://api.github.com/repos/octo/hello/pulls?state=closed&page=1&per_page=2"
             } else {
                 "https://api.github.com/repos/octo/hello/pulls?state=closed&page=1&per_page=20"
             };

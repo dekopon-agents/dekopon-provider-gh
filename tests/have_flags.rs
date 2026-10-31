@@ -1205,7 +1205,7 @@ async fn query_budgets_count_supplied_terms_without_tightening_legacy_searches()
     let raw = "x".repeat(512);
     let input = json!({"owner":"o","repo":"r","query":raw,"author":"octocat","state":"closed","_cliOutput":"","_cliLimit":30});
     let path = format!(
-        "/search/issues?q={raw}%20repo%3Ao%2Fr%20is%3Apr%20state%3Aclosed%20author%3Aoctocat&page=1&per_page=100"
+        "/search/issues?q={raw}%20repo%3Ao%2Fr%20is%3Apr%20state%3Aclosed%20author%3Aoctocat&page=1&per_page=30"
     );
     let (status, stderr, _) = invoke(
         "gh.search.prs",
@@ -1219,7 +1219,7 @@ async fn query_budgets_count_supplied_terms_without_tightening_legacy_searches()
     )
     .await;
     assert_eq!(status, 0, "{stderr}");
-    let (status,stderr,_) = invoke("gh.issue.list",json!({"owner":"o","repo":"r","label":["a,b"],"_cliOutput":"","_cliLimit":30}),vec![exchange("/search/issues?q=label%3A%22a%2Cb%22%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=100","GET",Value::Null,json!({"total_count":0,"incomplete_results":false,"items":[]}))]).await;
+    let (status,stderr,_) = invoke("gh.issue.list",json!({"owner":"o","repo":"r","label":["a,b"],"_cliOutput":"","_cliLimit":30}),vec![exchange("/search/issues?q=label%3A%22a%2Cb%22%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=30","GET",Value::Null,json!({"total_count":0,"incomplete_results":false,"items":[]}))]).await;
     assert_eq!(status, 0, "{stderr}");
     for (id, input) in [
         (
@@ -1263,7 +1263,7 @@ async fn filtered_lists_refuse_incomplete_searches_in_direct_and_cli_calls() {
                 input["_cliOutput"] = json!("number");
             }
             let kind = if id == "gh.issue.list" { "issue" } else { "pr" };
-            let page_size = if cli { 100 } else { 20 };
+            let page_size = if cli { 30 } else { 20 };
             let path = format!(
                 "/search/issues?q=bug%20repo%3Ao%2Fr%20is%3A{kind}%20is%3Aopen&page=1&per_page={page_size}"
             );
@@ -1297,7 +1297,7 @@ async fn include_prs_preserves_explicit_and_quoted_caller_issue_terms() {
             "bug%20%22literal%20is%3Aissue%22",
         ),
     ] {
-        let path = format!("/search/issues?q={encoded}%20repo%3Ao%2Fr&page=1&per_page=100");
+        let path = format!("/search/issues?q={encoded}%20repo%3Ao%2Fr&page=1&per_page=30");
         let (status, stderr, _) = invoke(
             "gh.search.issues",
             json!({"owner":"o","repo":"r","query":query,"includePrs":true,"_cliOutput":"number"}),
@@ -1331,21 +1331,40 @@ async fn numeric_milestones_filter_search_results_by_number_without_title_qualif
                 input["_cliLimit"] = json!(1);
             }
             let row = |number, milestone| json!({"id":number,"number":number,"title":"issue","state":"open","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","milestone":{"number":milestone,"title":"1"}});
-            let size = if cli { 100 } else { 20 };
-            let path = format!(
-                "/search/issues?q={term}%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page={size}"
-            );
-            let (status, stderr, stdout) = invoke(
-                "gh.issue.list",
-                input,
+            let path = |page, size| {
+                format!(
+                    "/search/issues?q={term}%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page={page}&per_page={size}"
+                )
+            };
+            let steps = if cli {
+                let mut first = exchange(
+                    &path(1, 1),
+                    "GET",
+                    Value::Null,
+                    json!({"incomplete_results":false,"total_count":2,"items":[row(2,2)]}),
+                );
+                first["response"]["headers"]["link"] = json!(format!(
+                    "<https://api.github.com{}>; rel=\"next\"",
+                    path(2, 1)
+                ));
+                vec![
+                    first,
+                    exchange(
+                        &path(2, 1),
+                        "GET",
+                        Value::Null,
+                        json!({"incomplete_results":false,"total_count":2,"items":[row(1,1)]}),
+                    ),
+                ]
+            } else {
                 vec![exchange(
-                    &path,
+                    &path(1, 20),
                     "GET",
                     Value::Null,
                     json!({"incomplete_results":false,"total_count":2,"items":[row(2,2),row(1,1)]}),
-                )],
-            )
-            .await;
+                )]
+            };
+            let (status, stderr, stdout) = invoke("gh.issue.list", input, steps).await;
             assert_eq!(status, 0, "{stderr}");
             let output: Value = serde_json::from_slice(&stdout).expect("JSON output");
             if cli {

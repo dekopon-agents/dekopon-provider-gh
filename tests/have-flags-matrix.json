@@ -19,7 +19,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue&page=1&per_page=30",
     "search": true
   },
   {
@@ -42,7 +42,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue&sort=updated&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue&sort=updated&page=1&per_page=30",
     "search": true
   },
   {
@@ -65,7 +65,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue&search_type=hybrid&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue&search_type=hybrid&page=1&per_page=30",
     "search": true
   },
   {
@@ -87,7 +87,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr&page=1&per_page=30",
     "search": true
   },
   {
@@ -110,7 +110,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20author%3A%22app%2Fgithub-actions%22&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20author%3A%22app%2Fgithub-actions%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -132,7 +132,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20archived%3Afalse&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20archived%3Afalse&page=1&per_page=30",
     "search": true
   },
   {
@@ -155,7 +155,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20assignee%3Aoctocat&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20assignee%3Aoctocat&page=1&per_page=30",
     "search": true
   },
   {
@@ -178,7 +178,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20closed%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20closed%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=30",
     "search": true
   },
   {
@@ -201,7 +201,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20commenter%3Aoctocat&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20commenter%3Aoctocat&page=1&per_page=30",
     "search": true
   },
   {
@@ -224,7 +224,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20comments%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20comments%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -247,7 +247,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20created%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20created%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=30",
     "search": true
   },
   {
@@ -272,7 +272,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20in%3Acomments&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20in%3Acomments&page=1&per_page=30",
     "search": true
   },
   {
@@ -295,7 +295,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20interactions%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20interactions%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -318,7 +318,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20involves%3Aoctocat&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20involves%3Aoctocat&page=1&per_page=30",
     "search": true
   },
   {
@@ -343,7 +343,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20is%3Ainternal&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20is%3Ainternal&page=1&per_page=30",
     "search": true
   },
   {
@@ -368,7 +368,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20label%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20label%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -391,7 +391,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20language%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20language%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -413,7 +413,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20is%3Alocked&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20is%3Alocked&page=1&per_page=30",
     "search": true
   },
   {
@@ -436,7 +436,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20mentions%3Aoctocat&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20mentions%3Aoctocat&page=1&per_page=30",
     "search": true
   },
   {
@@ -459,7 +459,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20milestone%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20milestone%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -481,7 +481,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Aassignee&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Aassignee&page=1&per_page=30",
     "search": true
   },
   {
@@ -503,7 +503,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Alabel&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Alabel&page=1&per_page=30",
     "search": true
   },
   {
@@ -525,7 +525,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Amilestone&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Amilestone&page=1&per_page=30",
     "search": true
   },
   {
@@ -547,7 +547,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Aproject&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20no%3Aproject&page=1&per_page=30",
     "search": true
   },
   {
@@ -570,7 +570,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20project%3Aoctocat%2F1&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20project%3Aoctocat%2F1&page=1&per_page=30",
     "search": true
   },
   {
@@ -593,7 +593,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20reactions%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20reactions%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -616,7 +616,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20team%3Aoctocat%2Fteam&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20team%3Aoctocat%2Fteam&page=1&per_page=30",
     "search": true
   },
   {
@@ -639,7 +639,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20updated%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20updated%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=30",
     "search": true
   },
   {
@@ -662,7 +662,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr&page=1&per_page=30",
     "search": true
   },
   {
@@ -685,7 +685,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr&sort=updated&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr&sort=updated&page=1&per_page=30",
     "search": true
   },
   {
@@ -708,7 +708,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20author%3A%22app%2Fgithub-actions%22&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20author%3A%22app%2Fgithub-actions%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -730,7 +730,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20archived%3Afalse&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20archived%3Afalse&page=1&per_page=30",
     "search": true
   },
   {
@@ -753,7 +753,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20assignee%3Aoctocat&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20assignee%3Aoctocat&page=1&per_page=30",
     "search": true
   },
   {
@@ -776,7 +776,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20closed%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20closed%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=30",
     "search": true
   },
   {
@@ -799,7 +799,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20commenter%3Aoctocat&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20commenter%3Aoctocat&page=1&per_page=30",
     "search": true
   },
   {
@@ -822,7 +822,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20comments%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20comments%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -845,7 +845,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20created%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20created%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=30",
     "search": true
   },
   {
@@ -870,7 +870,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20in%3Acomments&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20in%3Acomments&page=1&per_page=30",
     "search": true
   },
   {
@@ -893,7 +893,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20interactions%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20interactions%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -916,7 +916,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20involves%3Aoctocat&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20involves%3Aoctocat&page=1&per_page=30",
     "search": true
   },
   {
@@ -941,7 +941,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Ainternal&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Ainternal&page=1&per_page=30",
     "search": true
   },
   {
@@ -966,7 +966,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20label%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20label%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -989,7 +989,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20language%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20language%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -1011,7 +1011,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Alocked&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Alocked&page=1&per_page=30",
     "search": true
   },
   {
@@ -1034,7 +1034,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20mentions%3Aoctocat&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20mentions%3Aoctocat&page=1&per_page=30",
     "search": true
   },
   {
@@ -1057,7 +1057,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20milestone%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20milestone%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -1079,7 +1079,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Aassignee&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Aassignee&page=1&per_page=30",
     "search": true
   },
   {
@@ -1101,7 +1101,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Alabel&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Alabel&page=1&per_page=30",
     "search": true
   },
   {
@@ -1123,7 +1123,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Amilestone&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Amilestone&page=1&per_page=30",
     "search": true
   },
   {
@@ -1145,7 +1145,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Aproject&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20no%3Aproject&page=1&per_page=30",
     "search": true
   },
   {
@@ -1168,7 +1168,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20project%3Aoctocat%2F1&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20project%3Aoctocat%2F1&page=1&per_page=30",
     "search": true
   },
   {
@@ -1191,7 +1191,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20reactions%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20reactions%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -1214,7 +1214,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20team%3Aoctocat%2Fteam&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20team%3Aoctocat%2Fteam&page=1&per_page=30",
     "search": true
   },
   {
@@ -1237,7 +1237,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20updated%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20updated%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=30",
     "search": true
   },
   {
@@ -1260,7 +1260,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20base%3A%22topic%2Ffeature%22&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20base%3A%22topic%2Ffeature%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -1282,7 +1282,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20draft%3Afalse&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20draft%3Afalse&page=1&per_page=30",
     "search": true
   },
   {
@@ -1305,7 +1305,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20head%3A%22topic%2Ffeature%22&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20head%3A%22topic%2Ffeature%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -1328,7 +1328,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20merged%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20merged%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=30",
     "search": true
   },
   {
@@ -1350,7 +1350,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Amerged&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Amerged&page=1&per_page=30",
     "search": true
   },
   {
@@ -1373,7 +1373,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20review%3Achanges_requested&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20review%3Achanges_requested&page=1&per_page=30",
     "search": true
   },
   {
@@ -1396,7 +1396,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20review-requested%3Aoctocat&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20review-requested%3Aoctocat&page=1&per_page=30",
     "search": true
   },
   {
@@ -1419,7 +1419,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20reviewed-by%3Aoctocat&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20reviewed-by%3Aoctocat&page=1&per_page=30",
     "search": true
   },
   {
@@ -1442,7 +1442,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20status%3Afailure&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20status%3Afailure&page=1&per_page=30",
     "search": true
   },
   {
@@ -1464,7 +1464,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao&page=1&per_page=30",
     "search": true
   },
   {
@@ -1486,7 +1486,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao&sort=updated&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao&sort=updated&page=1&per_page=30",
     "search": true
   },
   {
@@ -1507,7 +1507,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20archived%3Afalse&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20archived%3Afalse&page=1&per_page=30",
     "search": true
   },
   {
@@ -1529,7 +1529,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20created%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20created%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=30",
     "search": true
   },
   {
@@ -1551,7 +1551,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20followers%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20followers%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -1573,7 +1573,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20fork%3Aonly&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20fork%3Aonly&page=1&per_page=30",
     "search": true
   },
   {
@@ -1595,7 +1595,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20forks%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20forks%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -1617,7 +1617,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20good-first-issues%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20good-first-issues%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -1639,7 +1639,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20help-wanted-issues%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20help-wanted-issues%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -1663,7 +1663,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20in%3Areadme&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20in%3Areadme&page=1&per_page=30",
     "search": true
   },
   {
@@ -1687,7 +1687,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20is%3Ainternal&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20is%3Ainternal&page=1&per_page=30",
     "search": true
   },
   {
@@ -1709,7 +1709,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20language%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20language%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -1733,7 +1733,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20license%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20license%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -1755,7 +1755,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20pushed%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20pushed%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=30",
     "search": true
   },
   {
@@ -1777,7 +1777,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20size%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20size%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -1799,7 +1799,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20stars%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20stars%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -1823,7 +1823,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20topic%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20topic%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -1845,7 +1845,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=term%20user%3Ao%20topics%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/repositories?q=term%20user%3Ao%20topics%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -1868,7 +1868,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/code?q=term%20repo%3Ao%2Fr%20extension%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/code?q=term%20repo%3Ao%2Fr%20extension%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -1891,7 +1891,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/code?q=term%20repo%3Ao%2Fr%20filename%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/code?q=term%20repo%3Ao%2Fr%20filename%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -1916,7 +1916,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/code?q=term%20repo%3Ao%2Fr%20in%3Apath&page=1&per_page=100",
+    "path": "/search/code?q=term%20repo%3Ao%2Fr%20in%3Apath&page=1&per_page=30",
     "search": true
   },
   {
@@ -1939,7 +1939,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/code?q=term%20repo%3Ao%2Fr%20language%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/code?q=term%20repo%3Ao%2Fr%20language%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -1962,7 +1962,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/code?q=term%20repo%3Ao%2Fr%20size%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/code?q=term%20repo%3Ao%2Fr%20size%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -1985,7 +1985,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr&page=1&per_page=30",
     "search": true
   },
   {
@@ -2008,7 +2008,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr&sort=committer-date&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr&sort=committer-date&page=1&per_page=30",
     "search": true
   },
   {
@@ -2031,7 +2031,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20author-date%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20author-date%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=30",
     "search": true
   },
   {
@@ -2054,7 +2054,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20author-email%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20author-email%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -2077,7 +2077,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20author-name%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20author-name%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -2100,7 +2100,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer%3Aoctocat&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer%3Aoctocat&page=1&per_page=30",
     "search": true
   },
   {
@@ -2123,7 +2123,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer-date%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer-date%3A%3E%3D2020-01-01T10%3A00%3A00Z&page=1&per_page=30",
     "search": true
   },
   {
@@ -2146,7 +2146,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer-email%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer-email%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -2169,7 +2169,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer-name%3A%22area%3Adb%22&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20committer-name%3A%22area%3Adb%22&page=1&per_page=30",
     "search": true
   },
   {
@@ -2192,7 +2192,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20hash%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20hash%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&page=1&per_page=30",
     "search": true
   },
   {
@@ -2214,7 +2214,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20merge%3Afalse&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20merge%3Afalse&page=1&per_page=30",
     "search": true
   },
   {
@@ -2237,7 +2237,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20parent%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20parent%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&page=1&per_page=30",
     "search": true
   },
   {
@@ -2260,7 +2260,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20tree%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20tree%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&page=1&per_page=30",
     "search": true
   },
   {
@@ -2285,7 +2285,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20is%3Ainternal&page=1&per_page=100",
+    "path": "/search/commits?q=term%20repo%3Ao%2Fr%20is%3Ainternal&page=1&per_page=30",
     "search": true
   },
   {
@@ -2306,7 +2306,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/pulls?state=open&base=topic%2Ffeature&page=1&per_page=100",
+    "path": "/repos/o/r/pulls?state=open&base=topic%2Ffeature&page=1&per_page=30",
     "search": false
   },
   {
@@ -2327,7 +2327,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/pulls?state=open&head=topic%2Ffeature&page=1&per_page=100",
+    "path": "/repos/o/r/pulls?state=open&head=topic%2Ffeature&page=1&per_page=30",
     "search": false
   },
   {
@@ -2350,7 +2350,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/pulls?state=open&page=1&per_page=100",
+    "path": "/repos/o/r/pulls?state=open&page=1&per_page=30",
     "search": false
   },
   {
@@ -2371,7 +2371,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/pulls?state=open&page=1&per_page=100",
+    "path": "/repos/o/r/pulls?state=open&page=1&per_page=30",
     "search": false
   },
   {
@@ -2392,7 +2392,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=needle%20repo%3Ao%2Fr%20is%3Apr%20is%3Aopen&page=1&per_page=100",
+    "path": "/search/issues?q=needle%20repo%3Ao%2Fr%20is%3Apr%20is%3Aopen&page=1&per_page=30",
     "search": true
   },
   {
@@ -2412,7 +2412,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/pulls?state=open&page=1&per_page=100",
+    "path": "/repos/o/r/pulls?state=open&page=1&per_page=30",
     "search": false
   },
   {
@@ -2433,7 +2433,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=author%3A%22app%2Fgithub-actions%22%20repo%3Ao%2Fr%20is%3Apr%20is%3Aopen&page=1&per_page=100",
+    "path": "/search/issues?q=author%3A%22app%2Fgithub-actions%22%20repo%3Ao%2Fr%20is%3Apr%20is%3Aopen&page=1&per_page=30",
     "search": true
   },
   {
@@ -2454,7 +2454,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/issues?state=open&assignee=octocat&page=1&per_page=100",
+    "path": "/repos/o/r/issues?state=open&assignee=octocat&page=1&per_page=30",
     "search": false
   },
   {
@@ -2477,7 +2477,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/issues?state=open&labels=area%3Adb&page=1&per_page=100",
+    "path": "/repos/o/r/issues?state=open&labels=area%3Adb&page=1&per_page=30",
     "search": false
   },
   {
@@ -2498,7 +2498,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/issues?state=open&creator=octocat&page=1&per_page=100",
+    "path": "/repos/o/r/issues?state=open&creator=octocat&page=1&per_page=30",
     "search": false
   },
   {
@@ -2519,7 +2519,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/issues?state=open&mentioned=octocat&page=1&per_page=100",
+    "path": "/repos/o/r/issues?state=open&mentioned=octocat&page=1&per_page=30",
     "search": false
   },
   {
@@ -2540,7 +2540,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=milestone%3A%22area%3Adb%22%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=100",
+    "path": "/search/issues?q=milestone%3A%22area%3Adb%22%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=30",
     "search": true
   },
   {
@@ -2561,7 +2561,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=author%3A%22app%2Fgithub-actions%22%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=100",
+    "path": "/search/issues?q=author%3A%22app%2Fgithub-actions%22%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=30",
     "search": true
   },
   {
@@ -2582,7 +2582,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=needle%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=100",
+    "path": "/search/issues?q=needle%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page=30",
     "search": true
   },
   {
@@ -2603,7 +2603,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/issues?state=open&type=area%3Adb&page=1&per_page=100",
+    "path": "/repos/o/r/issues?state=open&type=area%3Adb&page=1&per_page=30",
     "search": false
   },
   {
@@ -2624,7 +2624,7 @@
       "_cliOutput": "",
       "_cliLimit": 30
     },
-    "path": "/repos/o/r/pulls?state=all&page=1&per_page=100",
+    "path": "/repos/o/r/pulls?state=all&page=1&per_page=30",
     "search": false
   },
   {
@@ -2645,7 +2645,7 @@
       "_cliOutput": "",
       "_cliLimit": 30
     },
-    "path": "/repos/o/r/issues?state=all&page=1&per_page=100",
+    "path": "/repos/o/r/issues?state=all&page=1&per_page=30",
     "search": false
   },
   {
@@ -2663,7 +2663,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "path": "/users/o/repos?type=owner&page=1&per_page=30",
     "search": false
   },
   {
@@ -2681,7 +2681,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "path": "/users/o/repos?type=owner&page=1&per_page=30",
     "search": false
   },
   {
@@ -2699,7 +2699,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "path": "/users/o/repos?type=owner&page=1&per_page=30",
     "search": false
   },
   {
@@ -2717,7 +2717,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "path": "/users/o/repos?type=owner&page=1&per_page=30",
     "search": false
   },
   {
@@ -2735,7 +2735,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "path": "/users/o/repos?type=owner&page=1&per_page=30",
     "search": false
   },
   {
@@ -2753,7 +2753,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "path": "/users/o/repos?type=owner&page=1&per_page=30",
     "search": false
   },
   {
@@ -2772,7 +2772,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "path": "/users/o/repos?type=owner&page=1&per_page=30",
     "search": false
   },
   {
@@ -2791,7 +2791,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "path": "/users/o/repos?type=owner&page=1&per_page=30",
     "search": false
   },
   {
@@ -2812,7 +2812,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=100",
+    "path": "/users/o/repos?type=owner&page=1&per_page=30",
     "search": false
   },
   {
@@ -2834,7 +2834,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aunlocked&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aunlocked&page=1&per_page=30",
     "search": true
   },
   {
@@ -2856,7 +2856,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Aunmerged&page=1&per_page=100",
+    "path": "/search/issues?q=term%20repo%3Ao%2Fr%20is%3Apr%20is%3Aunmerged&page=1&per_page=30",
     "search": true
   },
   {
@@ -2877,7 +2877,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/search/repositories?q=user%3Ao%20stars%3A%3E%3D1&page=1&per_page=100",
+    "path": "/search/repositories?q=user%3Ao%20stars%3A%3E%3D1&page=1&per_page=30",
     "search": true
   },
   {
@@ -2901,7 +2901,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/pulls?state=open&base=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&page=1&per_page=100",
+    "path": "/repos/o/r/pulls?state=open&base=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&page=1&per_page=30",
     "search": false
   }
 ]
