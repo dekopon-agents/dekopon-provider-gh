@@ -69,7 +69,7 @@ credential, or authorize the resulting comment.
 
 ## 1. Create the Slack app
 
-Follow [dekopon's Slack example](https://github.com/dekopon-agents/dekopon/blob/main/examples/slack/README.md): create the app from
+Follow [dekopon's Slack example](https://github.com/dekopon-agents/dekopon/blob/main/docs/deploy.md#slack): create the app from
 [`manifest-agent.yaml`](https://github.com/dekopon-agents/dekopon/blob/main/examples/slack/manifest-agent.yaml), generate the app-level token (`xapp-…`, scope
 `connections:write`), install it for the bot token (`xoxb-…`), and find the workspace `T…` team ID
 and permitted sender’s `U…` member ID. Socket Mode needs no public HTTP endpoint or inbound firewall
@@ -91,8 +91,29 @@ broker refusal is an error, not evidence that checks passed; checks-only integra
 
 GitHub has no comment-only pull-request permission. Dekopon narrows that provider permission by
 exposing comment, approval, request-changes, and merge as separate capabilities. This deployment
-constrains only comment. The token’s own repository scope remains important: Cedar does not inspect
-provider input paths and therefore cannot restrict `owner/repo` itself.
+constrains only comment. The token’s own repository scope stays the final boundary: Cedar does not
+read capability input, so it never sees `owner/repo` as an argument. It does check every request the
+provider sends, so an owner can add a request `forbid` that keeps those requests inside one
+organization (see [the core example](https://github.com/dekopon-agents/dekopon/blob/main/docs/authorization.md#example)):
+
+```cedar
+@id("pr-summarizer-linter-stays-in-my-org")
+forbid(principal,
+       action in [Dekopon::Action::"gh.content.read",
+                  Dekopon::Action::"gh.pull-request.diff",
+                  Dekopon::Action::"gh.pull-request.status",
+                  Dekopon::Action::"gh.run.list",
+                  Dekopon::Action::"gh.run.read",
+                  Dekopon::Action::"gh.pull-request.comment"],
+       resource)
+when { context has request }
+unless { context.request.url.path like "/repos/my-org/*" };
+```
+
+`policies.cedar` ships without it because the organization is yours to name. The fence leaves out
+`gh.pull-request.read`, which can page a file list through `/repositories/<id>/pulls/<n>/files`, and
+`gh.actions.logs.read`, whose storage download is not a `/repos/` request; the token's scope
+bounds those two. The check sees what the provider sends, not what GitHub does with it.
 
 Classic PAT and GitHub App setup, plus the credential error messages, are
 covered in the [provider authentication guide](../../README.md#credentials-and-authentication-status).
@@ -259,12 +280,12 @@ execution, and trusted attribution — not from trusting the summary.
 
 ## Related
 
-- [dekopon's Slack example](https://github.com/dekopon-agents/dekopon/blob/main/examples/slack/README.md) — app manifest, tokens, and Slack identifiers.
+- [dekopon's Slack example](https://github.com/dekopon-agents/dekopon/blob/main/docs/deploy.md#slack) — app manifest, tokens, and Slack identifiers.
 - [the provider](../../README.md) — the narrow capabilities and no raw passthrough.
-- [`gatewayd.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/gatewayd.md) — routing, sessions, and conversation bounds.
+- [`design.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/design.md) — how a message becomes a checked capability call.
 - [`dekopon-brokerd`](https://github.com/dekopon-agents/dekopon/blob/main/crates/dekopon-brokerd/README.md) — broker configuration and recovery.
 - [`security-model.md`](https://github.com/dekopon-agents/dekopon/blob/main/docs/security-model.md) — trust boundaries and limitations.
-- [`examples/local/dekopon.yaml`](https://github.com/dekopon-agents/dekopon/blob/main/examples/local/dekopon.yaml) — a smaller catalog-only reviewer declaration.
+- [`examples/catalog/dekopon.yaml`](https://github.com/dekopon-agents/dekopon/blob/main/examples/catalog/dekopon.yaml) — a smaller catalog-only reviewer declaration.
 
 `gh pr view --json files` reads up to 3,000 files with one metadata request and up to
 30 file requests. Operators using this expansion need a larger `gh.pull-request.read`
