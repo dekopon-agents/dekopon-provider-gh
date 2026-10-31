@@ -549,7 +549,7 @@ fn component_list_exhausts_without_next_even_with_rewritten_last_link()
         },
         capability.as_str(),
         input,
-        "/repos/octo/hello/issues?state=open&page=1&per_page=30",
+        "/repos/octo/hello/issues?state=open&page=1&per_page=100",
     )?;
     assert_eq!(result.status, 0, "{}", result.stderr);
     assert_eq!(
@@ -865,14 +865,14 @@ fn component_pr_and_issue_fields_render_command_shapes() -> Result<(), Box<dyn s
                 "assignees,author,body,closedAt,createdAt,labels,number,state,title,updatedAt,url",
             ],
             "gh.issue.list",
-            "/repos/octo/hello/issues?state=open&page=1&per_page=30",
+            "/repos/octo/hello/issues?state=open&page=1&per_page=100",
             json!([issue.clone()]),
             json!([{"assignees":[{"login":"dev"}],"author":{"login":"octo"},"body":"details","closedAt":"2026-01-02T00:00:00Z","createdAt":"2026-01-01T00:00:00Z","labels":[{"name":"bug"}],"number":9,"state":"CLOSED","title":"Fix","updatedAt":"2026-01-02T00:00:00Z","url":"https://github.com/octo/hello/issues/9"}]),
         ),
         (
             &["issue", "list", "-R", "octo/hello"],
             "gh.issue.list",
-            "/repos/octo/hello/issues?state=open&page=1&per_page=30",
+            "/repos/octo/hello/issues?state=open&page=1&per_page=100",
             json!([issue]),
             json!("9\tFix\tbug\t2026-01-02T00:00:00Z\n"),
         ),

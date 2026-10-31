@@ -292,7 +292,10 @@ pub(crate) fn run(
         &mut bounded_send,
         base,
         &path,
-        input.limit.unwrap_or(30),
+        crate::Listing {
+            limit: input.limit.unwrap_or(30),
+            projection: crate::Projection::KeepsEveryRow,
+        },
         |body| {
             let page: Value = crate::decode(body)?;
             if page["incomplete_results"] != false {

@@ -1331,40 +1331,21 @@ async fn numeric_milestones_filter_search_results_by_number_without_title_qualif
                 input["_cliLimit"] = json!(1);
             }
             let row = |number, milestone| json!({"id":number,"number":number,"title":"issue","state":"open","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","milestone":{"number":milestone,"title":"1"}});
-            let path = |page, size| {
-                format!(
-                    "/search/issues?q={term}%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page={page}&per_page={size}"
-                )
-            };
-            let steps = if cli {
-                let mut first = exchange(
-                    &path(1, 1),
-                    "GET",
-                    Value::Null,
-                    json!({"incomplete_results":false,"total_count":2,"items":[row(2,2)]}),
-                );
-                first["response"]["headers"]["link"] = json!(format!(
-                    "<https://api.github.com{}>; rel=\"next\"",
-                    path(2, 1)
-                ));
-                vec![
-                    first,
-                    exchange(
-                        &path(2, 1),
-                        "GET",
-                        Value::Null,
-                        json!({"incomplete_results":false,"total_count":2,"items":[row(1,1)]}),
-                    ),
-                ]
-            } else {
+            let size = if cli { 100 } else { 20 };
+            let path = format!(
+                "/search/issues?q={term}%20repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen&page=1&per_page={size}"
+            );
+            let (status, stderr, stdout) = invoke(
+                "gh.issue.list",
+                input,
                 vec![exchange(
-                    &path(1, 20),
+                    &path,
                     "GET",
                     Value::Null,
                     json!({"incomplete_results":false,"total_count":2,"items":[row(2,2),row(1,1)]}),
-                )]
-            };
-            let (status, stderr, stdout) = invoke("gh.issue.list", input, steps).await;
+                )],
+            )
+            .await;
             assert_eq!(status, 0, "{stderr}");
             let output: Value = serde_json::from_slice(&stdout).expect("JSON output");
             if cli {

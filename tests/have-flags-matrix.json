@@ -2350,7 +2350,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/pulls?state=open&page=1&per_page=30",
+    "path": "/repos/o/r/pulls?state=open&page=1&per_page=100",
     "search": false
   },
   {
@@ -2371,7 +2371,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/pulls?state=open&page=1&per_page=30",
+    "path": "/repos/o/r/pulls?state=open&page=1&per_page=100",
     "search": false
   },
   {
@@ -2412,7 +2412,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/pulls?state=open&page=1&per_page=30",
+    "path": "/repos/o/r/pulls?state=open&page=1&per_page=100",
     "search": false
   },
   {
@@ -2454,7 +2454,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/issues?state=open&assignee=octocat&page=1&per_page=30",
+    "path": "/repos/o/r/issues?state=open&assignee=octocat&page=1&per_page=100",
     "search": false
   },
   {
@@ -2477,7 +2477,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/issues?state=open&labels=area%3Adb&page=1&per_page=30",
+    "path": "/repos/o/r/issues?state=open&labels=area%3Adb&page=1&per_page=100",
     "search": false
   },
   {
@@ -2498,7 +2498,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/issues?state=open&creator=octocat&page=1&per_page=30",
+    "path": "/repos/o/r/issues?state=open&creator=octocat&page=1&per_page=100",
     "search": false
   },
   {
@@ -2519,7 +2519,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/issues?state=open&mentioned=octocat&page=1&per_page=30",
+    "path": "/repos/o/r/issues?state=open&mentioned=octocat&page=1&per_page=100",
     "search": false
   },
   {
@@ -2603,7 +2603,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/repos/o/r/issues?state=open&type=area%3Adb&page=1&per_page=30",
+    "path": "/repos/o/r/issues?state=open&type=area%3Adb&page=1&per_page=100",
     "search": false
   },
   {
@@ -2645,7 +2645,7 @@
       "_cliOutput": "",
       "_cliLimit": 30
     },
-    "path": "/repos/o/r/issues?state=all&page=1&per_page=30",
+    "path": "/repos/o/r/issues?state=all&page=1&per_page=100",
     "search": false
   },
   {
@@ -2663,7 +2663,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=30",
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
     "search": false
   },
   {
@@ -2681,7 +2681,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=30",
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
     "search": false
   },
   {
@@ -2699,7 +2699,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=30",
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
     "search": false
   },
   {
@@ -2717,7 +2717,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=30",
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
     "search": false
   },
   {
@@ -2735,7 +2735,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=30",
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
     "search": false
   },
   {
@@ -2753,7 +2753,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=30",
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
     "search": false
   },
   {
@@ -2772,7 +2772,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=30",
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
     "search": false
   },
   {
@@ -2791,7 +2791,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=30",
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
     "search": false
   },
   {
@@ -2812,7 +2812,7 @@
       "_cliLimit": 30,
       "_cliOutput": ""
     },
-    "path": "/users/o/repos?type=owner&page=1&per_page=30",
+    "path": "/users/o/repos?type=owner&page=1&per_page=100",
     "search": false
   },
   {

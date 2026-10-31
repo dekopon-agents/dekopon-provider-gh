@@ -178,13 +178,13 @@ required. Classic scopes can cover more repositories than a fine-grained token.
 
 For a GitHub App, register the App with the repository permissions your enabled capabilities need
 and install it on the intended account and repositories. Bind it as a broker credential of kind
-`githubApp` with `appId`, `installationId` and `privateKey`; the broker mints and renews the
+`githubApp` (github.com only) with `appId`, `installationId` and `privateKey`; the broker mints and renews the
 installation token, optionally downscoped by `repositories` and `permissions`. This provider does
 not mint or refresh tokens.
 
 For either credential kind, use the broker's owner-only credentials file and bind its symbolic
 name to each granted capability's constraint set. Bind its destinations to `api.github.com`, or
-the authority in the owner's `baseUrl`; the guest receives no token. See the
+the authority in the owner's `baseUrl` (PATs only); the guest receives no token. See the
 [credential template](examples/pr-summarizer-linter/broker-credentials.yaml.example) and
 [broker constraints](examples/pr-summarizer-linter/broker.yaml). Never put a token in capability
 input, model text, or provider settings.

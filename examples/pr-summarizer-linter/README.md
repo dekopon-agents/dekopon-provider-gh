@@ -86,7 +86,7 @@ Create a fine-grained personal access token scoped to only the repositories this
 - **Commit statuses: Read-only** — legacy statuses returned by `gh.pull-request.status`
 
 Fine-grained PATs have no Checks permission; check runs on a private repository need a
-`githubApp` credential with Checks: Read. Verify the chosen credential can read the check-runs endpoint for these repositories. A 403 or
+`githubApp` credential with Checks: Read or a classic PAT with `repo`. Verify the chosen credential can read the check-runs endpoint for these repositories. A 403 or
 broker refusal is an error, not evidence that checks passed; checks-only integrations are included.
 
 GitHub has no comment-only pull-request permission. Dekopon narrows that provider permission by

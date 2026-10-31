@@ -188,63 +188,79 @@ pub(crate) fn list(
             None
         });
     let path = format!("/users/{}/repos?type=owner", percent_encode(&input.owner));
-    let rows = crate::collect_pages(send, base, &path, input.cli_limit.unwrap_or(30), |raw| {
-        let repo =
-            serde_json::from_value::<RawRepo>(raw.clone()).map_err(|_| invalid_response())?;
-        validate_repo(&repo.name).map_err(|_| invalid_response())?;
-        if !raw["owner"]["login"]
-            .as_str()
-            .is_some_and(|login| login.eq_ignore_ascii_case(&input.owner))
-            || !raw["full_name"].as_str().is_some_and(|name| {
-                name.split_once('/').is_some_and(|(owner, name)| {
-                    owner.eq_ignore_ascii_case(&input.owner)
-                        && name.eq_ignore_ascii_case(&repo.name)
+    let projection = crate::Projection::drops_rows_when(
+        input.source == Some(true)
+            || input.fork == Some(true)
+            || input.archived == Some(true)
+            || input.no_archived == Some(true)
+            || visibility.is_some()
+            || input.language.is_some()
+            || input.topic.is_some(),
+    );
+    let rows = crate::collect_pages(
+        send,
+        base,
+        &path,
+        input.cli_limit.unwrap_or(30),
+        projection,
+        |raw| {
+            let repo =
+                serde_json::from_value::<RawRepo>(raw.clone()).map_err(|_| invalid_response())?;
+            validate_repo(&repo.name).map_err(|_| invalid_response())?;
+            if !raw["owner"]["login"]
+                .as_str()
+                .is_some_and(|login| login.eq_ignore_ascii_case(&input.owner))
+                || !raw["full_name"].as_str().is_some_and(|name| {
+                    name.split_once('/').is_some_and(|(owner, name)| {
+                        owner.eq_ignore_ascii_case(&input.owner)
+                            && name.eq_ignore_ascii_case(&repo.name)
+                    })
                 })
-            })
-        {
-            return Err(invalid_response());
-        }
-        if (input.source == Some(true) && repo.fork)
-            || (input.fork == Some(true) && !repo.fork)
-            || (input.archived == Some(true) && !repo.archived)
-            || (input.no_archived == Some(true) && repo.archived)
-            || visibility.is_some_and(|visibility| {
-                repo.visibility.as_deref().unwrap_or(if repo.private {
-                    "private"
-                } else {
-                    "public"
-                }) != visibility
-            })
-            || input.language.as_deref().is_some_and(|language| {
-                !raw["language"]
-                    .as_str()
-                    .is_some_and(|value| value.eq_ignore_ascii_case(language))
-            })
-            || input.topic.as_ref().is_some_and(|topics| {
-                topics.iter().any(|topic| {
-                    !raw["topics"].as_array().is_some_and(|values| {
-                        values.iter().any(|value| {
-                            value
-                                .as_str()
-                                .is_some_and(|value| value.eq_ignore_ascii_case(topic))
+            {
+                return Err(invalid_response());
+            }
+            if (input.source == Some(true) && repo.fork)
+                || (input.fork == Some(true) && !repo.fork)
+                || (input.archived == Some(true) && !repo.archived)
+                || (input.no_archived == Some(true) && repo.archived)
+                || visibility.is_some_and(|visibility| {
+                    repo.visibility.as_deref().unwrap_or(if repo.private {
+                        "private"
+                    } else {
+                        "public"
+                    }) != visibility
+                })
+                || input.language.as_deref().is_some_and(|language| {
+                    !raw["language"]
+                        .as_str()
+                        .is_some_and(|value| value.eq_ignore_ascii_case(language))
+                })
+                || input.topic.as_ref().is_some_and(|topics| {
+                    topics.iter().any(|topic| {
+                        !raw["topics"].as_array().is_some_and(|values| {
+                            values.iter().any(|value| {
+                                value
+                                    .as_str()
+                                    .is_some_and(|value| value.eq_ignore_ascii_case(topic))
+                            })
                         })
                     })
                 })
-            })
-        {
-            return Ok(None);
-        }
-        Ok(Some(json!({
-            "name": repo.name, "owner": raw["owner"]["login"],
-            "nameWithOwner": raw["full_name"], "url": raw["html_url"],
-            "createdAt": raw["created_at"], "isPrivate": repo.private,
-            "isFork": repo.fork, "isArchived": repo.archived,
-            "defaultBranchRef": {"name": repo.default_branch},
-            "description": marked_optional(repo.description.as_deref(), MAX_DESCRIPTION_OUT_BYTES),
-            "pushedAt": repo.pushed_at, "updatedAt": timestamp(&repo.updated_at)?,
-            "visibility": repo.visibility,
-        })))
-    })?;
+            {
+                return Ok(None);
+            }
+            Ok(Some(json!({
+                "name": repo.name, "owner": raw["owner"]["login"],
+                "nameWithOwner": raw["full_name"], "url": raw["html_url"],
+                "createdAt": raw["created_at"], "isPrivate": repo.private,
+                "isFork": repo.fork, "isArchived": repo.archived,
+                "defaultBranchRef": {"name": repo.default_branch},
+                "description": marked_optional(repo.description.as_deref(), MAX_DESCRIPTION_OUT_BYTES),
+                "pushedAt": repo.pushed_at, "updatedAt": timestamp(&repo.updated_at)?,
+                "visibility": repo.visibility,
+            })))
+        },
+    )?;
     Ok(json!({"repositories": rows}))
 }
 

@@ -77,7 +77,7 @@
       ],
       "assignee": "octocat",
       "_cliOutput": "",
-      "_cliLimit": 100
+      "_cliLimit": 30
     },
     "files": [
       "0017-GET-repos-dekopon-agents-gh-parity-scratch-pulls.json"
@@ -98,7 +98,7 @@
       ],
       "type": "Bug",
       "_cliOutput": "",
-      "_cliLimit": 100
+      "_cliLimit": 30
     },
     "files": [
       "0018-GET-repos-dekopon-agents-gh-parity-scratch-issues.json"
@@ -150,7 +150,7 @@
       "visibility": "public",
       "archived": false,
       "_cliOutput": "",
-      "_cliLimit": 100
+      "_cliLimit": 30
     },
     "files": [
       "0021-GET-users-dekopon-agents-repos.json"
@@ -478,7 +478,7 @@
       "repo": "gh-parity-scratch",
       "milestone": "1",
       "_cliOutput": "",
-      "_cliLimit": 100
+      "_cliLimit": 30
     },
     "files": [
       "0045-GET-repos-dekopon-agents-gh-parity-scratch-issues.json"
