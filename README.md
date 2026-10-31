@@ -47,7 +47,7 @@ Without `--json`, these commands print tab-separated rows (files print decoded c
 PR and issue lists accept `--state all`. PR lists accept base/head, label, assignee, draft,
 app-author and scoped search filters. Issue lists accept assignee, label, author, mention,
 milestone, app-author, issue type and scoped search filters. New fields are optional;
-legacy inputs retain their requests and output. Filters collect matching rows within the existing
+legacy inputs retain their output. Filters collect matching rows within the existing
 ten-request bound. A search-backed PR list uses the search result's issue-shaped projection;
 GitHub does not include head/base refs in that response, so those selected fields are null.
 `pr view --comments` and `issue view --comments` render the existing bounded comments page in text.
