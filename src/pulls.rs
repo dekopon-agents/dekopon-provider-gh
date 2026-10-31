@@ -409,12 +409,19 @@ pub(crate) fn list(
             state.as_str()
         );
         let fields = input.cli.as_deref().unwrap_or_default();
-        let items =
-            crate::collect_pages(send, base, &path, input.cli_limit.unwrap_or(30), |raw| {
-                if matches!(state, StateFilter::Merged)
-                    && raw["merged_at"].is_null()
-                    && raw["merged"] != true
-                {
+        let merged = match state {
+            StateFilter::Merged => true,
+            StateFilter::Open | StateFilter::Closed | StateFilter::All => false,
+        };
+        let projection = crate::Projection::drops_rows_when(merged || input.author.is_some());
+        let items = crate::collect_pages(
+            send,
+            base,
+            &path,
+            input.cli_limit.unwrap_or(30),
+            projection,
+            |raw| {
+                if merged && raw["merged_at"].is_null() && raw["merged"] != true {
                     return Ok(None);
                 }
                 if input.author.as_deref().is_some_and(|author| {
@@ -430,7 +437,8 @@ pub(crate) fn list(
                     return Err(invalid_response());
                 }
                 cli_pull(&pull, &raw, fields).map(Some)
-            })?;
+            },
+        )?;
         return Ok(json!({"pullRequests": items}));
     }
     if input.cli_limit.is_some() {
@@ -682,7 +690,10 @@ pub(crate) fn status(
             &mut bounded_send,
             base,
             &format!("{path}/check-runs?filter=all"),
-            crate::MAX_CLI_LIMIT * crate::MAX_LIST_REQUESTS,
+            crate::Listing {
+                limit: crate::MAX_CLI_LIMIT * crate::MAX_LIST_REQUESTS,
+                projection: crate::Projection::KeepsEveryRow,
+            },
             |body| checks_page(body, "check_runs", &mut check_total),
             crate::list_key,
             |row| Ok(Some(row)),
@@ -720,7 +731,10 @@ pub(crate) fn status(
             &mut bounded_send,
             base,
             &format!("/repos/{owner}/{repo}/actions/runs?head_sha={head}"),
-            crate::MAX_CLI_LIMIT * crate::MAX_LIST_REQUESTS,
+            crate::Listing {
+                limit: crate::MAX_CLI_LIMIT * crate::MAX_LIST_REQUESTS,
+                projection: crate::Projection::KeepsEveryRow,
+            },
             |body| checks_page(body, "workflow_runs", &mut action_total),
             crate::list_key,
             |row| Ok(Some(row)),
