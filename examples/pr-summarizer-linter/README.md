@@ -82,11 +82,11 @@ Create a fine-grained personal access token scoped to only the repositories this
 
 - **Contents: Read-only** — `gh.content.read`
 - **Pull requests: Read and write** — pull-request reads and one `COMMENT` review
-- **Checks: Read-only** — check runs returned by `gh.pull-request.status`
 - **Actions: Read-only** — workflow names and events for Actions check runs
 - **Commit statuses: Read-only** — legacy statuses returned by `gh.pull-request.status`
 
-Verify the chosen credential can read the check-runs endpoint for these repositories. A 403 or
+Fine-grained PATs have no Checks permission; check runs on a private repository need a
+`githubApp` credential with Checks: Read or a classic PAT with `repo`. Verify the chosen credential can read the check-runs endpoint for these repositories. A 403 or
 broker refusal is an error, not evidence that checks passed; checks-only integrations are included.
 
 GitHub has no comment-only pull-request permission. Dekopon narrows that provider permission by
@@ -94,7 +94,7 @@ exposing comment, approval, request-changes, and merge as separate capabilities.
 constrains only comment. The token’s own repository scope remains important: Cedar does not inspect
 provider input paths and therefore cannot restrict `owner/repo` itself.
 
-Classic PAT and GitHub App installation-token setup, plus the credential error messages, are
+Classic PAT and GitHub App setup, plus the credential error messages, are
 covered in the [provider authentication guide](../../README.md#credentials-and-authentication-status).
 `gh auth status --json limit,remaining,reset` uses the separate read-only `gh.auth.status` capability. This reviewer
 does not grant it: to enable it, an owner must add it to the catalog and policy and give it its own
@@ -294,7 +294,7 @@ has its own grant because its fallback creates a comment. No read capability gai
 ## Actions read grants
 
 The example additionally grants `gh.run.list` (21 GETs) and `gh.run.read` (29 GETs),
-with Actions: Read and Checks: Read for extracted annotations. The separate `gh.actions.logs.read` grant brings the total to eight.
+with Actions: Read and, for extracted annotations, Checks: Read (GitHub Apps only). The separate `gh.actions.logs.read` grant brings the total to eight.
 Use run list by PR branch or each head SHA to investigate history: `pr checks` reads only the
 current head and collapses repeated checks. Inspect coverage before claiming a complete history.
 Run view supports explicit attempts and jobs; a selected job reports its completed duration

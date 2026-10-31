@@ -137,6 +137,15 @@ pub(crate) fn run(
             }
         }
     }
+    let projection = crate::Projection::drops_rows_when(if search {
+        numeric_milestone.is_some()
+    } else {
+        !pr || state == "merged"
+            || input.draft.is_some()
+            || input.author.is_some()
+            || input.assignee.is_some()
+            || input.label.is_some()
+    });
     let fields = input.cli.as_deref().unwrap_or("");
     let project = |raw: Value| -> Result<Option<Value>, ProviderError> {
         if !pr && !raw["pull_request"].is_null() {
@@ -215,7 +224,10 @@ pub(crate) fn run(
             send,
             base,
             &path,
-            input.limit.unwrap_or(30),
+            crate::Listing {
+                limit: input.limit.unwrap_or(30),
+                projection,
+            },
             |body| {
                 let raw: Value = crate::decode(body)?;
                 response_items(raw, search)

@@ -47,7 +47,7 @@ Without `--json`, these commands print tab-separated rows (files print decoded c
 PR and issue lists accept `--state all`. PR lists accept base/head, label, assignee, draft,
 app-author and scoped search filters. Issue lists accept assignee, label, author, mention,
 milestone, app-author, issue type and scoped search filters. New fields are optional;
-legacy inputs retain their requests and output. Filters collect matching rows within the existing
+legacy inputs retain their output. Filters collect matching rows within the existing
 ten-request bound. A search-backed PR list uses the search result's issue-shaped projection;
 GitHub does not include head/base refs in that response, so those selected fields are null.
 `pr view --comments` and `issue view --comments` render the existing bounded comments page in text.
@@ -177,16 +177,14 @@ organization approval when required. For a classic PAT, choose the scopes the en
 required. Classic scopes can cover more repositories than a fine-grained token.
 
 For a GitHub App, register the App with the repository permissions your enabled capabilities need
-and install it on the intended account and repositories. An owner-side process uses the App's
-private key to sign a JWT and
-[generate an installation access token](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
-Store the installation token in the broker's credential binding, not the JWT or private key.
-Installation tokens expire after one hour; renew them owner-side and restart the broker to load the
-replacement before expiration. This provider does not mint or refresh tokens.
+and install it on the intended account and repositories. Bind it as a broker credential of kind
+`githubApp` (github.com only) with `appId`, `installationId` and `privateKey`; the broker mints and renews the
+installation token, optionally downscoped by `repositories` and `permissions`. This provider does
+not mint or refresh tokens.
 
 For either credential kind, use the broker's owner-only credentials file and bind its symbolic
 name to each granted capability's constraint set. Bind its destinations to `api.github.com`, or
-the authority in the owner's `baseUrl`; the guest receives no token. See the
+the authority in the owner's `baseUrl` (PATs only); the guest receives no token. See the
 [credential template](examples/pr-summarizer-linter/broker-credentials.yaml.example) and
 [broker constraints](examples/pr-summarizer-linter/broker.yaml). Never put a token in capability
 input, model text, or provider settings.
@@ -244,11 +242,11 @@ capabilities you enable (Read unless marked Write):
 | `gh.cache.delete` | Actions: Write |
 | `gh.run.list` | Actions: Read |
 | `gh.actions.logs.read` | Actions: Read |
-| `gh.run.read` | Actions: Read; Checks: Read (extracted annotations) |
+| `gh.run.read` | Actions: Read; Checks: Read for annotations (GitHub Apps only; fine-grained PATs have none, classic PATs use `repo`) |
 | `gh.repo.read`, `gh.repo.list` | Metadata: Read |
 | `gh.content.read`, `gh.branch.read`, `gh.commit.read` | Contents: Read |
 | `gh.pull-request.list`, `.read`, `.diff` | Pull requests: Read |
-| `gh.pull-request.status` | Pull requests: Read; Checks: Read; Actions: Read; Commit statuses: Read |
+| `gh.pull-request.status` | Pull requests: Read; Actions: Read; Commit statuses: Read; Checks: Read (GitHub Apps only; fine-grained PATs have none, classic PATs use `repo`) |
 | `gh.pull-request.approve`, `.comment`, `.request-changes` | Pull requests: Write |
 | `gh.pull-request.merge` | Pull requests: Write; Contents: Write |
 | `gh.issue.read`, `.list` | Issues: Read |
@@ -382,7 +380,7 @@ selected read is complete, while job-duration coverage explicitly remains partia
 incomplete results take precedence. Success, neutral and skipped are not failed conclusions.
 
 Grant `gh.run.list` and `gh.run.read` separately. Both need only GET on the existing API authority
-and Actions: Read; view additionally needs Checks: Read for annotations. List enforces at most
+and Actions: Read; view additionally needs Checks: Read (GitHub Apps only) for annotations. List enforces at most
 21 requests at worst: repository visibility, ten workflow pages and up to ten run pages,
 stopping as soon as the requested number of eligible runs exists. With a one-page workflow
 catalog and enough eligible runs on the first run page, the request count is three. View enforces at most

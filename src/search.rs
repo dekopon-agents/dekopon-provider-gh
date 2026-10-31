@@ -292,7 +292,10 @@ pub(crate) fn run(
         &mut bounded_send,
         base,
         &path,
-        input.limit.unwrap_or(30),
+        crate::Listing {
+            limit: input.limit.unwrap_or(30),
+            projection: crate::Projection::KeepsEveryRow,
+        },
         |body| {
             let page: Value = crate::decode(body)?;
             if page["incomplete_results"] != false {
@@ -456,8 +459,8 @@ mod tests {
     #[test]
     fn native_search_collects_two_pages_and_refuses_inconsistent_index() {
         let path = "/search/code?q=fix%20repo%3Aocto%2Fhello";
-        let first = format!("https://api.github.com{path}&page=1&per_page=100");
-        let second = format!("https://api.github.com{path}&page=2&per_page=100");
+        let first = format!("https://api.github.com{path}&page=1&per_page=2");
+        let second = format!("https://api.github.com{path}&page=2&per_page=2");
         let link = format!("<{second}>; rel=\"next\"");
         let input =
             json!({"owner":"octo","repo":"hello","query":"fix","_cliLimit":2,"_cliOutput":"sha"});
@@ -500,7 +503,7 @@ mod tests {
     fn search_prs_and_issues_derive_repository_from_rest_url() {
         for (id, kind) in [(ids::SEARCH_PRS, "pr"), (ids::SEARCH_ISSUES, "issue")] {
             let uri = format!(
-                "https://api.github.com/search/issues?q=fix%20repo%3Aocto%2Fhello%20is%3A{kind}&page=1&per_page=100"
+                "https://api.github.com/search/issues?q=fix%20repo%3Aocto%2Fhello%20is%3A{kind}&page=1&per_page=30"
             );
             let mut send = scripted(vec![step(
                 move |request| assert_eq!(request.uri, uri),
@@ -527,7 +530,7 @@ mod tests {
 
     #[test]
     fn native_commit_search_deduplicates_sha_without_numeric_id() {
-        let uri = "https://api.github.com/search/commits?q=fix%20user%3Adekopon-agents&page=1&per_page=100";
+        let uri = "https://api.github.com/search/commits?q=fix%20user%3Adekopon-agents&page=1&per_page=30";
         let mut send = scripted(vec![step(
             move |request| assert_eq!(request.uri, uri),
             json_response(

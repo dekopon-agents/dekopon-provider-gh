@@ -214,15 +214,21 @@ pub(crate) fn list(
             percent_encode(&input.repo)
         );
         let fields = input.cli.as_deref().unwrap_or_default();
-        let items =
-            crate::collect_pages(send, base, &path, input.cli_limit.unwrap_or(30), |raw| {
+        let items = crate::collect_pages(
+            send,
+            base,
+            &path,
+            input.cli_limit.unwrap_or(30),
+            crate::Projection::MayDropRows,
+            |raw| {
                 let issue = serde_json::from_value::<RawIssue>(raw.clone())
                     .map_err(|_| invalid_response())?;
                 if issue.pull_request.is_some() {
                     return Ok(None);
                 }
                 cli_issue(&issue, &raw, fields).map(Some)
-            })?;
+            },
+        )?;
         return Ok(json!({"issues": items}));
     }
     if input.cli_limit.is_some() {

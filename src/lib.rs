@@ -110,6 +110,7 @@ const MAX_LOGIN_OUT_BYTES: usize = 64;
 const MAX_LIST_ITEMS: usize = 50;
 const MAX_CLI_LIMIT: usize = 100;
 const MAX_LIST_REQUESTS: usize = 10;
+const MAX_REST_PAGE: usize = 100;
 const MAX_LABELS: usize = 20;
 
 /// Every capability identifier this component exports, named once.
@@ -1057,6 +1058,37 @@ fn has_next_link(response: &Response) -> bool {
     })
 }
 
+#[derive(Clone, Copy)]
+enum Projection {
+    KeepsEveryRow,
+    MayDropRows,
+}
+
+impl Projection {
+    fn drops_rows_when(filtered: bool) -> Self {
+        if filtered {
+            Self::MayDropRows
+        } else {
+            Self::KeepsEveryRow
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Listing {
+    limit: usize,
+    projection: Projection,
+}
+
+impl Listing {
+    fn per_page(self) -> usize {
+        match self.projection {
+            Projection::KeepsEveryRow => self.limit.min(MAX_REST_PAGE),
+            Projection::MayDropRows => MAX_REST_PAGE,
+        }
+    }
+}
+
 /// Collects complete REST pages under one capability; no row is returned until every needed
 /// request, projection and cursor has succeeded.
 fn collect_pages(
@@ -1064,6 +1096,7 @@ fn collect_pages(
     base: &Base,
     path: &str,
     limit: usize,
+    projection: Projection,
     project: impl FnMut(Value) -> Result<Option<Value>, ProviderError>,
 ) -> Result<Vec<Value>, ProviderError> {
     if !(1..=MAX_CLI_LIMIT).contains(&limit) {
@@ -1073,7 +1106,7 @@ fn collect_pages(
         send,
         base,
         path,
-        limit,
+        Listing { limit, projection },
         decode::<Vec<Value>>,
         list_key,
         project,
@@ -1084,21 +1117,23 @@ fn collect_pages_with(
     send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
     base: &Base,
     path: &str,
-    limit: usize,
+    listing: Listing,
     mut extract: impl FnMut(&[u8]) -> Result<Vec<Value>, ProviderError>,
     mut identity: impl FnMut(&Value) -> Option<String>,
     mut project: impl FnMut(Value) -> Result<Option<Value>, ProviderError>,
 ) -> Result<Vec<Value>, ProviderError> {
+    let limit = listing.limit;
     if !(1..=MAX_CLI_LIMIT * MAX_LIST_REQUESTS).contains(&limit) {
         return Err(invalid_input());
     }
     let mut rows = Vec::new();
     let mut seen = std::collections::HashSet::new();
+    let per_page = listing.per_page();
     for page in 1..=MAX_LIST_REQUESTS {
-        let uri = url(base, &format!("{path}&page={page}&per_page=100"))?;
+        let uri = url(base, &format!("{path}&page={page}&per_page={per_page}"))?;
         let response = send_get(send, uri, ACCEPT_JSON)?;
         let items = extract(&response.body)?;
-        if items.len() > 100 {
+        if items.len() > per_page {
             return Err(invalid_response());
         }
         for item in items {
@@ -1563,6 +1598,107 @@ mod tests {
                 .iter()
                 .all(|header| !header.name.eq_ignore_ascii_case("authorization"))
         );
+    }
+
+    #[test]
+    fn native_a_limit_of_one_requests_one_row() {
+        let path = "https://api.github.com/repos/octo/hello/pulls?state=open";
+        let pull = json!([{"id":1,"number":1,"title":"Ship","state":"open",
+            "head":{"ref":"topic","sha":"a".repeat(40)},"base":{"ref":"main","sha":"b".repeat(40)},
+            "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}]);
+        let native = Native::<Gh>::new().http(HttpScript::new(
+            "api.github.com",
+            "GET",
+            Response {
+                status: 200,
+                headers: vec![
+                    super::Header::text(
+                        "link",
+                        format!("<{path}&page=2&per_page=1>; rel=\"next\""),
+                    )
+                    .expect("fixture link"),
+                ],
+                body: pull.to_string().into_bytes(),
+            },
+        ));
+        let output = native.call(
+            "gh.pull-request.list",
+            &json!({"owner":"octo","repo":"hello","_cliOutput":"number","_cliLimit":1}).to_string(),
+        );
+        assert_eq!(output.status, 0, "{}", output.stderr);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("JSON"),
+            json!([{"number":1}])
+        );
+        let sent = native.requests();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].uri, format!("{path}&page=1&per_page=1"));
+        assert!(
+            sent[0]
+                .headers
+                .iter()
+                .all(|header| !header.name.eq_ignore_ascii_case("authorization"))
+        );
+    }
+
+    #[test]
+    fn native_an_author_filtered_list_pages_at_100_even_at_a_limit_of_one() {
+        use super::testutil::{json_response, response_with_headers};
+        let prefix = "https://api.github.com/repos/octo/hello/pulls?state=open";
+        let pull = |number: u64, login: &str| {
+            json!({
+                "id": number, "number": number, "title": "Ship", "state": "open",
+                "user": {"login": login}, "head": {"ref":"topic","sha":"a".repeat(40)},
+                "base": {"ref":"main","sha":"b".repeat(40)},
+                "created_at":"2026-01-01T00:00:00Z", "updated_at":"2026-01-02T00:00:00Z"
+            })
+        };
+        let next = format!("<{prefix}&page=2&per_page=100>; rel=\"next\"");
+        let output = invoke_with(
+            &capability("gh.pull-request.list"),
+            json!({"owner":"octo","repo":"hello","author":"dev","_cli":"number","_cliLimit":1}),
+            scripted(vec![
+                step(
+                    move |request| assert_eq!(request.uri, format!("{prefix}&page=1&per_page=100")),
+                    response_with_headers(200, &[("link", &next)], &json!([pull(1, "other")])),
+                ),
+                step(
+                    move |request| assert_eq!(request.uri, format!("{prefix}&page=2&per_page=100")),
+                    json_response(200, &json!([pull(2, "dev")])),
+                ),
+            ]),
+        )
+        .expect("the match on the second page");
+        let rows = output["pullRequests"].as_array().expect("rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["number"], 2);
+    }
+
+    #[test]
+    fn native_a_page_with_more_rows_than_its_per_page_is_an_invalid_response() {
+        let pull = |number: u64| {
+            json!({
+                "id": number, "number": number, "title": "Ship", "state": "open",
+                "head": {"ref":"topic","sha":"a".repeat(40)},
+                "base": {"ref":"main","sha":"b".repeat(40)},
+                "created_at":"2026-01-01T00:00:00Z", "updated_at":"2026-01-02T00:00:00Z"
+            })
+        };
+        let error = invoke_with(
+            &capability("gh.pull-request.list"),
+            json!({"owner":"octo","repo":"hello","_cli":"number","_cliLimit":1}),
+            scripted(vec![step(
+                |request| {
+                    assert_eq!(
+                        request.uri,
+                        "https://api.github.com/repos/octo/hello/pulls?state=open&page=1&per_page=1"
+                    )
+                },
+                super::testutil::json_response(200, &json!([pull(1), pull(2)])),
+            )]),
+        )
+        .expect_err("two rows answer a one-row page");
+        assert_eq!(error.code(), "invalid-response");
     }
 
     #[test]
