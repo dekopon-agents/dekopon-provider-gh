@@ -20,53 +20,12 @@ fn component() -> std::path::PathBuf {
         .into()
 }
 
+#[path = "support/fixture.rs"]
+mod fixture_build;
+
 fn fixture_component() -> std::path::PathBuf {
     static COMPONENT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
-    COMPONENT
-        .get_or_init(|| {
-            let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            let target = root.join("target/foundation-fixture");
-            let mut flags = std::env::var("CARGO_ENCODED_RUSTFLAGS").unwrap_or_else(|_| {
-                std::env::var("RUSTFLAGS")
-                    .unwrap_or_default()
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join("\x1f")
-            });
-            if !flags.is_empty() {
-                flags.push('\x1f');
-            }
-            flags.push_str("--cfg=gh_foundation_fixture");
-            let status = std::process::Command::new("cargo")
-                .env("CARGO_ENCODED_RUSTFLAGS", flags)
-                .current_dir(&root)
-                .args([
-                    "build",
-                    "--locked",
-                    "--manifest-path",
-                    "tests/fixtures/Cargo.toml",
-                    "--target",
-                    "wasm32-unknown-unknown",
-                    "--release",
-                    "--target-dir",
-                ])
-                .arg(&target)
-                .status()
-                .expect("build the isolated foundation fixture");
-            assert!(status.success(), "fixture build failed");
-            let core = target.join("wasm32-unknown-unknown/release/gh_foundation_fixture.wasm");
-            let component = target.join("foundation-fixture.wasm");
-            let status = std::process::Command::new("wasm-tools")
-                .args(["component", "new"])
-                .arg(core)
-                .arg("-o")
-                .arg(&component)
-                .status()
-                .expect("encode foundation fixture");
-            assert!(status.success(), "fixture encoding failed");
-            component
-        })
-        .clone()
+    COMPONENT.get_or_init(|| fixture_build::build(None)).clone()
 }
 
 fn valid_refusal_argv(command: &str) -> Vec<String> {

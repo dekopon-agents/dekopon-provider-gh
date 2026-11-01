@@ -25,6 +25,8 @@ regex = "1.12.3"
 sha2 = "0.10.9"
 
 [dev-dependencies]
+dekopon-broker-protocol = "=0.64.0"
+dekopon-broker = "=0.64.0"
 dekopon-provider-sdk-testkit = "=0.64.0"
 dekopon-broker-host = "=0.64.0"
 dekopon-http-host = "=0.64.0"
@@ -35,3 +37,7 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "io-util", "
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(gh_foundation_fixture)"] }
+
+[[example]]
+name = "content-write-smoke"
+path = "tests/smoke/client.rs"

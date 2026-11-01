@@ -9,7 +9,7 @@ maps that Slack subject to the principal `maintainer`, checks Cedar policy, expo
 capabilities, injects a GitHub token bound to `api.github.com`, executes the `gh` WebAssembly
 component, and attributes decisions and effects to the authenticated person in structured telemetry. The token is never visible to the model, shell session, agent, or component that uses it.
 
-The provider still exports thirty production capabilities; this example grants eight.
+The provider still exports forty-two production capabilities; this example grants eight.
 Upstream shorthands select the same grants: `gh pr review ... -c -b <text>` is equivalent to
 `--comment --body <text>`, and `-F -` reads a piped body. Unsupported upstream operations refuse
 before HTTP; `gh --help` lists their reasons. `gh version`, `licenses`, `actions`, and
@@ -350,3 +350,10 @@ changes belong to the coordinator's `actions-grants` OWNER-QUEUE item.
 repository secrets. Workflow view requires `--yaml` with `--ref`; built-in dynamic
 workflows support metadata reads but have no repository YAML. Key-form cache deletion
 and `--all` each refuse discovery exceeding twenty matching targets before writing.
+
+`gh.content.write` is not granted by this reviewer. Its native `gh repo write-file` extension
+requires a separate Contents: Write grant and the exact file/run-branch fence in the
+[disabled example](../content-write/README.md); none of this example's eight grants changes.
+
+The root README documents the optional writer's exit-status/stderr outcomes and how to handle
+broker timeouts before deciding whether another write is appropriate.

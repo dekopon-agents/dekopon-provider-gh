@@ -1,0 +1,25 @@
+capabilities:
+  gh:
+    capabilities:
+      gh.content.write:
+        credential: github-app
+        constraints:
+          timeoutMs: 10000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [PUT]
+            maxRequests: 1
+            maxRequestBytes: 16384
+            maxResponseBytes: 16384
+            allowPlaintextLoopback: false
+      gh.content.read:
+        credential: github-app
+        constraints:
+          timeoutMs: 10000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [GET]
+            maxRequests: 1
+            maxRequestBytes: 16384
+            maxResponseBytes: 16384
+            allowPlaintextLoopback: false

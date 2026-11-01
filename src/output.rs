@@ -382,8 +382,8 @@ mod tests {
         let selected = super::render("gh.pull-request.status", &json!({}), &input, "name,bucket")
             .expect("json");
         assert_eq!(
-            selected,
-            "[{\"bucket\":\"fail\",\"name\":\"third-party\"}]\n"
+            serde_json::from_str::<serde_json::Value>(&selected).expect("selected JSON"),
+            json!([{"bucket":"fail","name":"third-party"}])
         );
         let error = super::checks_verdict(&input).expect_err("failed check");
         assert_eq!(error.code(), "checks-failed");
