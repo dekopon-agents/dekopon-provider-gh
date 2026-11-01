@@ -563,11 +563,16 @@ or exactly-once guarantee. Callers distinguish failures by exit status plus stab
 | `forbidden` (HTTP 403) | 3 | `credential is not permitted to make this call` |
 | `not-found` (HTTP 404) | 3 | `not found, or not visible to this credential` |
 | `unprocessable` (HTTP 422) | 3 | `endpoint refused the request as invalid` |
-| `write-outcome-unknown` (transport failure or unconfirmed HTTP response) | 5 | `file write outcome is unknown; read state before deciding what to do next` |
+| `write-outcome-unknown` (transport failure or unconfirmed/unreadable HTTP reply) | 5 | `file write outcome is unknown; read state before deciding what to do next` |
 
 HTTP 408/499, every 5xx response (including 500/502/503/504), and unexpected success or
 redirect responses are unknown: a received response does not establish whether the write
-committed. These outcomes are never retried automatically.
+committed. A confirmed 201 create or 200 update whose reply cannot be decoded or whose
+path/type/identifiers fail validation is also unknown: the commit may have happened even though
+the provider cannot report it. These outcomes are never retried automatically.
+
+Other exit-3 messages for 401, rate limiting, or permission/scope diagnostics are also definitive
+API refusals.
 
 The broker retains the status and message; its generic detail label is `provider-exit`, not the
 provider's internal outcome name. A broker-side operation timeout instead arrives as a broker
@@ -577,7 +582,7 @@ upstream response bodies nor submitted content are printed.
 
 GitHub's [published REST description](https://github.com/github/rest-api-description/blob/main/descriptions/api.github.com/api.github.com.json)
 for this endpoint includes both `basic-error` and `repository-rule-violation-error` under HTTP 409.
-Therefore `content-conflict` can also mean a protection/rule refusal; it does not establish a
+Therefore `content-conflict` can also mean a repository rule (ruleset) refusal; it does not establish a
 SHA mismatch. See the [Contents REST reference](https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents).
 
 Grant `gh.content.write` separately: external-write, Medium risk, Contents: Write, PUT only,

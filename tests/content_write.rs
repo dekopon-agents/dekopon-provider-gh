@@ -427,3 +427,52 @@ async fn real_component_transport_drop_keeps_unknown_status_and_stderr_without_r
     assert_eq!(stderr, case.stderr);
     assert!(stdout.is_empty());
 }
+
+#[test]
+fn real_component_confirmed_writes_with_unreadable_replies_are_unknown() {
+    for (status, mode) in [(201, "create"), (200, "update")] {
+        for body in outcomes::unreadable_replies() {
+            let harness = Harness::<Gh>::get(component()).http(HttpScript::new(
+                "localhost",
+                "PUT",
+                Response {
+                    status,
+                    headers: vec![],
+                    body: body.into_bytes(),
+                },
+            ));
+            let base = format!("{}/gh", harness.origin().expect("origin"));
+            let mut value = input();
+            value["mode"] = json!(mode);
+            let mut expected = json!({"branch":"runs/content-123","message":"Update configuration","content":STANDARD.encode("enabled: true\n")});
+            if mode == "update" {
+                value["sha"] = json!("a".repeat(40));
+                expected["sha"] = value["sha"].clone();
+            }
+            let output = harness
+                .settings(json!({"baseUrl":base}))
+                .call("gh.content.write", value)
+                .expect("component");
+            assert_eq!(output.status, 5);
+            assert_eq!(output.stderr, outcomes::UNKNOWN_STDERR);
+            assert!(output.stdout.is_empty());
+            assert_eq!(output.http_calls.len(), 1);
+            let request = output.http_request.expect("request");
+            assert_eq!(request.method, "PUT");
+            assert_eq!(
+                request.uri,
+                format!("{base}/repos/octo/config/contents/config/mutable/agent.yaml")
+            );
+            assert!(
+                !request
+                    .headers
+                    .iter()
+                    .any(|header| header.name.eq_ignore_ascii_case("authorization"))
+            );
+            assert_eq!(
+                serde_json::from_slice::<Value>(&request.body).expect("request body"),
+                expected
+            );
+        }
+    }
+}

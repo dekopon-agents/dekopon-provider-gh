@@ -28,11 +28,14 @@ Failures leave stdout empty. Use exit status plus stderr, not a named broker det
   basic conflicts under 409; this does not establish a SHA mismatch.
 - Exit 3: definitive API refusals, distinguished by stderr: `credential is not permitted to
   make this call` (403 without permission headers), `not found, or not visible to this credential`
-  (404), or `endpoint refused the request as invalid` (422).
+  (404), or `endpoint refused the request as invalid` (422). Other exit-3 messages for 401,
+  rate limiting, or permission/scope diagnostics are also definitive API refusals.
 - Exit 5: `file write outcome is unknown; read state before deciding what to do next`
-  (transport failure or unconfirmed HTTP response, internal name `write-outcome-unknown`).
+  (transport failure or unconfirmed/unreadable HTTP reply, internal name `write-outcome-unknown`).
   This includes HTTP 408/499, every 5xx response such as 500/502/503/504, and unexpected success
-  or redirect responses; none establishes the write's final effect.
+  or redirect responses; none establishes the write's final effect. A confirmed 201 create or
+  200 update whose reply cannot be decoded or whose path/type/identifiers fail validation is also
+  unknown: the commit may have happened even though the provider cannot report it.
 
 A broker-side operation timeout is a broker failure without an exit status and must also be
 treated as unknown. Read state before deciding what to do next; never blindly retry an unknown

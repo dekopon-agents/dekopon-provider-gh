@@ -320,3 +320,31 @@ async fn real_broker_write_failures_keep_status_and_message_without_retry() {
     assert_ne!(statuses[0], statuses[1]);
     assert_ne!(statuses[0], statuses[2]);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn real_broker_confirmed_writes_with_unreadable_replies_are_unknown() {
+    for (status, mode) in [(201, "create"), (200, "update")] {
+        for body in outcomes::unreadable_replies() {
+            let mut value = input();
+            value["mode"] = json!(mode);
+            let mut exchange = step(status);
+            if mode == "update" {
+                value["sha"] = json!("a".repeat(40));
+                exchange["request"]["body"]["json"]["sha"] = value["sha"].clone();
+            }
+            exchange["response"]["body"] = json!({"text":body});
+            let server = github::GitHub::start(vec![exchange]).await;
+            let broker = broker(&component(), &server.base).await;
+            let (result, stdout) = invoke(&broker, "content-writer", "content-writer", value).await;
+            assert_ne!(result.outcome, InvocationOutcome::Succeeded);
+            assert_eq!(result.exit_status.map(|status| status.get()), Some(5));
+            assert_eq!(
+                result.detail.expect("provider message").message,
+                outcomes::UNKNOWN_STDERR
+            );
+            assert!(stdout.is_empty());
+            assert_eq!(server.egress(), 1);
+            server.finish().await;
+        }
+    }
+}

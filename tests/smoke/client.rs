@@ -117,6 +117,15 @@ async fn main() {
         }
         steps.push(json!({"request":{"method":"PUT","path":"/repos/octo/config/contents/config/mutable/agent.yaml","headers":{"accept":"application/vnd.github+json"},"brokerAuthorization":"Bearer synthetic-gh-content-write","body":{"json":body}},"response":{"status":status,"headers":{"content-type":"application/json"},"body":{"json":{"content":{"path":"config/mutable/agent.yaml","type":"file","sha":"b".repeat(40)},"commit":{"sha":"c".repeat(40)}}}}}));
     }
+    for (status, mode) in [(201, "create"), (200, "update")] {
+        for reply in outcomes::unreadable_replies() {
+            let mut body = json!({"branch":"runs/content-123","message":"smoke","content":""});
+            if mode == "update" {
+                body["sha"] = json!("b".repeat(40));
+            }
+            steps.push(json!({"request":{"method":"PUT","path":"/repos/octo/config/contents/config/mutable/agent.yaml","headers":{"accept":"application/vnd.github+json"},"brokerAuthorization":"Bearer synthetic-gh-content-write","body":{"json":body}},"response":{"status":status,"headers":{"content-type":"application/json"},"body":{"text":reply}}}));
+        }
+    }
     let server = github::GitHub::start(steps).await;
     let directory =
         std::env::temp_dir().join(format!("gh-content-write-smoke-{}", std::process::id()));
@@ -235,9 +244,29 @@ async fn main() {
         );
         assert_eq!(server.egress(), 3 + index);
     }
+    let mut expected_egress = 2 + failure_cases().count();
+    for mode in ["create", "update"] {
+        for _reply in outcomes::unreadable_replies() {
+            let mut value = input.clone();
+            value["mode"] = json!(mode);
+            if mode == "update" {
+                value["sha"] = output["blobSha"].clone();
+            }
+            let (result, stdout) = invoke(&socket, value).await;
+            assert_ne!(result.outcome, InvocationOutcome::Succeeded);
+            assert_eq!(result.exit_status.map(|status| status.get()), Some(5));
+            assert_eq!(
+                result.detail.expect("provider message").message,
+                outcomes::UNKNOWN_STDERR
+            );
+            assert!(stdout.is_empty());
+            expected_egress += 1;
+            assert_eq!(server.egress(), expected_egress);
+        }
+    }
     let egress = server.egress();
     server.finish().await;
     println!(
-        "brokerd=0.64.0 allowed=create,update denied=branch,repository,path deniedEgress=0 conflictExit=4 gatewayTimeoutExit=5 unknownExit=5 totalEgress={egress} result=PASS"
+        "brokerd=0.64.0 allowed=create,update denied=branch,repository,path deniedEgress=0 conflictExit=4 gatewayTimeoutExit=5 unreadableConfirmedReplyExit=5 unknownExit=5 totalEgress={egress} result=PASS"
     );
 }

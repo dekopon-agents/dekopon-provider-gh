@@ -4,7 +4,7 @@ pub struct Case {
     pub stderr: &'static str,
 }
 
-const UNKNOWN_STDERR: &str =
+pub const UNKNOWN_STDERR: &str =
     "file write outcome is unknown; read state before deciding what to do next\n";
 
 pub const CASES: [Case; 13] = [
@@ -74,3 +74,11 @@ pub const CASES: [Case; 13] = [
         stderr: UNKNOWN_STDERR,
     },
 ];
+
+pub fn unreadable_replies() -> [String; 3] {
+    [
+        "{}".into(),
+        "{".into(),
+        serde_json::json!({"content":{"path":"config/mutable/other.yaml","type":"file","sha":"b".repeat(40)},"commit":{"sha":"c".repeat(40)}}).to_string(),
+    ]
+}

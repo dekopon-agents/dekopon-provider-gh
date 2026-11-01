@@ -6,9 +6,9 @@ use serde_json::{Value, json};
 use crate::{
     MAX_BODY_IN_BYTES, MAX_PATH_BYTES, MAX_REF_BYTES, decode, encode_path,
     error::{ProviderError, WriteOutcome},
-    github_json_request, invalid_input, invalid_response, percent_encode, repo_schema,
-    status_error, url, validate_body, validate_expected_sha, validate_login, validate_path,
-    validate_ref, validate_repo,
+    github_json_request, invalid_input, percent_encode, repo_schema, status_error, url,
+    validate_body, validate_expected_sha, validate_login, validate_path, validate_ref,
+    validate_repo,
 };
 
 const MAX_REQUEST_BYTES: usize = 16 * 1024;
@@ -201,13 +201,14 @@ pub(crate) fn write(
         }
         return Err(status_error(&response));
     }
-    let written = decode::<Written>(&response.body)?;
+    let written = decode::<Written>(&response.body)
+        .map_err(|_| ProviderError::write(WriteOutcome::Unknown))?;
     if written.content.path != file.path
         || written.content.kind != "file"
         || !crate::is_sha(&written.content.sha)
         || !crate::is_sha(&written.commit.sha)
     {
-        return Err(invalid_response());
+        return Err(ProviderError::write(WriteOutcome::Unknown));
     }
     Ok(
         json!({"owner":file.owner,"repo":file.repo,"path":file.path,"branch":file.branch,"blobSha":written.content.sha,"commitSha":written.commit.sha}),
@@ -223,6 +224,8 @@ mod tests {
     #[test]
     fn native_file_write_errors_keep_their_provider_names() {
         for (status, name) in [
+            (201, "write-outcome-unknown"),
+            (200, "write-outcome-unknown"),
             (409, "content-conflict"),
             (403, "forbidden"),
             (404, "not-found"),
@@ -255,11 +258,17 @@ mod tests {
                 },
                 reply,
             )]);
+            let mut input = json!({"owner":"octo","repo":"config","path":"config/mutable/agent.yaml","branch":"runs/content-123","message":"update","mode":"create","body":""});
+            if status == 200 {
+                input["mode"] = json!("update");
+                input["sha"] = json!("a".repeat(40));
+            }
             let error = crate::invoke_with(
                 &crate::ids::CONTENT_WRITE.parse().expect("capability"),
-                json!({"owner":"octo","repo":"config","path":"config/mutable/agent.yaml","branch":"runs/content-123","message":"update","mode":"create","body":""}),
+                input,
                 send,
-            ).expect_err("write refused");
+            )
+            .expect_err("write refused");
             assert_eq!(error.code(), name);
         }
     }
