@@ -13,7 +13,7 @@ fn component() -> std::path::PathBuf {
 #[test]
 fn manifest_keeps_read_and_write_grants_independent() {
     let manifest = provider::manifest::<Gh>().expect("closed manifest");
-    assert_eq!(manifest.capabilities.len(), 41);
+    assert_eq!(manifest.capabilities.len(), 42);
     assert!(
         manifest
             .capabilities
@@ -37,6 +37,7 @@ fn manifest_keeps_read_and_write_grants_independent() {
         assert!(cap.id.as_str().starts_with("gh."));
     }
     let writes = [
+        "gh.content.write",
         "gh.run.cancel",
         "gh.run.force-cancel",
         "gh.run.rerun",
@@ -90,6 +91,7 @@ fn manifest_keeps_read_and_write_grants_independent() {
     for capability in &manifest.capabilities {
         let marker = capability.input_schema["properties"].get("_stdinBody");
         if [
+            "gh.content.write",
             "gh.issue.comment",
             "gh.issue.comment-edit",
             "gh.issue.comment-edit-or-create",

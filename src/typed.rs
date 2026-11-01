@@ -165,7 +165,8 @@ pub(crate) const STDIN_BODY_FIELD: &str = "_stdinBody";
 fn has_piped_body(id: &str) -> bool {
     matches!(
         id,
-        "gh.issue.comment"
+        "gh.content.write"
+            | "gh.issue.comment"
             | "gh.issue.comment-edit"
             | "gh.issue.comment-edit-or-create"
             | "gh.pull-request.merge"
@@ -214,6 +215,16 @@ capability!(
     crate::auth::status,
     EffectKind::ReadOnly,
     RiskLevel::Low
+);
+capability!(
+    ContentWrite,
+    ContentWriteInput,
+    crate::ids::CONTENT_WRITE,
+    "content.write",
+    "Provider extension: create or SHA-pinned update of one file on an explicit branch",
+    crate::content_write::write,
+    EffectKind::ExternalWrite,
+    RiskLevel::Medium
 );
 capability!(
     ContentRead,
@@ -497,6 +508,7 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
         crate::ids::LOGS_READ => Proposal::to::<LogsRead>(LogsReadInput(input)),
         crate::ids::AUTH_STATUS => Proposal::to::<AuthStatus>(AuthStatusInput(input)),
         "gh.content.read" => Proposal::to::<ContentRead>(ContentReadInput(input)),
+        crate::ids::CONTENT_WRITE => Proposal::to::<ContentWrite>(ContentWriteInput(input)),
         "gh.pull-request.list" => Proposal::to::<PrList>(PrListInput(input)),
         "gh.pull-request.read" => Proposal::to::<PrRead>(PrReadInput(input)),
         "gh.pull-request.diff" => Proposal::to::<PrDiff>(PrDiffInput(input)),

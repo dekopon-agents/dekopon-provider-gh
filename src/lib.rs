@@ -41,6 +41,7 @@ mod auth;
 mod caches;
 pub mod commands;
 mod content;
+mod content_write;
 mod diff;
 pub mod error;
 pub mod graphql;
@@ -134,6 +135,7 @@ pub(crate) mod ids {
     pub(crate) const LOGS_READ: &str = "gh.actions.logs.read";
     pub(crate) const RUN_READ: &str = "gh.run.read";
     pub(crate) const AUTH_STATUS: &str = "gh.auth.status";
+    pub(crate) const CONTENT_WRITE: &str = "gh.content.write";
     pub(crate) const CONTENT_READ: &str = "gh.content.read";
     pub(crate) const PR_LIST: &str = "gh.pull-request.list";
     pub(crate) const PR_READ: &str = "gh.pull-request.read";
@@ -186,6 +188,7 @@ impl Provider for Gh {
         typed::RunRead,
         typed::LogsRead,
         typed::ContentRead,
+        typed::ContentWrite,
         typed::PrList,
         typed::PrRead,
         typed::PrApprove,
@@ -256,6 +259,7 @@ where
         ids::RUN_LIST => actions::list(input, base, send),
         ids::RUN_READ => actions::read(input, base, send),
         ids::CONTENT_READ => content::read(input, base, send),
+        ids::CONTENT_WRITE => content_write::write(input, base, send),
         ids::PR_LIST => pulls::list(input, base, send),
         ids::PR_READ => pulls::read(input, base, send),
         ids::PR_DIFF => pulls::diff(input, base, send),
@@ -392,6 +396,12 @@ fn capabilities() -> Vec<ProviderCapability> {
             ids::AUTH_STATUS,
             <typed::AuthStatus as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
             object_schema(json!({}), &[]),
+        ),
+        write(
+            ids::CONTENT_WRITE,
+            <typed::ContentWrite as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
+            RiskLevel::Medium,
+            content_write::schema(),
         ),
         // Tier 1 — the review workflow slice.
         read(
@@ -1742,7 +1752,7 @@ mod tests {
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 41);
+        assert_eq!(manifest.capabilities.len(), 42);
 
         let external_writes = manifest
             .capabilities
@@ -1898,7 +1908,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 41);
+        assert_eq!(manifest.capabilities.len(), 42);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()
@@ -2058,3 +2068,5 @@ mod tests {
         assert_eq!((text.as_str(), truncated), ("abcd", true));
     }
 }
+
+dekopon_provider_sdk::skills!("gh-content-write/SKILL.md");

@@ -2,7 +2,7 @@
 
 The GitHub provider for [Dekopon](https://github.com/dekopon-agents/dekopon), as a WebAssembly component.
 
-Forty-one narrow authentication, repository, pull-request, issue, and Actions capabilities with fixed request shapes, bounded
+Forty-two narrow authentication, repository, pull-request, issue, and Actions capabilities with fixed request shapes, bounded
 output projections, and SHA-pinned review/merge writes. There is deliberately no arbitrary
 `gh api` passthrough: a path-level escape hatch would collapse per-capability policy into
 "everything the credential can reach".
@@ -106,6 +106,7 @@ write to stderr with a nonzero status. Filter stdout with the shell's
 | `gh.actions.logs.read` | read-only |
 | `gh.auth.status` | read-only |
 | `gh.content.read` | read-only |
+| `gh.content.write` | external-write |
 | `gh.pull-request.list` / `.read` / `.diff` / `.status` | read-only |
 | `gh.pull-request.approve` / `.comment` / `.request-changes` / `.merge` | external-write |
 | `gh.repo.read` / `gh.repo.list` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` / `gh.user-self.read` | read-only |
@@ -221,7 +222,7 @@ GraphQL-backed reads need `POST` in `allowedMethods`, even though their capabili
 read-only. The HTTP grant cannot distinguish a query from a mutation: fixed component-owned
 documents and typed variables provide that guarantee. No existing read in this batch switches
 from REST to GraphQL or changes its grant. The foundation helper is exercised by an isolated
-component fixture; it exposes no new production capability. There are now thirty production capabilities.
+component fixture; it exposes no new production capability. There are now forty-two production capabilities.
 
 For fine-grained PATs and GitHub App installations, grant repository permissions for the
 capabilities you enable (Read unless marked Write):
@@ -245,6 +246,7 @@ capabilities you enable (Read unless marked Write):
 | `gh.run.read` | Actions: Read; Checks: Read for annotations (GitHub Apps only; fine-grained PATs have none, classic PATs use `repo`) |
 | `gh.repo.read`, `gh.repo.list` | Metadata: Read |
 | `gh.content.read`, `gh.branch.read`, `gh.commit.read` | Contents: Read |
+| `gh.content.write` | Contents: Write |
 | `gh.pull-request.list`, `.read`, `.diff` | Pull requests: Read |
 | `gh.pull-request.status` | Pull requests: Read; Actions: Read; Commit statuses: Read; Checks: Read (GitHub Apps only; fine-grained PATs have none, classic PATs use `repo`) |
 | `gh.pull-request.approve`, `.comment`, `.request-changes` | Pull requests: Write |
@@ -535,10 +537,32 @@ this PR writes no homelab grant.
 | `gh.cache.delete` | external-write | GET, DELETE | 31 | Actions: Write |
 
 The provider and isolated fixture use published Dekopon 0.64.0 dependencies.
-The SDK supports up to 64 capabilities; this provider exports 41.
+The SDK supports up to 64 capabilities; this provider exports 42.
 
 Batch 4b recorded four authenticated GETs against `dekopon-agents/gh-parity-scratch`
 with cassette `4308b585`: repository, empty workflow/cache lists and a missing workflow
 read. Scratch has no workflows, so successful workflow/YAML reads and every write are
 covered by scripts, not claimed as live evidence. `tests/cassettes/actions-b4b/` replays
 these reads through the production component and shares the credential-window redaction test.
+
+## Single-file writes on an explicit branch
+
+`gh repo write-file PATH -R OWNER/REPO --branch BRANCH --message TEXT (--create | --sha BLOB_SHA) --body-file -`
+is a provider extension, not an upstream gh command or `gh api` route. Pipe UTF-8 content;
+empty content is allowed. The [embedded skill](skills/gh-content-write/SKILL.md) describes
+inputs, bounds and outcomes. Success returns only repository, path, branch, blob and commit identifiers.
+
+Update pins the file blob SHA from a separate content read, never branch HEAD. An unrelated
+commit may advance the branch. Each call sends one Contents PUT and changes one path in one
+commit; there is no implicit read, retry, merge, create-to-overwrite fallback, batch atomicity,
+or exactly-once guarantee. A transport failure is `write-outcome-unknown`: inspect state before
+deciding whether another write is appropriate. Conflicts are `content-conflict`; permission or
+protection refusals remain `forbidden`, missing/invisible targets `not-found`, and API validation
+`unprocessable`. Neither response bodies nor submitted content are printed.
+
+Grant `gh.content.write` separately: external-write, Medium risk, Contents: Write, PUT only,
+one request, existing GitHub API authority and broker-owned credential. The
+[disabled fence fixture](examples/content-write/README.md) pins authenticated principal, agent,
+file URL and run branch. It includes a separate GET read fence with the exact encoded ref query.
+The PR reviewer grants no file writes. CI creates the branch; this capability creates neither
+branches nor repositories and supplies no workflow, secret, PR, delete or multi-file operation.

@@ -174,6 +174,18 @@ fn supported_tree() -> Command {
                 .about("Work with repositories")
                 .subcommand_required(true)
                 .subcommand(
+                    Command::new("write-file")
+                        .about("Provider extension: create or SHA-pinned update of one file")
+                        .arg(Arg::new("path").required(true).value_name("PATH"))
+                        .arg(repo_arg(true))
+                        .arg(Arg::new("branch").long("branch").required(true).value_name("BRANCH"))
+                        .arg(Arg::new("message").long("message").required(true).value_name("TEXT"))
+                        .arg(Arg::new("create").long("create").action(ArgAction::SetTrue))
+                        .arg(Arg::new("sha").long("sha").value_name("BLOB_SHA"))
+                        .group(ArgGroup::new("write-mode").args(["create", "sha"]).required(true))
+                        .arg(Arg::new("body-file").long("body-file").required(true).value_parser(["-"])),
+                )
+                .subcommand(
                     Command::new("read-file")
                         .arg(Arg::new("path").required(true).value_name("PATH"))
                         .arg(repo_arg(true))
@@ -716,6 +728,32 @@ fn dispatch(
             input.insert("repo".to_owned(), Value::String(repo));
             ids::REPO_READ
         }
+        ("repo", "write-file") => {
+            insert_repo(&mut input, matches)?;
+            for key in ["path", "branch", "message"] {
+                insert_required_text(&mut input, key, matches);
+            }
+            crate::content_write::validate_target(
+                input["path"].as_str().expect("path"),
+                input["branch"].as_str().expect("branch"),
+                input["message"].as_str().expect("message"),
+            )
+            .map_err(|_| usage("gh repo write-file: invalid path, branch, or message"))?;
+            if let Some(sha) = matches.get_one::<String>("sha") {
+                crate::validate_expected_sha(Some(sha))
+                    .map_err(|_| usage("gh repo write-file: invalid blob SHA"))?;
+                input.insert("mode".into(), json!("update"));
+                input.insert("sha".into(), json!(sha));
+            } else {
+                input.insert("mode".into(), json!("create"));
+            }
+            if !stdin_piped {
+                return Err(usage("gh: --body-file -: nothing was piped into the word"));
+            }
+            input.insert("body".into(), json!(crate::typed::STDIN_BODY));
+            mark_piped_body(&mut input, matches);
+            ids::CONTENT_WRITE
+        }
         ("repo", "read-file" | "read-dir") => {
             insert_repo(&mut input, matches)?;
             if verb == "read-file" {
@@ -965,6 +1003,7 @@ pub(crate) const DISPATCH_TABLE: &[(&str, &str, &str)] = &[
     ("repo", "view", ids::REPO_READ),
     ("repo", "list", ids::REPO_LIST),
     ("repo", "read-file", ids::CONTENT_READ),
+    ("repo", "write-file", ids::CONTENT_WRITE),
     ("repo", "read-dir", ids::CONTENT_READ),
     ("issue", "view", ids::ISSUE_READ),
     ("issue", "list", ids::ISSUE_LIST),
