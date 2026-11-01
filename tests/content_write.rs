@@ -372,3 +372,58 @@ fn component_manifest_help_and_embedded_skill_expose_only_the_separate_write() {
             .contains("gh.content.write")
     );
 }
+
+#[path = "support/content_write_outcomes.rs"]
+mod outcomes;
+
+#[test]
+fn real_component_http_refusals_keep_status_and_stderr_without_retry() {
+    for case in &outcomes::CASES[..4] {
+        let harness = Harness::<Gh>::get(component()).http(HttpScript::new(
+            "localhost",
+            "PUT",
+            reply(case.http_status),
+        ));
+        let base = format!("{}/gh", harness.origin().expect("origin"));
+        let output = harness
+            .settings(json!({"baseUrl":base}))
+            .call("gh.content.write", input())
+            .expect("component");
+        assert_ne!(output.status, 0);
+        assert_eq!(output.status, case.exit_status);
+        assert_eq!(output.stderr, case.stderr);
+        assert!(output.stdout.is_empty());
+        assert_eq!(output.http_calls.len(), 1);
+        let request = output.http_request.expect("request");
+        assert_eq!(request.method, "PUT");
+        assert_eq!(
+            request.uri,
+            format!("{base}/repos/octo/config/contents/config/mutable/agent.yaml")
+        );
+        assert!(
+            !request
+                .headers
+                .iter()
+                .any(|header| header.name.eq_ignore_ascii_case("authorization"))
+        );
+        assert_eq!(
+            serde_json::from_slice::<Value>(&request.body).expect("request body"),
+            json!({"branch":"runs/content-123","message":"Update configuration","content":STANDARD.encode("enabled: true\n")})
+        );
+    }
+}
+
+#[path = "support/component.rs"]
+mod component_harness;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn real_component_transport_drop_keeps_unknown_status_and_stderr_without_retry() {
+    let case = outcomes::CASES.last().expect("transport case");
+    let step = json!({"request":{"method":"PUT","path":"/repos/octo/config/contents/config/mutable/agent.yaml","headers":{"accept":"application/vnd.github+json"},"body":{"json":{"branch":"runs/content-123","message":"Update configuration","content":STANDARD.encode("enabled: true\n")}}},"response":{"status":0}});
+    let (status, stderr, stdout) =
+        component_harness::invoke_with_stdin("gh.content.write", input(), vec![step], None).await;
+    assert_ne!(status, 0);
+    assert_eq!(status, case.exit_status);
+    assert_eq!(stderr, case.stderr);
+    assert!(stdout.is_empty());
+}

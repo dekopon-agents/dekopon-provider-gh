@@ -354,3 +354,6 @@ and `--all` each refuse discovery exceeding twenty matching targets before writi
 `gh.content.write` is not granted by this reviewer. Its native `gh repo write-file` extension
 requires a separate Contents: Write grant and the exact file/run-branch fence in the
 [disabled example](../content-write/README.md); none of this example's eight grants changes.
+
+The root README documents the optional writer's exit-status/stderr outcomes and how to handle
+broker timeouts before deciding whether another write is appropriate.

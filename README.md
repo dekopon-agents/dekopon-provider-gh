@@ -555,10 +555,26 @@ inputs, bounds and outcomes. Success returns only repository, path, branch, blob
 Update pins the file blob SHA from a separate content read, never branch HEAD. An unrelated
 commit may advance the branch. Each call sends one Contents PUT and changes one path in one
 commit; there is no implicit read, retry, merge, create-to-overwrite fallback, batch atomicity,
-or exactly-once guarantee. A transport failure is `write-outcome-unknown`: inspect state before
-deciding whether another write is appropriate. Conflicts are `content-conflict`; permission or
-protection refusals remain `forbidden`, missing/invisible targets `not-found`, and API validation
-`unprocessable`. Neither response bodies nor submitted content are printed.
+or exactly-once guarantee. Callers distinguish failures by exit status plus stable stderr:
+
+| Outcome inside the provider | Exit status | Stderr without permission headers |
+|---|---:|---|
+| `content-conflict` (HTTP 409) | 4 | `file write refused: content conflict or repository rule violation` |
+| `forbidden` (HTTP 403) | 3 | `credential is not permitted to make this call` |
+| `not-found` (HTTP 404) | 3 | `not found, or not visible to this credential` |
+| `unprocessable` (HTTP 422) | 3 | `endpoint refused the request as invalid` |
+| `write-outcome-unknown` (transport failure) | 5 | `file write outcome is unknown; read state before deciding what to do next` |
+
+The broker retains the status and message; its generic detail label is `provider-exit`, not the
+provider's internal outcome name. A broker-side operation timeout instead arrives as a broker
+failure without an exit status: also treat it as unknown and read state before deciding what to
+do next. Do not blindly retry either unknown result. Stdout stays empty on failure; neither
+upstream response bodies nor submitted content are printed.
+
+GitHub's [published REST description](https://github.com/github/rest-api-description/blob/main/descriptions/api.github.com/api.github.com.json)
+for this endpoint includes both `basic-error` and `repository-rule-violation-error` under HTTP 409.
+Therefore `content-conflict` can also mean a protection/rule refusal; it does not establish a
+SHA mismatch. See the [Contents REST reference](https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents).
 
 Grant `gh.content.write` separately: external-write, Medium risk, Contents: Write, PUT only,
 one request, existing GitHub API authority and broker-owned credential. The

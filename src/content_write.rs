@@ -210,3 +210,46 @@ pub(crate) fn write(
         json!({"owner":file.owner,"repo":file.repo,"path":file.path,"branch":file.branch,"blobSha":written.content.sha,"commitSha":written.commit.sha}),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::{json_response, scripted, step};
+    use dekopon_provider_sdk::provider::HttpErrorCode;
+
+    #[test]
+    fn native_file_write_errors_keep_their_provider_names() {
+        for (status, name) in [
+            (409, "content-conflict"),
+            (403, "forbidden"),
+            (404, "not-found"),
+            (422, "unprocessable"),
+            (0, "write-outcome-unknown"),
+        ] {
+            let reply = if status == 0 {
+                Err(HttpError {
+                    code: HttpErrorCode::Protocol,
+                    message: "synthetic dropped connection".into(),
+                })
+            } else {
+                json_response(status, &json!({}))
+            };
+            let send = scripted(vec![step(
+                |request| {
+                    assert_eq!(request.method, "PUT");
+                    assert_eq!(
+                        request.uri,
+                        "https://api.github.com/repos/octo/config/contents/config/mutable/agent.yaml"
+                    );
+                },
+                reply,
+            )]);
+            let error = crate::invoke_with(
+                &crate::ids::CONTENT_WRITE.parse().expect("capability"),
+                json!({"owner":"octo","repo":"config","path":"config/mutable/agent.yaml","branch":"runs/content-123","message":"update","mode":"create","body":""}),
+                send,
+            ).expect_err("write refused");
+            assert_eq!(error.code(), name);
+        }
+    }
+}

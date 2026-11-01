@@ -14,6 +14,13 @@ impl WriteOutcome {
             Self::Unknown => "write-outcome-unknown",
         }
     }
+
+    fn code(self) -> Code {
+        match self {
+            Self::Conflict => Code::new(self.label()).exiting(4),
+            Self::Unknown => Code::new(self.label()).exiting(5),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -47,7 +54,9 @@ impl ProviderError {
     }
     pub(crate) fn write(outcome: WriteOutcome) -> Self {
         let message = match outcome {
-            WriteOutcome::Conflict => "file write conflicted with the current file or branch state",
+            WriteOutcome::Conflict => {
+                "file write refused: content conflict or repository rule violation"
+            }
             WriteOutcome::Unknown => {
                 "file write outcome is unknown; read state before deciding what to do next"
             }
@@ -74,7 +83,7 @@ impl Failure for ProviderError {
     fn code(&self) -> Code {
         let code = match self.code {
             ErrorCode::Existing(code) => code,
-            ErrorCode::Write(outcome) => return Code::new(outcome.label()).exiting(3),
+            ErrorCode::Write(outcome) => return outcome.code(),
         };
         match code {
             "invalid-input" => Code::INVALID_INPUT,

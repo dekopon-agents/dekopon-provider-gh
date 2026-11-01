@@ -292,29 +292,30 @@ async fn real_broker_denies_opaque_malformed_missing_and_query_requests_with_zer
     server.finish().await;
 }
 
+#[path = "support/content_write_outcomes.rs"]
+mod outcomes;
+
 #[tokio::test(flavor = "multi_thread")]
-async fn real_component_write_failures_keep_typed_codes_and_never_retry() {
-    let mut observed = Vec::new();
-    let mut expected = Vec::new();
-    for (status, code) in [
-        (409, "content-conflict"),
-        (403, "forbidden"),
-        (404, "not-found"),
-        (422, "unprocessable"),
-        (0, "write-outcome-unknown"),
-    ] {
-        let server = github::GitHub::start(vec![step(status)]).await;
+async fn real_broker_write_failures_keep_status_and_message_without_retry() {
+    let mut statuses = Vec::new();
+    for case in outcomes::CASES {
+        let server = github::GitHub::start(vec![step(case.http_status)]).await;
         let broker = broker(&component(), &server.base).await;
         let (result, stdout) = invoke(&broker, "content-writer", "content-writer", input()).await;
         assert_ne!(result.outcome, InvocationOutcome::Succeeded);
         assert!(stdout.is_empty());
-        observed.push(result.detail.expect("typed detail").code);
-        expected.push(code.to_owned());
+        let exit_status = result.exit_status.expect("provider exit status").get();
+        assert_eq!(exit_status, case.exit_status);
+        statuses.push(exit_status);
+        assert_eq!(
+            result.detail.expect("provider message").message,
+            case.stderr
+        );
         assert_eq!(server.egress(), 1);
         server.finish().await;
     }
-    assert_eq!(
-        observed, expected,
-        "SDK/core 0.64.0 must preserve typed write outcome codes"
-    );
+    let unknown = statuses.pop().expect("transport outcome");
+    assert!(statuses.iter().all(|status| *status != unknown));
+    assert_ne!(statuses[0], statuses[1]);
+    assert_ne!(statuses[0], statuses[2]);
 }

@@ -17,6 +17,8 @@ use std::{
 };
 #[path = "../support/github.rs"]
 mod github;
+#[path = "../support/content_write_outcomes.rs"]
+mod outcomes;
 
 struct Runtime {
     directory: PathBuf,
@@ -104,7 +106,12 @@ async fn main() {
     )
     .expect("component");
     let mut steps = vec![];
-    for (status, sha) in [(201, None), (200, Some("b".repeat(40)))] {
+    for (status, sha) in [
+        (201, None),
+        (200, Some("b".repeat(40))),
+        (outcomes::CASES[0].http_status, None),
+        (outcomes::CASES[4].http_status, None),
+    ] {
         let mut body = json!({"branch":"runs/content-123","message":"smoke","content":""});
         if let Some(sha) = sha {
             body["sha"] = json!(sha);
@@ -205,7 +212,7 @@ async fn main() {
     assert_eq!(server.egress(), 1);
     let output: Value = serde_json::from_slice(&stdout).expect("output");
     assert_eq!(output.as_object().expect("output object").len(), 6);
-    let mut update = input;
+    let mut update = input.clone();
     update["mode"] = json!("update");
     update["sha"] = output["blobSha"].clone();
     let (updated, stdout) = invoke(&socket, update).await;
@@ -215,8 +222,25 @@ async fn main() {
         serde_json::from_slice::<Value>(&stdout).expect("output")["commitSha"],
         "c".repeat(40)
     );
+    for (index, case) in [&outcomes::CASES[0], &outcomes::CASES[4]]
+        .into_iter()
+        .enumerate()
+    {
+        let (result, stdout) = invoke(&socket, input.clone()).await;
+        assert_ne!(result.outcome, InvocationOutcome::Succeeded);
+        assert!(stdout.is_empty());
+        assert_eq!(
+            result.exit_status.map(|status| status.get()),
+            Some(case.exit_status)
+        );
+        assert_eq!(
+            result.detail.expect("provider message").message,
+            case.stderr
+        );
+        assert_eq!(server.egress(), 3 + index);
+    }
     server.finish().await;
     println!(
-        "brokerd=0.64.0 allowed=create,update denied=branch,repository,path deniedEgress=0 totalEgress=2 result=PASS"
+        "brokerd=0.64.0 allowed=create,update denied=branch,repository,path deniedEgress=0 conflictExit=4 unknownExit=5 totalEgress=4 result=PASS"
     );
 }
