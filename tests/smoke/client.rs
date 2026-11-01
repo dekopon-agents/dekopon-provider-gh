@@ -109,7 +109,7 @@ async fn main() {
         if let Some(sha) = sha {
             body["sha"] = json!(sha);
         }
-        steps.push(json!({"request":{"method":"PUT","path":"/repos/octo/config/contents/config/mutable/agent.yaml","headers":{"accept":"application/vnd.github+json","authorization":"Bearer synthetic-gh-content-write"},"body":{"json":body}},"response":{"status":status,"headers":{"content-type":"application/json"},"body":{"json":{"content":{"path":"config/mutable/agent.yaml","type":"file","sha":"b".repeat(40)},"commit":{"sha":"c".repeat(40)}}}}}));
+        steps.push(json!({"request":{"method":"PUT","path":"/repos/octo/config/contents/config/mutable/agent.yaml","headers":{"accept":"application/vnd.github+json"},"brokerAuthorization":"Bearer synthetic-gh-content-write","body":{"json":body}},"response":{"status":status,"headers":{"content-type":"application/json"},"body":{"json":{"content":{"path":"config/mutable/agent.yaml","type":"file","sha":"b".repeat(40)},"commit":{"sha":"c".repeat(40)}}}}}));
     }
     let server = github::GitHub::start(steps).await;
     let directory =

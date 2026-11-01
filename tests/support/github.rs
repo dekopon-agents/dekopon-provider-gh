@@ -70,7 +70,7 @@ impl GitHub {
                         .filter(|(key, _)| key.eq_ignore_ascii_case("authorization"))
                         .map(|(_, value)| value.trim())
                 });
-                assert_eq!(authorization, request["headers"]["authorization"].as_str());
+                assert_eq!(authorization, request["brokerAuthorization"].as_str());
                 let headers = head
                     .lines()
                     .skip(1)
