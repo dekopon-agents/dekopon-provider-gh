@@ -1771,6 +1771,7 @@ mod tests {
                 "gh.run.rerun",
                 "gh.run.force-cancel",
                 "gh.run.cancel",
+                "gh.content.write",
                 "gh.pull-request.approve",
                 "gh.pull-request.comment",
                 "gh.pull-request.request-changes",
