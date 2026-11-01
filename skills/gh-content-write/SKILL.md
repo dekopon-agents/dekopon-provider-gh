@@ -30,7 +30,9 @@ Failures leave stdout empty. Use exit status plus stderr, not a named broker det
   make this call` (403 without permission headers), `not found, or not visible to this credential`
   (404), or `endpoint refused the request as invalid` (422).
 - Exit 5: `file write outcome is unknown; read state before deciding what to do next`
-  (transport failure, internal name `write-outcome-unknown`).
+  (transport failure or unconfirmed HTTP response, internal name `write-outcome-unknown`).
+  This includes HTTP 408/499, every 5xx response such as 500/502/503/504, and unexpected success
+  or redirect responses; none establishes the write's final effect.
 
 A broker-side operation timeout is a broker failure without an exit status and must also be
 treated as unknown. Read state before deciding what to do next; never blindly retry an unknown

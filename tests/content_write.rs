@@ -377,8 +377,8 @@ fn component_manifest_help_and_embedded_skill_expose_only_the_separate_write() {
 mod outcomes;
 
 #[test]
-fn real_component_http_refusals_keep_status_and_stderr_without_retry() {
-    for case in &outcomes::CASES[..4] {
+fn real_component_http_failures_keep_status_and_stderr_without_retry() {
+    for case in &outcomes::CASES[..outcomes::CASES.len() - 1] {
         let harness = Harness::<Gh>::get(component()).http(HttpScript::new(
             "localhost",
             "PUT",

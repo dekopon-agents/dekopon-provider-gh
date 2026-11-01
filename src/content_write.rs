@@ -196,6 +196,9 @@ pub(crate) fn write(
         return Err(ProviderError::write(WriteOutcome::Conflict));
     }
     if response.status != expected_status {
+        if !(400..=499).contains(&response.status) || matches!(response.status, 408 | 499) {
+            return Err(ProviderError::write(WriteOutcome::Unknown));
+        }
         return Err(status_error(&response));
     }
     let written = decode::<Written>(&response.body)?;
@@ -224,6 +227,14 @@ mod tests {
             (403, "forbidden"),
             (404, "not-found"),
             (422, "unprocessable"),
+            (408, "write-outcome-unknown"),
+            (499, "write-outcome-unknown"),
+            (500, "write-outcome-unknown"),
+            (502, "write-outcome-unknown"),
+            (503, "write-outcome-unknown"),
+            (504, "write-outcome-unknown"),
+            (202, "write-outcome-unknown"),
+            (302, "write-outcome-unknown"),
             (0, "write-outcome-unknown"),
         ] {
             let reply = if status == 0 {

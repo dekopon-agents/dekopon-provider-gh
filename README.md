@@ -563,7 +563,11 @@ or exactly-once guarantee. Callers distinguish failures by exit status plus stab
 | `forbidden` (HTTP 403) | 3 | `credential is not permitted to make this call` |
 | `not-found` (HTTP 404) | 3 | `not found, or not visible to this credential` |
 | `unprocessable` (HTTP 422) | 3 | `endpoint refused the request as invalid` |
-| `write-outcome-unknown` (transport failure) | 5 | `file write outcome is unknown; read state before deciding what to do next` |
+| `write-outcome-unknown` (transport failure or unconfirmed HTTP response) | 5 | `file write outcome is unknown; read state before deciding what to do next` |
+
+HTTP 408/499, every 5xx response (including 500/502/503/504), and unexpected success or
+redirect responses are unknown: a received response does not establish whether the write
+committed. These outcomes are never retried automatically.
 
 The broker retains the status and message; its generic detail label is `provider-exit`, not the
 provider's internal outcome name. A broker-side operation timeout instead arrives as a broker

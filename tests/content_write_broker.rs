@@ -315,7 +315,8 @@ async fn real_broker_write_failures_keep_status_and_message_without_retry() {
         server.finish().await;
     }
     let unknown = statuses.pop().expect("transport outcome");
-    assert!(statuses.iter().all(|status| *status != unknown));
+    assert!(statuses[..4].iter().all(|status| *status != unknown));
+    assert!(statuses[4..].iter().all(|status| *status == unknown));
     assert_ne!(statuses[0], statuses[1]);
     assert_ne!(statuses[0], statuses[2]);
 }

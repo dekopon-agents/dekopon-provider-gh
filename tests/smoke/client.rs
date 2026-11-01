@@ -106,12 +106,11 @@ async fn main() {
     )
     .expect("component");
     let mut steps = vec![];
-    for (status, sha) in [
-        (201, None),
-        (200, Some("b".repeat(40))),
-        (outcomes::CASES[0].http_status, None),
-        (outcomes::CASES[4].http_status, None),
-    ] {
+    let failure_cases = || std::iter::once(&outcomes::CASES[0]).chain(outcomes::CASES[4..].iter());
+    for (status, sha) in [(201, None), (200, Some("b".repeat(40)))]
+        .into_iter()
+        .chain(failure_cases().map(|case| (case.http_status, None)))
+    {
         let mut body = json!({"branch":"runs/content-123","message":"smoke","content":""});
         if let Some(sha) = sha {
             body["sha"] = json!(sha);
@@ -222,10 +221,7 @@ async fn main() {
         serde_json::from_slice::<Value>(&stdout).expect("output")["commitSha"],
         "c".repeat(40)
     );
-    for (index, case) in [&outcomes::CASES[0], &outcomes::CASES[4]]
-        .into_iter()
-        .enumerate()
-    {
+    for (index, case) in failure_cases().enumerate() {
         let (result, stdout) = invoke(&socket, input.clone()).await;
         assert_ne!(result.outcome, InvocationOutcome::Succeeded);
         assert!(stdout.is_empty());
@@ -239,8 +235,9 @@ async fn main() {
         );
         assert_eq!(server.egress(), 3 + index);
     }
+    let egress = server.egress();
     server.finish().await;
     println!(
-        "brokerd=0.64.0 allowed=create,update denied=branch,repository,path deniedEgress=0 conflictExit=4 unknownExit=5 totalEgress=4 result=PASS"
+        "brokerd=0.64.0 allowed=create,update denied=branch,repository,path deniedEgress=0 conflictExit=4 gatewayTimeoutExit=5 unknownExit=5 totalEgress={egress} result=PASS"
     );
 }

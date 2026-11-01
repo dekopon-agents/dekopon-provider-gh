@@ -4,7 +4,10 @@ pub struct Case {
     pub stderr: &'static str,
 }
 
-pub const CASES: [Case; 5] = [
+const UNKNOWN_STDERR: &str =
+    "file write outcome is unknown; read state before deciding what to do next\n";
+
+pub const CASES: [Case; 13] = [
     Case {
         http_status: 409,
         exit_status: 4,
@@ -26,8 +29,48 @@ pub const CASES: [Case; 5] = [
         stderr: "endpoint refused the request as invalid\n",
     },
     Case {
+        http_status: 408,
+        exit_status: 5,
+        stderr: UNKNOWN_STDERR,
+    },
+    Case {
+        http_status: 499,
+        exit_status: 5,
+        stderr: UNKNOWN_STDERR,
+    },
+    Case {
+        http_status: 500,
+        exit_status: 5,
+        stderr: UNKNOWN_STDERR,
+    },
+    Case {
+        http_status: 502,
+        exit_status: 5,
+        stderr: UNKNOWN_STDERR,
+    },
+    Case {
+        http_status: 503,
+        exit_status: 5,
+        stderr: UNKNOWN_STDERR,
+    },
+    Case {
+        http_status: 504,
+        exit_status: 5,
+        stderr: UNKNOWN_STDERR,
+    },
+    Case {
+        http_status: 202,
+        exit_status: 5,
+        stderr: UNKNOWN_STDERR,
+    },
+    Case {
+        http_status: 302,
+        exit_status: 5,
+        stderr: UNKNOWN_STDERR,
+    },
+    Case {
         http_status: 0,
         exit_status: 5,
-        stderr: "file write outcome is unknown; read state before deciding what to do next\n",
+        stderr: UNKNOWN_STDERR,
     },
 ];
