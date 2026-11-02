@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-02
+
+### Added
+
+- create or update one UTF-8 file on an explicit branch with gh repo write-file (gh.content.write).
+
+### Fixed
+
+- `gh pr list`, `gh repo list` and search request only as many rows per page as `--limit` needs when no client-side filter applies, so `gh pr list --limit 1` no longer fails `byte-limit` under a small `maxResponseBytes`; filtered lists still page at 100 rows.
+
 ## [0.12.0] - 2026-10-28
 
 ### Added
