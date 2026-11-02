@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- List commands request only as many rows per page as the limit needs, so `gh pr list --limit 1` no longer fails `byte-limit` under a small `maxResponseBytes`.
+- Unfiltered list and search commands request only as many rows per page as the limit needs, so `gh pr list --limit 1` no longer fails `byte-limit` under a small `maxResponseBytes`.
 
 ## [0.12.0] - 2026-10-28
 
