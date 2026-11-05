@@ -4,14 +4,14 @@
 #   chmod 0600 broker-credentials.yaml     # 0o077 — group/world *readable* is refused too
 #   chmod 0700 ~/.local/run/dekopon ~/.local/share/dekopon-assets
 # Every relative path below resolves against this file's own directory, so the example runs from a
-# checkout without editing repository paths. The absolute `/home/xavier/...` paths are runtime
+# checkout without editing repository paths. The absolute `/home/you/...` paths are runtime
 # state and are the ones to change.
 apiVersion: dekopon.dev/brokerd/v1alpha1
 
-socketPath: /home/xavier/.local/run/dekopon/broker.sock
+socketPath: /home/you/.local/run/dekopon/broker.sock
 
 assets:
-  rootPath: /home/xavier/.local/share/dekopon-assets
+  rootPath: /home/you/.local/share/dekopon-assets
   maxInFlightBytes: 67108864
 
 

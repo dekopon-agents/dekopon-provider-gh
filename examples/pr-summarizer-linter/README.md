@@ -137,9 +137,9 @@ hard links, and wrong ownership. `broker-credentials.yaml` is ignored by Git.
 
 | Placeholder | File | Replace with |
 |---|---|---|
-| `/home/xavier/.local/run/dekopon/…` | `broker.yaml` | Your socket path |
-| `/home/xavier/.local/share/dekopon-assets` | `broker.yaml` | A dedicated broker-owned asset spool |
-| `/home/xavier/.local/run/dekopon/broker.sock` | `gatewayd.yaml` | The same socket path |
+| `/home/you/.local/run/dekopon/…` | `broker.yaml` | Your socket path |
+| `/home/you/.local/share/dekopon-assets` | `broker.yaml` | A dedicated broker-owned asset spool |
+| `/home/you/.local/run/dekopon/broker.sock` | `gatewayd.yaml` | The same socket path |
 | `uid: 501` | `broker.yaml` | Your UID (`id -u`) |
 | `serverUid: 501` | `gatewayd.yaml` | The same UID |
 | `slack.t0123abcd` | `broker.yaml` | `slack.` plus the lowercased team ID |
@@ -325,7 +325,6 @@ against the entire selected attempt's job count. Ordinary run reads fetch no log
 and separate from broker state and provider paths. It retains API-only credential destinations; storage redirects
 are native and unauthenticated. Use `--log` or `--log-failed` and inspect window and collection
 coverage. Signed storage is covered by scripted signed-download component tests and has no cassette.
-These example grants do not change deployed homelab grants.
 
 Caller-chosen run-list limits, including the default 20, stop collection once that many
 eligible runs are available and appear as coverage notes with exit 0. The 21-GET grant is
@@ -344,7 +343,7 @@ The eleven new Actions capabilities are disabled by default. Use the per-id meth
 permission and request bounds in the root README's “Actions writes, workflows and caches”
 table when deliberately enabling one. The commented broker entries are templates only;
 add matching Cedar actions and agent capability entries explicitly. Deployment grant
-changes belong to the coordinator's `actions-grants` OWNER-QUEUE item.
+changes are the operator's to make, outside this example.
 
 `gh.workflow.run` is High risk because its selected ref executes workflow code with
 repository secrets. Workflow view requires `--yaml` with `--ref`; built-in dynamic

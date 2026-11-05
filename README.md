@@ -519,8 +519,7 @@ Existing run reads retain their existing error and output contract.
 
 Grant each new id separately; none is enabled in the example by default. Every grant
 uses only the existing GitHub API authority, GET for pre-reads, and the listed write
-method. The coordinator's `actions-grants` OWNER-QUEUE item owns deployment grants;
-this PR writes no homelab grant.
+method.
 
 | Capability | Effect | Methods | Maximum requests | Fine-grained permission |
 |---|---|---|---:|---|
