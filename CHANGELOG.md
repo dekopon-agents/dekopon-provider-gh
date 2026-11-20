@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-20
+
+### Fixed
+
+- The pr-summarizer-linter example uses generic /home/you paths and no longer carries notes about a private deployment.
+
 ## [0.13.0] - 2026-11-02
 
 ### Added
