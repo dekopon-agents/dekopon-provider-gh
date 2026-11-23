@@ -112,6 +112,12 @@ impl Failure for ProviderError {
             "unknown-capability" => Code::UNKNOWN_CAPABILITY,
             "actions-conflict" => Code::new("actions-conflict").exiting(3),
             "merge-conflict" => Code::new("merge-conflict"),
+            "invalid-pin-value"
+            | "no-match"
+            | "pin-disagreement"
+            | "no-change"
+            | "unsafe-pin-diff"
+            | "github-merge-refused" => Code::new(code),
             "pr-closed" => Code::new("pr-closed"),
             "pr-draft" => Code::new("pr-draft"),
             "head-changed" => Code::new("head-changed"),

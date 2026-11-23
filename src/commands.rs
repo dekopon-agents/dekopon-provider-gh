@@ -410,9 +410,17 @@ fn pull_requests() -> Command {
                 .arg(event_flag("merge", "Merge with a merge commit"))
                 .arg(event_flag("squash", "Squash and merge"))
                 .arg(event_flag("rebase", "Rebase and merge"))
+                .arg(
+                    Arg::new("queue")
+                        .long("queue")
+                        .action(ArgAction::SetTrue)
+                        .help("Add to the merge queue")
+                        .requires("match-head-commit")
+                        .conflicts_with_all(["body", "body-file", "subject"]),
+                )
                 .group(
                     ArgGroup::new("method")
-                        .args(["merge", "squash", "rebase"])
+                        .args(["merge", "squash", "rebase", "queue"])
                         .required(true),
                 )
                 .arg(match_head_commit())
@@ -683,6 +691,15 @@ fn dispatch(
         }
         ("pr", "merge") => {
             insert_repo_and_number(&mut input, matches)?;
+            if matches.get_flag("queue") {
+                let sha = matches
+                    .get_one::<String>("match-head-commit")
+                    .expect("--queue requires --match-head-commit");
+                crate::validate_expected_sha(Some(sha))
+                    .map_err(|_| usage("gh pr merge --queue: invalid head SHA"))?;
+                insert_text(&mut input, "expectedHeadSha", Some(sha));
+                return Ok((ids::PR_ENQUEUE, input.into()));
+            }
             insert_text(
                 &mut input,
                 "body",
@@ -1000,6 +1017,7 @@ pub(crate) const DISPATCH_TABLE: &[(&str, &str, &str)] = &[
     ("pr", "review", ids::PR_COMMENT),
     ("pr", "review", ids::PR_REQUEST_CHANGES),
     ("pr", "merge", ids::PR_MERGE),
+    ("pr", "merge", ids::PR_ENQUEUE),
     ("repo", "view", ids::REPO_READ),
     ("repo", "list", ids::REPO_LIST),
     ("repo", "read-file", ids::CONTENT_READ),
@@ -1618,6 +1636,45 @@ mod tests {
         let (stdout, stderr, status) = rendered(&words);
         assert_eq!(status, 0, "{help}: {stderr}");
         assert!(stdout.contains("Usage: gh pr view"));
+    }
+
+    #[test]
+    fn queue_requires_an_expected_head_and_proposes_only_enqueue() {
+        let sha = "a".repeat(40);
+        let (id, input) = dispatch(&[
+            "pr",
+            "merge",
+            "7",
+            "-R",
+            "o/r",
+            "--queue",
+            "--match-head-commit",
+            &sha,
+        ]);
+        assert_eq!(id, "gh.pull-request.enqueue");
+        assert_eq!(
+            input,
+            json!({"owner":"o","repo":"r","number":7,"expectedHeadSha":sha})
+        );
+        for suffix in [
+            vec!["--queue"],
+            vec!["--queue", "--match-head-commit", "invalid"],
+            vec!["--queue", "--match-head-commit", &sha, "--squash"],
+            vec![
+                "--queue",
+                "--match-head-commit",
+                &sha,
+                "--body",
+                "unaccepted",
+            ],
+        ] {
+            let mut argv = vec!["pr", "merge", "7", "-R", "o/r"];
+            argv.extend(suffix);
+            assert!(matches!(
+                run(&self::argv(&argv), None),
+                Err(_) | Ok(CommandRun::Rendered { status: 2, .. })
+            ));
+        }
     }
 
     #[test]

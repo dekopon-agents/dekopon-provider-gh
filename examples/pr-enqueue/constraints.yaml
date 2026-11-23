@@ -1,0 +1,15 @@
+capabilities:
+  gh:
+    capabilities:
+      gh.pull-request.enqueue:
+        # The org githubApp source and its two destinations are in secret-map.yaml.example.
+        defaultSecretUse: {drn: "drn:secret:github/org", sink: httpBearer}
+        constraints:
+          timeoutMs: 15000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [GET, POST]
+            maxRequests: 2
+            maxRequestBytes: 16384
+            maxResponseBytes: 131072
+            allowPlaintextLoopback: false

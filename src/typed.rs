@@ -7,10 +7,19 @@ use std::io::{Read, Write};
 
 use crate::{Gh, GhSettings, error::ProviderError};
 
+macro_rules! capability_handler {
+    ($handler:path, $input:expr, $settings:expr, $send:expr) => {
+        $handler($input, $settings.base(), $send)
+    };
+    ($handler:path, $input:expr, $settings:expr, $send:expr, settings) => {
+        $handler($input, $settings, $send)
+    };
+}
+
 // The established per-capability schemas remain the model-facing contract. Each typed input
 // has its own schema and keeps the existing native validation at the HTTP boundary.
 macro_rules! capability {
-    ($name:ident, $input:ident, $id:expr, $short:expr, $description:expr, $handler:path, $effect:expr, $risk:expr) => {
+    ($name:ident, $input:ident, $id:expr, $short:expr, $description:expr, $handler:path, $effect:expr, $risk:expr $(, $settings:ident)?) => {
         #[derive(Serialize)]
         #[serde(transparent)]
         pub struct $input(Value);
@@ -58,11 +67,12 @@ macro_rules! capability {
         impl $name {
             pub(crate) fn run_with(
                 input: $input,
-                base: &crate::Base,
+                settings: &GhSettings,
                 send: &mut dyn FnMut(crate::Request) -> Result<crate::Response, crate::HttpError>,
                 out: &mut dyn Write,
             ) -> Result<(), ProviderError> {
                 let mut input = input.0;
+                let base = settings.base();
                 if $id == crate::ids::RUN_DELETE { let result=crate::action_writes::run($id,input,base,send)?; serde_json::to_writer(&mut *out,&result).map_err(|_|crate::invalid_response())?; out.write_all(b"\n").map_err(|_|crate::invalid_response())?; return Ok(()); }
                 if $id == crate::ids::RUN_RERUN { let result=crate::action_writes::run($id,input,base,send)?; serde_json::to_writer(&mut *out,&result).map_err(|_|crate::invalid_response())?; out.write_all(b"\n").map_err(|_|crate::invalid_response())?; return Ok(()); }
                 if $id == crate::ids::RUN_FORCE_CANCEL { let result=crate::action_writes::run($id,input,base,send)?; serde_json::to_writer(&mut *out,&result).map_err(|_|crate::invalid_response())?; out.write_all(b"\n").map_err(|_|crate::invalid_response())?; return Ok(()); }
@@ -115,7 +125,7 @@ macro_rules! capability {
                         input["_cli"] = Value::String(fields.clone());
                     }
                 }
-                let result = $handler(input, base, send)?;
+                let result = capability_handler!($handler, input, settings, send $(, $settings)?)?;
                 if $id == crate::ids::PR_STATUS {
                     crate::output::require_checks(&result)?;
                 }
@@ -150,8 +160,7 @@ macro_rules! capability {
                 (settings, http): Self::Needs,
                 out: &mut Stdout,
             ) -> Result<(), Self::Error> {
-                let base = settings.into_inner().base();
-                Self::run_with(input, &base, &mut |request| http.send(request), out)
+                Self::run_with(input, &settings.into_inner(), &mut |request| http.send(request), out)
             }
         }
     };
@@ -488,6 +497,39 @@ capability!(
     RiskLevel::Medium
 );
 
+capability!(
+    PrEnqueue,
+    PrEnqueueInput,
+    crate::ids::PR_ENQUEUE,
+    "pull-request.enqueue",
+    "Add one pull request to the merge queue at its expected head SHA",
+    crate::enqueue::enqueue,
+    EffectKind::ExternalWrite,
+    RiskLevel::High
+);
+capability!(
+    PinUpdate,
+    PinUpdateInput,
+    crate::ids::PIN_UPDATE,
+    "pin.update",
+    "Open a pull request updating only configured pin values",
+    crate::pins::update,
+    EffectKind::ExternalWrite,
+    RiskLevel::High,
+    settings
+);
+capability!(
+    PinMerge,
+    PinMergeInput,
+    crate::ids::PIN_MERGE,
+    "pin.merge",
+    "Verify and merge a pin-only application pull request at its expected head SHA",
+    crate::pins::merge,
+    EffectKind::ExternalWrite,
+    RiskLevel::High,
+    settings
+);
+
 pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
     match id {
         crate::ids::CACHE_DELETE => Proposal::to::<CacheDelete>(CacheDeleteInput(input)),
@@ -519,6 +561,7 @@ pub(crate) fn proposal(id: &str, input: Value) -> Proposal<Gh> {
             Proposal::to::<PrRequestChanges>(PrRequestChangesInput(input))
         }
         "gh.pull-request.merge" => Proposal::to::<PrMerge>(PrMergeInput(input)),
+        crate::ids::PR_ENQUEUE => Proposal::to::<PrEnqueue>(PrEnqueueInput(input)),
         "gh.repo.read" => Proposal::to::<RepoRead>(RepoReadInput(input)),
         crate::ids::REPO_LIST => Proposal::to::<RepoList>(RepoListInput(input)),
         crate::ids::SEARCH_PRS => Proposal::to::<SearchPrs>(SearchPrsInput(input)),

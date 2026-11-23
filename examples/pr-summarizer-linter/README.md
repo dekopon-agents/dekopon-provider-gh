@@ -260,7 +260,7 @@ boundary; provider credentials and signed download URLs remain broker-side.
 | `pr-closed` | Pull request is closed or merged; no comment was posted |
 | Broker says a capability has no constraint set | Policy and `broker.yaml` disagree; startup failed closed |
 | Broker says credential is unknown or host is uncovered | Credentials file is absent/misnamed or lacks `api.github.com` (or the `providerSettings.gh.baseUrl` authority) |
-| `invalid-settings` on every `gh` call | `providerSettings.gh` has a key other than `baseUrl`, or `baseUrl` carries a query, fragment or userinfo |
+| `invalid-settings` on every `gh` call | `providerSettings.gh` has an unknown key or invalid pin settings, or `baseUrl` carries a query, fragment or userinfo |
 | Gateway exits naming an environment variable | Slack or model credential variable is unset; only its name is logged |
 
 Approval, request-changes, and merge do not produce runtime provider errors here: they are absent
@@ -362,3 +362,7 @@ requires a separate Contents: Write grant and the exact file/run-branch fence in
 
 The root README documents the optional writer's exit-status/stderr outcomes and how to handle
 broker timeouts before deciding whether another write is appropriate.
+
+For queueing and pin maintenance, use the [enqueue example](../pr-enqueue/constraints.yaml)
+or [pin example](../pins/constraints.yaml). Their GitHub App sources are
+scoped to the grants shown in those examples.

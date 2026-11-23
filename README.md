@@ -227,7 +227,7 @@ kind. `gh auth status --active` (`-a`) is a no-op for the single broker-bound cr
 
 GraphQL requests use `POST` in `allowedMethods`. Fixed component-owned documents and typed
 variables constrain the requests because the HTTP grant authorizes POST for both queries and
-mutations.
+mutations. There are now forty-five production capabilities.
 
 For fine-grained PATs and GitHub App installations, grant repository permissions for the
 capabilities you enable (Read unless marked Write):
@@ -547,13 +547,65 @@ method.
 | `gh.cache.delete` | external-write | GET, DELETE | 31 | Actions: Write |
 
 The provider and isolated fixture use published Dekopon 0.64.0 dependencies.
-The SDK supports up to 64 capabilities; this provider exports 42.
+The SDK supports up to 64 capabilities; this provider exports 45.
 
 Batch 4b recorded four authenticated GETs against `dekopon-agents/gh-parity-scratch`
 with cassette `4308b585`: repository, empty workflow/cache lists and a missing workflow
 read. Scratch has no workflows, so successful workflow/YAML reads and every write are
 covered by scripts, not claimed as live evidence. `tests/cassettes/actions-b4b/` replays
 these reads through the production component and shares the credential-window redaction test.
+
+## Queueing pull requests and updating deployment pins
+
+All three operations are High-risk external writes with separate grants.
+
+| Capability | Input | Method and request budget | Output |
+|---|---|---|---|
+| `gh.pull-request.enqueue` | `owner`, `repo`, `number`, `expectedHeadSha` | GET, POST and at most 2 requests | `number`, `headSha`, `mergeQueueEntryId`, `position`, `outcome` |
+| `gh.pin.update` | `pins` with 1–8 unique `{name, value}` items, and `title` | GET, POST, PUT and at most 24 requests | `number`, `headSha`, `branch`, `files` |
+| `gh.pin.merge` | `repo` as a configured `owner/repository`, `number`, `expectedHeadSha` | GET, PUT and at most 32 requests | `number`, `headSha`, `merged`, `sha`, `message` |
+
+`gh pr merge N -R OWNER/REPO --queue --match-head-commit SHA` first reads
+the pull request. A closed pull or moved head stops before the mutation.
+One fixed GraphQL mutation then queues the observed pull node ID with the
+expected head OID. The [enqueue example](examples/pr-enqueue/constraints.yaml)
+binds the org GitHub App source. GitHub GraphQL errors return `graphql-error`.
+
+The broker owner defines `providerSettings.gh.pins` as a map from pin names
+to `{repo, kind, sites}`. Use lowercase letters, digits and hyphens for
+names, starting with a letter or digit. Use one or more
+`{path, after?, pattern}` sites for each pin. Patterns match the entire
+line with exactly one capture group for the value. Include literal indent
+and YAML list markers in each pattern. The optional `after` string must
+equal the complete preceding line. Each site must match and all captured
+values for a pin must agree. Invalid settings fail before HTTP.
+
+| Kind | Value |
+|---|---|
+| `semver` | Three dot-separated decimal components |
+| `image` | `name:tag@sha256:<64 lowercase hex>` with the image name fixed to the current value |
+| `digest` | `sha256:<64 lowercase hex>` |
+
+`gh.pin.update` reads main and the selected files at that head. Each file
+may contain up to 64 KiB of UTF-8 text. It rewrites the captured spans
+byte-for-byte, creates `pin/<first-name>-<value-hash8>` on the observed
+head, writes each changed file once and opens a PR against main. The
+branch hash uses the requested name/value pairs in name order. A failure
+after branch creation can leave a branch for operator inspection.
+
+Set `providerSettings.gh.pinBotLogin` to the GitHub App's bot login, including
+`[bot]`. `gh.pin.merge` verifies a same-repository `pin/` branch targeting
+main, the bot author and the expected head. It compares immutable Git trees
+and full files, verifies that every change can be reproduced by the pin
+matcher, and rechecks the PR before attempting an expected-SHA REST merge.
+GitHub enforces the head SHA on the merge request. A GitHub refusal reports
+`github-merge-refused` with the HTTP status and bounded GitHub message.
+
+Both [pin grants](examples/pins/constraints.yaml) bind the xrl GitHub App
+source to the `/repos/xrl/rpi-homelab` credential path segment prefix.
+The pin App uses Contents and Pull requests write access. Pin update uses
+128 KiB request and response ceilings. See the example secret maps and
+Cedar policies for the binding and invocation scopes.
 
 ## Single-file writes on an explicit branch
 
