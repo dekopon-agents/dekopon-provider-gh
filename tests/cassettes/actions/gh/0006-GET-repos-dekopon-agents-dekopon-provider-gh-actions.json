@@ -10,7 +10,7 @@
       "authorization": "[redacted]",
       "connection": "close",
       "host": "127.0.0.1:8787",
-      "user-agent": "dekopon-coordinator (campaign-trail)",
+      "user-agent": "dekopon-gh-provider/0.1",
       "x-github-api-version": "2022-11-28"
     },
     "body": null
