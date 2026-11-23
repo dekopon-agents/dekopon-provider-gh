@@ -142,10 +142,9 @@ async fn bad_line_items_and_oversized_reviews_refuse_before_any_request() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn moved_heads_refuse_all_review_events_and_line_comments_after_one_get() {
+async fn moved_heads_refuse_rest_reviews_and_line_comments_after_one_get() {
     let pull = json!({"number":7,"title":"Moved","state":"open","draft":false,"merged":false,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","head":{"ref":"feature","sha":"a".repeat(40)},"base":{"ref":"main","sha":"c".repeat(40)}});
     for (id, extra) in [
-        ("gh.pull-request.approve", json!({})),
         ("gh.pull-request.comment", json!({"body":"review"})),
         ("gh.pull-request.request-changes", json!({"body":"review"})),
         (
@@ -176,6 +175,94 @@ async fn moved_heads_refuse_all_review_events_and_line_comments_after_one_get() 
             "the pull request head no longer matches expectedHeadSha\n"
         );
         assert!(stdout.is_empty());
+    }
+}
+
+fn approval_lookup_exchange(state: &str, draft: bool) -> Value {
+    exchange(
+        "/graphql",
+        "POST",
+        json!({
+            "query": "query PullForApproval($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id number isDraft state headRefOid } } }",
+            "variables": {"owner":"octo","name":"hello","number":7}
+        }),
+        json!({"data":{"repository":{"pullRequest":{
+            "id":"PR_fixture","number":7,"state":state,"isDraft":draft,"headRefOid":"a".repeat(40)
+        }}}}),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pr_review_approve_runs_two_graphql_posts_and_prints_the_pinned_review() {
+    let argv = ["pr", "review", "7", "-R", "octo/hello", "--approve"].map(str::to_owned);
+    let CommandRunOutcome::Proposed {
+        capability, input, ..
+    } = registry()
+        .await
+        .run_command("gh", &argv, false)
+        .await
+        .expect("rewrite approval")
+    else {
+        panic!("approval must propose a capability")
+    };
+    assert_eq!(capability.as_str(), "gh.pull-request.approve");
+    let (status, stderr, stdout) = invoke(
+        capability.as_str(),
+        input,
+        vec![
+            approval_lookup_exchange("OPEN", false),
+            exchange(
+                "/graphql",
+                "POST",
+                json!({
+                    "query": "mutation ApprovePullRequest($pullRequestId: ID!, $commitOID: GitObjectID!, $body: String) { addPullRequestReview(input: {pullRequestId: $pullRequestId, commitOID: $commitOID, event: APPROVE, body: $body}) { pullRequestReview { fullDatabaseId state commit { oid } author { login } submittedAt } } }",
+                    "variables": {"pullRequestId":"PR_fixture","commitOID":"a".repeat(40)}
+                }),
+                json!({"data":{"addPullRequestReview":{"pullRequestReview":{
+                    "fullDatabaseId":"4242424242","state":"APPROVED","commit":{"oid":"a".repeat(40)},
+                    "author":{"login":"review-bot"},"submittedAt":"2026-08-16T00:00:00Z"
+                }}}}),
+            ),
+        ],
+    )
+    .await;
+    assert_eq!(status, 0, "{stderr}");
+    assert!(stderr.is_empty());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&stdout).expect("approval JSON"),
+        json!({"reviewId":4242424242_u64,"state":"APPROVED","pullNumber":7,
+            "headSha":"a".repeat(40),"author":"review-bot","submittedAt":"2026-08-16T00:00:00Z"})
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn draft_closed_and_moved_approvals_refuse_after_only_the_graphql_query() {
+    for (state, draft, message) in [
+        (
+            "OPEN",
+            true,
+            "the pull request is a draft; approving a draft is refused\n",
+        ),
+        (
+            "CLOSED",
+            false,
+            "the pull request is closed or already merged\n",
+        ),
+        (
+            "OPEN",
+            false,
+            "the pull request head no longer matches expectedHeadSha\n",
+        ),
+    ] {
+        let (status, stderr, stdout) = invoke(
+            "gh.pull-request.approve",
+            json!({"owner":"octo","repo":"hello","number":7,"expectedHeadSha":"b".repeat(40)}),
+            vec![approval_lookup_exchange(state, draft)],
+        )
+        .await;
+        assert_eq!(status, 1);
+        assert!(stdout.is_empty());
+        assert_eq!(stderr, message);
     }
 }
 

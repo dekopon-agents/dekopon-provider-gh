@@ -108,7 +108,8 @@ write to stderr with a nonzero status. Filter stdout with the shell's
 | `gh.content.read` | read-only |
 | `gh.content.write` | external-write |
 | `gh.pull-request.list` / `.read` / `.diff` / `.status` | read-only |
-| `gh.pull-request.approve` / `.comment` / `.request-changes` / `.merge` | external-write |
+| `gh.pull-request.approve` | external-write (GraphQL) |
+| `gh.pull-request.comment` / `.request-changes` / `.merge` | external-write |
 | `gh.repo.read` / `gh.repo.list` / `gh.branch.read` / `gh.commit.read` / `gh.user.read` / `gh.user-self.read` | read-only |
 | `gh.issue.read` / `.list` | read-only |
 | `gh.issue.comment` | external-write |
@@ -144,6 +145,10 @@ only edit and edit-or-create accept a body or piped body. Delete cannot include 
 `--yes` requires delete-last, and create-if-none requires edit-last. These operate on issue
 comments even for PR numbers and do not depend on the PR head. With no matching comment,
 plain edit/delete return `not-found`; edit-or-create posts one new comment.
+
+`gh pr review --approve` uses the GraphQL quota for its pull lookup and review submission.
+If the bound credential lacks access to the approval
+mutation, the provider reports the permission or GraphQL error and stops.
 
 `pr checks --required`, `pr merge --author-email`, `repo view --branch` and
 `repo read-file --output` remain unbuilt: their implementations would exceed the corresponding
@@ -202,7 +207,9 @@ startLine must be below line on that same side. Each body retains the 4 KiB revi
 The review body is required without comments and optional with comments. The entire serialized
 line-comment review request must fit 16384 bytes, including the pinned commit ID; validation
 and the size check run before any HTTP. The POST uses `start_line` and `start_side` for ranges.
-Approval and request-changes do not accept this array. Their existing grants stay unchanged.
+Grant `gh.pull-request.approve` up to two POSTs
+to the fixed GraphQL endpoint for its head lookup and pinned approval. The bound credential's
+user signs the review. Comment and request changes each use one REST GET and one REST POST.
 
 Grant request counts for the operations actually used: PR read permits up to 33 provider requests
 (metadata, 30 file pages, reviews and comments), while issue read permits two, diff/content one,
@@ -218,11 +225,9 @@ kind. `gh auth status --active` (`-a`) is a no-op for the single broker-bound cr
 `{}` and plain `gh auth status` retain their existing full JSON response. The optional internal
 `_cliOutput` selection follows the existing command convention; it adds no HTTP authority.
 
-GraphQL-backed reads need `POST` in `allowedMethods`, even though their capability effect is
-read-only. The HTTP grant cannot distinguish a query from a mutation: fixed component-owned
-documents and typed variables provide that guarantee. No existing read in this batch switches
-from REST to GraphQL or changes its grant. The foundation helper is exercised by an isolated
-component fixture; it exposes no new production capability. There are now forty-two production capabilities.
+GraphQL requests use `POST` in `allowedMethods`. Fixed component-owned documents and typed
+variables constrain the requests because the HTTP grant authorizes POST for both queries and
+mutations.
 
 For fine-grained PATs and GitHub App installations, grant repository permissions for the
 capabilities you enable (Read unless marked Write):
@@ -291,6 +296,10 @@ No capability input names the origin, so a model cannot choose where a call goes
 only moves where the component sends: the capability's `allowedHosts` (plus
 `allowPlaintextLoopback` for an `http://` loopback recorder) and the credential's `destinations`
 still decide what a call may reach, so a new `baseUrl` needs both updated to its authority.
+
+`gh.pull-request.approve`, `gh.issue.comment-edit`, `gh.issue.comment-delete`, and
+`gh.issue.comment-edit-or-create` send requests to `<baseUrl>/graphql` and return `not-found`
+with a GitHub Enterprise Server `/api/v3` base URL.
 
 ## Releases
 

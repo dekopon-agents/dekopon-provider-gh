@@ -675,10 +675,8 @@ fn fixed_graphql_documents_project_data_and_refuse_errors_in_a_real_component()
 }
 
 #[test]
-fn moved_heads_refuse_all_existing_pr_writes_after_one_read()
--> Result<(), Box<dyn std::error::Error>> {
+fn moved_heads_refuse_rest_pr_writes_after_one_get() -> Result<(), Box<dyn std::error::Error>> {
     for (id, fields) in [
-        ("gh.pull-request.approve", json!({})),
         ("gh.pull-request.comment", json!({"body":"review"})),
         ("gh.pull-request.request-changes", json!({"body":"review"})),
         ("gh.pull-request.merge", json!({"mergeMethod":"merge"})),

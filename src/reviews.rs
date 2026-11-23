@@ -6,6 +6,7 @@
 //! head is checked at pre-read; a push between that read and review submission is not prevented.
 
 use crate::error::ProviderError;
+use crate::graphql;
 use dekopon_provider_sdk::provider::endpoint::Base;
 use dekopon_provider_sdk::provider::{HttpError, Request, Response, method};
 use serde::{Deserialize, Serialize};
@@ -14,8 +15,8 @@ use serde_json::{Value, json};
 use crate::pulls::{RawPull, fetch_pull};
 use crate::{
     MAX_MESSAGE_OUT_BYTES, RawUser, decode, github_json_request, http_failed, invalid_input,
-    invalid_response, login_out, percent_encode, status_error, truncate_text, url, validate_body,
-    validate_expected_sha, validate_login, validate_number, validate_repo,
+    invalid_response, is_sha, login_out, percent_encode, status_error, truncate_text, url,
+    validate_body, validate_expected_sha, validate_login, validate_number, validate_repo,
 };
 
 #[derive(Debug, Deserialize)]
@@ -51,8 +52,8 @@ enum Side {
     Right,
 }
 
-fn review_body(input: &ReviewInput, event: ReviewEvent, sha: &str) -> Result<Value, ProviderError> {
-    let mut body = json!({"event": event.wire(), "commit_id": sha});
+fn review_body(input: &ReviewInput, event: &str, sha: &str) -> Result<Value, ProviderError> {
+    let mut body = json!({"event": event, "commit_id": sha});
     if let Some(text) = &input.body {
         body["body"] = json!(text);
     }
@@ -120,23 +121,6 @@ enum ReviewEvent {
 }
 
 impl ReviewEvent {
-    fn wire(self) -> &'static str {
-        match self {
-            Self::Approve => "APPROVE",
-            Self::Comment => "COMMENT",
-            Self::RequestChanges => "REQUEST_CHANGES",
-        }
-    }
-
-    /// The state GitHub echoes for a submitted review of this event.
-    fn expected_state(self) -> &'static str {
-        match self {
-            Self::Approve => "APPROVED",
-            Self::Comment => "COMMENTED",
-            Self::RequestChanges => "CHANGES_REQUESTED",
-        }
-    }
-
     fn body_required(self) -> bool {
         !matches!(self, Self::Approve)
     }
@@ -151,6 +135,74 @@ struct RawReview {
     user: Option<RawUser>,
     #[serde(default)]
     submitted_at: Option<String>,
+}
+
+const PULL_FOR_APPROVAL: &str = "query PullForApproval($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id number isDraft state headRefOid } } }";
+const APPROVE_PULL_REQUEST: &str = "mutation ApprovePullRequest($pullRequestId: ID!, $commitOID: GitObjectID!, $body: String) { addPullRequestReview(input: {pullRequestId: $pullRequestId, commitOID: $commitOID, event: APPROVE, body: $body}) { pullRequestReview { fullDatabaseId state commit { oid } author { login } submittedAt } } }";
+
+#[derive(Serialize)]
+struct ApprovalLookup<'a> {
+    owner: &'a str,
+    name: &'a str,
+    number: u32,
+}
+
+#[derive(Deserialize)]
+struct ApprovalData {
+    repository: ApprovalRepository,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApprovalRepository {
+    pull_request: ApprovalPull,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApprovalPull {
+    id: String,
+    number: u32,
+    is_draft: bool,
+    state: String,
+    head_ref_oid: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApprovalMutation<'a> {
+    pull_request_id: &'a str,
+    #[serde(rename = "commitOID")]
+    commit_oid: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<&'a str>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApprovalResult {
+    add_pull_request_review: ApprovalPayload,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApprovalPayload {
+    pull_request_review: ApprovalReview,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApprovalReview {
+    full_database_id: String,
+    state: String,
+    commit: ReviewCommit,
+    author: Option<RawUser>,
+    submitted_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ReviewCommit {
+    oid: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -229,23 +281,20 @@ fn submit_review(
         None => {}
     }
 
+    let (wire_event, expected_state) = match event {
+        ReviewEvent::Approve => return submit_approval(&input, base, send),
+        ReviewEvent::Comment => ("COMMENT", "COMMENTED"),
+        ReviewEvent::RequestChanges => ("REQUEST_CHANGES", "CHANGES_REQUESTED"),
+    };
     if input.comments.is_some() {
-        review_body(&input, event, &"0".repeat(40))?;
+        review_body(&input, wire_event, &"0".repeat(40))?;
     }
 
-    // Pre-read: the refusals below happen before any write leaves this guest, so a mock that
-    // panics on a second request proves the state machine wrote nothing.
     let pull = fetch_pull(send, base, &input.owner, &input.repo, input.number)?;
     require_open(&pull)?;
-    if matches!(event, ReviewEvent::Approve) && pull.draft {
-        return Err(ProviderError::new(
-            "pr-draft",
-            "the pull request is a draft; approving a draft is refused",
-        ));
-    }
-    require_expected_head(&pull, input.expected_head_sha.as_deref())?;
+    require_expected_head(&pull.head.sha, input.expected_head_sha.as_deref())?;
 
-    let body = review_body(&input, event, &pull.head.sha)?;
+    let body = review_body(&input, wire_event, &pull.head.sha)?;
     let uri = url(
         base,
         &format!(
@@ -261,20 +310,91 @@ fn submit_review(
         return Err(status_error(&response));
     }
 
-    let review = decode::<RawReview>(&response.body)?;
-    // The echo must confirm both the event and the pinned commit, or the write is reported as
-    // invalid rather than trusted.
-    if review.state != event.expected_state()
-        || !review.commit_id.eq_ignore_ascii_case(&pull.head.sha)
+    review_output(
+        decode(&response.body)?,
+        pull.number,
+        &pull.head.sha,
+        expected_state,
+    )
+}
+
+fn submit_approval(
+    input: &ReviewInput,
+    base: &Base,
+    send: &mut dyn FnMut(Request) -> Result<Response, HttpError>,
+) -> Result<Value, ProviderError> {
+    let data: ApprovalData = graphql::execute(
+        PULL_FOR_APPROVAL,
+        &ApprovalLookup {
+            owner: &input.owner,
+            name: &input.repo,
+            number: input.number,
+        },
+        base,
+        send,
+    )?;
+    let pull = data.repository.pull_request;
+    if pull.number != input.number
+        || !is_sha(&pull.head_ref_oid)
+        || pull.id.is_empty()
+        || pull.id.len() > 256
+        || pull.id.chars().any(char::is_control)
     {
         return Err(invalid_response());
     }
+    if pull.state != "OPEN" {
+        return Err(closed_pull());
+    }
+    if pull.is_draft {
+        return Err(ProviderError::new(
+            "pr-draft",
+            "the pull request is a draft; approving a draft is refused",
+        ));
+    }
+    require_expected_head(&pull.head_ref_oid, input.expected_head_sha.as_deref())?;
 
+    let data: ApprovalResult = graphql::execute(
+        APPROVE_PULL_REQUEST,
+        &ApprovalMutation {
+            pull_request_id: &pull.id,
+            commit_oid: &pull.head_ref_oid,
+            body: input.body.as_deref(),
+        },
+        base,
+        send,
+    )?;
+    let review = data.add_pull_request_review.pull_request_review;
+    review_output(
+        RawReview {
+            id: review
+                .full_database_id
+                .parse()
+                .map_err(|_| invalid_response())?,
+            state: review.state,
+            commit_id: review.commit.oid,
+            user: review.author,
+            submitted_at: review.submitted_at,
+        },
+        pull.number,
+        &pull.head_ref_oid,
+        "APPROVED",
+    )
+}
+
+fn review_output(
+    review: RawReview,
+    pull_number: u32,
+    head_sha: &str,
+    expected_state: &str,
+) -> Result<Value, ProviderError> {
+    if review.state != expected_state || !review.commit_id.eq_ignore_ascii_case(head_sha) {
+        return Err(invalid_response());
+    }
     Ok(json!({
         "reviewId": review.id,
         "state": review.state,
-        "pullNumber": pull.number,
-        "headSha": pull.head.sha,
+        "pullNumber": pull_number,
+        "headSha": head_sha,
         "author": login_out(review.user.as_ref()),
         "submittedAt": review.submitted_at,
     }))
@@ -366,25 +486,26 @@ pub(crate) fn pinned_pull(
 ) -> Result<RawPull, ProviderError> {
     let pull = fetch_pull(send, base, owner, repo, number)?;
     require_open(&pull)?;
-    require_expected_head(&pull, expected)?;
+    require_expected_head(&pull.head.sha, expected)?;
     Ok(pull)
 }
 
 /// Refuses closed or merged pull requests before any write is constructed.
 fn require_open(pull: &RawPull) -> Result<(), ProviderError> {
     if pull.merged.unwrap_or(false) || pull.state != "open" {
-        return Err(ProviderError::new(
-            "pr-closed",
-            "the pull request is closed or already merged",
-        ));
+        return Err(closed_pull());
     }
     Ok(())
 }
 
+fn closed_pull() -> ProviderError {
+    ProviderError::new("pr-closed", "the pull request is closed or already merged")
+}
+
 /// Refuses a head that moved past the caller's expectation.
-fn require_expected_head(pull: &RawPull, expected: Option<&str>) -> Result<(), ProviderError> {
+fn require_expected_head(head_sha: &str, expected: Option<&str>) -> Result<(), ProviderError> {
     if let Some(expected) = expected
-        && !pull.head.sha.eq_ignore_ascii_case(expected)
+        && !head_sha.eq_ignore_ascii_case(expected)
     {
         return Err(ProviderError::new(
             "head-changed",
@@ -426,80 +547,115 @@ mod tests {
         })
     }
 
+    fn approval_pull(state: &str, draft: bool) -> Value {
+        json!({"data":{"repository":{"pullRequest":{
+            "id": "PR_fixture",
+            "number": 7,
+            "state": state,
+            "isDraft": draft,
+            "headRefOid": "a".repeat(40)
+        }}}})
+    }
+
+    fn approval_echo(state: &str, commit: &str) -> Value {
+        json!({"data":{"addPullRequestReview":{"pullRequestReview":{
+            "fullDatabaseId": "4242424242",
+            "state": state,
+            "commit": {"oid": commit},
+            "author": {"login":"review-bot"},
+            "submittedAt": "2026-08-16T00:00:00Z"
+        }}}})
+    }
+
+    fn approval_request(request: &dekopon_provider_sdk::provider::Request) -> Value {
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.uri, "https://api.github.com/graphql");
+        assert!(
+            !request
+                .headers
+                .iter()
+                .any(|header| header.name.eq_ignore_ascii_case("authorization"))
+        );
+        serde_json::from_slice(&request.body).expect("GraphQL request body")
+    }
+
+    fn assert_approval_lookup(request: &dekopon_provider_sdk::provider::Request) {
+        let body = approval_request(request);
+        assert_eq!(body["query"], super::PULL_FOR_APPROVAL);
+        assert_eq!(
+            body["variables"],
+            json!({"owner":"octo","name":"hello","number":7})
+        );
+    }
+
+    fn assert_approval_mutation(
+        request: &dekopon_provider_sdk::provider::Request,
+        body: Option<&str>,
+    ) {
+        let actual = approval_request(request);
+        assert_eq!(actual["query"], super::APPROVE_PULL_REQUEST);
+        let mut variables = json!({"pullRequestId":"PR_fixture","commitOID":"a".repeat(40)});
+        if let Some(body) = body {
+            variables["body"] = json!(body);
+        }
+        assert_eq!(actual["variables"], variables);
+    }
+
     #[test]
-    fn approve_pins_the_observed_head_into_the_review() {
+    fn native_approve_pins_the_observed_head_in_one_graphql_mutation_after_the_query() {
         let output = invoke_with(
             &capability("gh.pull-request.approve"),
-            json!({"owner": "octo", "repo": "hello", "number": 7, "body": "lgtm"}),
+            json!({"owner":"octo","repo":"hello","number":7,"body":"lgtm"}),
             scripted(vec![
                 step(
-                    |request| {
-                        assert_eq!(request.method, "GET");
-                        assert_eq!(
-                            request.uri,
-                            "https://api.github.com/repos/octo/hello/pulls/7"
-                        );
-                    },
-                    json_response(200, &pull("open", false, false)),
+                    assert_approval_lookup,
+                    json_response(200, &approval_pull("OPEN", false)),
                 ),
                 step(
-                    |request| {
-                        assert_eq!(request.method, "POST");
-                        assert_eq!(
-                            request.uri,
-                            "https://api.github.com/repos/octo/hello/pulls/7/reviews"
-                        );
-                        let body: Value =
-                            serde_json::from_slice(&request.body).expect("body is JSON");
-                        // The pin is the whole point: the POST carries the GET's head SHA.
-                        assert_eq!(body["commit_id"], "a".repeat(40));
-                        assert_eq!(body["event"], "APPROVE");
-                        assert_eq!(body["body"], "lgtm");
-                        assert!(
-                            request
-                                .headers
-                                .iter()
-                                .any(|header| header.name.eq_ignore_ascii_case("content-type")
-                                    && header.value == b"application/json")
-                        );
-                    },
-                    json_response(200, &review_echo("APPROVED")),
+                    |request| assert_approval_mutation(request, Some("lgtm")),
+                    json_response(200, &approval_echo("APPROVED", &"a".repeat(40))),
                 ),
             ]),
         )
         .expect("approve succeeds");
 
-        assert_eq!(output["reviewId"], 4242);
-        assert_eq!(output["state"], "APPROVED");
-        assert_eq!(output["headSha"], "a".repeat(40));
-        assert_eq!(output["author"], "xavier");
+        assert_eq!(
+            output,
+            json!({
+                "reviewId": 4242424242_u64,
+                "state": "APPROVED",
+                "pullNumber": 7,
+                "headSha": "a".repeat(40),
+                "author": "review-bot",
+                "submittedAt": "2026-08-16T00:00:00Z"
+            })
+        );
     }
 
     #[test]
-    fn approve_refuses_closed_pulls_before_any_write() {
-        for (state, merged) in [("closed", false), ("open", true)] {
+    fn native_approve_refuses_closed_or_merged_pulls_before_the_mutation() {
+        for state in ["CLOSED", "MERGED"] {
             let error = invoke_with(
                 &capability("gh.pull-request.approve"),
-                json!({"owner": "octo", "repo": "hello", "number": 7}),
+                json!({"owner":"octo","repo":"hello","number":7}),
                 scripted(vec![step(
-                    |_| {},
-                    json_response(200, &pull(state, false, merged)),
+                    assert_approval_lookup,
+                    json_response(200, &approval_pull(state, false)),
                 )]),
             )
             .expect_err("closed pull refuses");
-            // A second request would panic the scripted mock: refusal proves zero writes.
             assert_eq!(error.code(), "pr-closed");
         }
     }
 
     #[test]
-    fn approve_refuses_drafts_before_any_write() {
+    fn native_approve_refuses_drafts_before_the_mutation() {
         let error = invoke_with(
             &capability("gh.pull-request.approve"),
-            json!({"owner": "octo", "repo": "hello", "number": 7}),
+            json!({"owner":"octo","repo":"hello","number":7}),
             scripted(vec![step(
-                |_| {},
-                json_response(200, &pull("open", true, false)),
+                assert_approval_lookup,
+                json_response(200, &approval_pull("OPEN", true)),
             )]),
         )
         .expect_err("draft refuses");
@@ -507,18 +663,13 @@ mod tests {
     }
 
     #[test]
-    fn approve_refuses_a_moved_head_before_any_write() {
+    fn native_approve_refuses_a_moved_head_before_the_mutation() {
         let error = invoke_with(
             &capability("gh.pull-request.approve"),
-            json!({
-                "owner": "octo",
-                "repo": "hello",
-                "number": 7,
-                "expectedHeadSha": "c".repeat(40),
-            }),
+            json!({"owner":"octo","repo":"hello","number":7,"expectedHeadSha":"c".repeat(40)}),
             scripted(vec![step(
-                |_| {},
-                json_response(200, &pull("open", false, false)),
+                assert_approval_lookup,
+                json_response(200, &approval_pull("OPEN", false)),
             )]),
         )
         .expect_err("moved head refuses");
@@ -526,19 +677,50 @@ mod tests {
     }
 
     #[test]
-    fn approve_rejects_an_echo_that_contradicts_the_pin() {
-        let mut echo = review_echo("APPROVED");
-        echo["commit_id"] = json!("d".repeat(40));
-        let error = invoke_with(
-            &capability("gh.pull-request.approve"),
-            json!({"owner": "octo", "repo": "hello", "number": 7}),
-            scripted(vec![
-                step(|_| {}, json_response(200, &pull("open", false, false))),
-                step(|_| {}, json_response(200, &echo)),
-            ]),
-        )
-        .expect_err("contradictory echo fails");
-        assert_eq!(error.code(), "invalid-response");
+    fn native_approve_rejects_an_echo_with_the_wrong_commit_or_state() {
+        for (state, commit) in [("APPROVED", "d".repeat(40)), ("COMMENTED", "a".repeat(40))] {
+            let error = invoke_with(
+                &capability("gh.pull-request.approve"),
+                json!({"owner":"octo","repo":"hello","number":7}),
+                scripted(vec![
+                    step(
+                        assert_approval_lookup,
+                        json_response(200, &approval_pull("OPEN", false)),
+                    ),
+                    step(
+                        |request| assert_approval_mutation(request, None),
+                        json_response(200, &approval_echo(state, &commit)),
+                    ),
+                ]),
+            )
+            .expect_err("contradictory echo fails");
+            assert_eq!(error.code(), "invalid-response");
+        }
+    }
+
+    #[test]
+    fn native_approval_mutation_errors_keep_graphql_error_without_another_request() {
+        for kind in ["FORBIDDEN", "RATE_LIMITED"] {
+            let mut response = approval_echo("APPROVED", &"a".repeat(40));
+            response["errors"] = json!([{"type":kind,"message":"untrusted error text"}]);
+            let error = invoke_with(
+                &capability("gh.pull-request.approve"),
+                json!({"owner":"octo","repo":"hello","number":7}),
+                scripted(vec![
+                    step(
+                        assert_approval_lookup,
+                        json_response(200, &approval_pull("OPEN", false)),
+                    ),
+                    step(
+                        |request| assert_approval_mutation(request, None),
+                        json_response(200, &response),
+                    ),
+                ]),
+            )
+            .expect_err("GraphQL refusal fails");
+            assert_eq!(error.code(), "graphql-error");
+            assert_eq!(error.message(), "GitHub GraphQL reported an error");
+        }
     }
 
     #[test]

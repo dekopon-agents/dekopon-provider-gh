@@ -1,8 +1,7 @@
 //! A "fake `gh`": narrow GitHub operations as separately named Dekopon capabilities.
 //!
-//! Every operation is one fixed REST request shape (or one fixed pre-read plus one write) against
-//! the GitHub REST API, projected into a small bounded output. The origin is `api.github.com`
-//! unless the owner sets `providerSettings.gh.baseUrl`; no model input names it. There is deliberately no generic
+//! The origin is `api.github.com` unless the owner sets `providerSettings.gh.baseUrl`;
+//! no model input names it. There is deliberately no generic
 //! `gh.api.*` passthrough: broker HTTP constraints bind host and method but not
 //! path, so path discipline is exactly what this guest exists to provide. A grant of
 //! `gh.pull-request.read` is authority to read pull requests, not authority over everything the
