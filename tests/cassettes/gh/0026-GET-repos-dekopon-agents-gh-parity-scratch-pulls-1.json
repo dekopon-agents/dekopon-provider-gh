@@ -50,7 +50,7 @@
       "x-xss-protection": "0"
     },
     "body": {
-      "text": "From 90f22eb6e5f6c8642250016d67d199e7a76f608e Mon Sep 17 00:00:00 2001\nFrom: Xavier Lange <xrlange@gmail.com>\nDate: Sun, 25 Oct 2026 00:35:54 -0700\nSubject: [PATCH] test: batch 1 parity recording\n\n---\n parity-batch1.txt | 2 ++\n 1 file changed, 2 insertions(+)\n create mode 100644 parity-batch1.txt\n\ndiff --git a/parity-batch1.txt b/parity-batch1.txt\nnew file mode 100644\nindex 0000000..5a9e790\n--- /dev/null\n+++ b/parity-batch1.txt\n@@ -0,0 +1,2 @@\n+batch 1 parity\n+recorded line comments\n"
+      "text": "From 90f22eb6e5f6c8642250016d67d199e7a76f608e Mon Sep 17 00:00:00 2001\nFrom: Fixture Author <fixture-author@example.com>\nDate: Sun, 25 Oct 2026 00:35:54 -0700\nSubject: [PATCH] test: batch 1 parity recording\n\n---\n parity-batch1.txt | 2 ++\n 1 file changed, 2 insertions(+)\n create mode 100644 parity-batch1.txt\n\ndiff --git a/parity-batch1.txt b/parity-batch1.txt\nnew file mode 100644\nindex 0000000..5a9e790\n--- /dev/null\n+++ b/parity-batch1.txt\n@@ -0,0 +1,2 @@\n+batch 1 parity\n+recorded line comments\n"
     }
   }
 }

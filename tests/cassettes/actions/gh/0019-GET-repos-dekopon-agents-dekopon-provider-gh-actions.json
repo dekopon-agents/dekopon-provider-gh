@@ -132,8 +132,8 @@
               "message": "chore: move onto provider SDK 0.13.0 and prepare v0.3.0 (#6)\n\nThe next dekopon release deletes `resolve-command` from the broker host and the\n`CompatCapability` decoder that lets an old manifest's `idempotency` field\nthrough, so a component built against 0.10.0 stops loading. This is the rebuild.\n\n- `dekopon-provider-sdk` and `dekopon-provider-http` move to `=0.13.0`, with the\n  SDK's `clap` feature. The SDK re-exports the exact clap it was built against,\n  so no clap dependency is declared here: two clap versions in one guest would\n  render two different help pages.\n- `Idempotency` is gone from the SDK. The classification is deleted from every\n  capability literal and from the `write` helper's parameter list.\n- The vendored WIT moves to `dekopon:provider@0.3.0` verbatim, and the world\n  includes `provider-cli` rather than `provider-commands`.\n- `Provider::resolve_command` becomes `Provider::run_command`, exported with\n  `export_provider_with_cli!`. The `gh` word now behaves like the upstream\n  command-line tool: `gh --help` and `gh pr view --help` render on stdout at\n  status 0, `gh bogus` and a missing argument render clap's usage error on\n  stderr at status 2, and `--body-file -` reads the value piped into the word.\n  The hand-rolled flag parser is replaced by one declared clap tree.\n- Every capability identifier is named once in `ids`, read by `capabilities()`,\n  `invoke_with`, and the command tree, so a rename is a build error rather than\n  an exit code a model discovers mid-session.\n- `dekopon-provider-http` 0.13.0 deleted `Response::header_values` as an\n  unreferenced public item; it is two callers' worth of code and lives here now.\n- Toolchain moves in lockstep: Rust 1.98.1, wit-bindgen 0.62.0, wasm-tools\n  1.259.0, in `build.sh`, both workflows, and the README.\n- The pr-summarizer-linter example is brought back to a configuration 0.13.0\n  will load: `kind: Capability` and `kind: Provider` catalog documents are\n  refused outright now, and `idempotency` is no longer a `ConstraintSet` field.\n\nCarries the intent of #5: argv holds only the arguments after the command word,\nso `gh pr view 7` arrives as `[\"pr\", \"view\", \"7\"]`. The clap tree parses it that\nway through `Command::no_binary_name`, and the test asserting the wire shape\ndirectly comes with it.\n\n\nClaude-Session: https://claude.ai/code/session_01CF7JzB3iesbh8zzjnYAJhj\n\nCo-authored-by: Claude Fable 5.1 <noreply@anthropic.com>",
               "timestamp": "2026-09-12T21:10:58Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
                 "name": "GitHub",
@@ -356,12 +356,12 @@
               "message": "chore: move onto provider SDK 0.13.0 and prepare v0.3.0\n\nThe next dekopon release deletes `resolve-command` from the broker host and the\n`CompatCapability` decoder that lets an old manifest's `idempotency` field\nthrough, so a component built against 0.10.0 stops loading. This is the rebuild.\n\n- `dekopon-provider-sdk` and `dekopon-provider-http` move to `=0.13.0`, with the\n  SDK's `clap` feature. The SDK re-exports the exact clap it was built against,\n  so no clap dependency is declared here: two clap versions in one guest would\n  render two different help pages.\n- `Idempotency` is gone from the SDK. The classification is deleted from every\n  capability literal and from the `write` helper's parameter list.\n- The vendored WIT moves to `dekopon:provider@0.3.0` verbatim, and the world\n  includes `provider-cli` rather than `provider-commands`.\n- `Provider::resolve_command` becomes `Provider::run_command`, exported with\n  `export_provider_with_cli!`. The `gh` word now behaves like the upstream\n  command-line tool: `gh --help` and `gh pr view --help` render on stdout at\n  status 0, `gh bogus` and a missing argument render clap's usage error on\n  stderr at status 2, and `--body-file -` reads the value piped into the word.\n  The hand-rolled flag parser is replaced by one declared clap tree.\n- Every capability identifier is named once in `ids`, read by `capabilities()`,\n  `invoke_with`, and the command tree, so a rename is a build error rather than\n  an exit code a model discovers mid-session.\n- `dekopon-provider-http` 0.13.0 deleted `Response::header_values` as an\n  unreferenced public item; it is two callers' worth of code and lives here now.\n- Toolchain moves in lockstep: Rust 1.98.1, wit-bindgen 0.62.0, wasm-tools\n  1.259.0, in `build.sh`, both workflows, and the README.\n- The pr-summarizer-linter example is brought back to a configuration 0.13.0\n  will load: `kind: Capability` and `kind: Provider` catalog documents are\n  refused outright now, and `idempotency` is no longer a `ConstraintSet` field.\n\nCarries the intent of #5: argv holds only the arguments after the command word,\nso `gh pr view 7` arrives as `[\"pr\", \"view\", \"7\"]`. The clap tree parses it that\nway through `Command::no_binary_name`, and the test asserting the wire shape\ndirectly comes with it.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01CF7JzB3iesbh8zzjnYAJhj",
               "timestamp": "2026-09-12T21:06:29Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               }
             },
             "repository": {
@@ -580,12 +580,12 @@
               "message": "fix: read argv without the command word, as the SDK sends it\n\n`resolve` split `argv[0]` off as the command word, but no layer ever puts it\nthere. `Provider::resolve_command` selects the word before the call (\"`argv`\ncontains only the arguments after it\") and the broker protocol's `RunCommand`\nframe carries the word in its own field, precisely so the guest cannot get a\nsecond copy of a routing decision already made.\n\nSo `gh pr view 7 -R o/r` arrives as `[\"pr\", \"view\", \"7\", \"-R\", \"o/r\"]`, the\nparser dropped `pr`, read `view` as the area and `7` as the verb, and every\n`gh <area> <verb>` failed with a usage error and exit 2. The parser was ported\nfrom a dekopon-shell builtin that received the word; the shift came in with the\nport.\n\nThe tests hid it by prepending `\"gh\"` to every argv, so they exercised a shape\nthe SDK never sends. They now pass argv as the guest receives it, with a named\nregression test for the wire shape and one for an empty argv.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01Ui7zKZ6SuRgEYs4i818ApX",
               "timestamp": "2026-09-10T21:16:52Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               }
             },
             "repository": {
@@ -804,8 +804,8 @@
               "message": "chore: prepare v0.2.0 (#4)",
               "timestamp": "2026-08-25T03:20:40Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
                 "name": "GitHub",
@@ -1028,8 +1028,8 @@
               "message": "chore: prepare v0.2.0 (#4)",
               "timestamp": "2026-08-25T03:20:40Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
                 "name": "GitHub",
@@ -1252,12 +1252,12 @@
               "message": "chore: prepare v0.2.0",
               "timestamp": "2026-08-25T03:17:01Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               }
             },
             "repository": {
@@ -1476,8 +1476,8 @@
               "message": "fix: read PR status with fine-grained PAT permissions (#3)",
               "timestamp": "2026-08-25T03:13:55Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
                 "name": "GitHub",
@@ -1700,12 +1700,12 @@
               "message": "fix: read PR status with fine-grained PAT permissions",
               "timestamp": "2026-08-25T03:04:46Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               }
             },
             "repository": {
@@ -1924,8 +1924,8 @@
               "message": "ci: harden provider release pipeline (#2)",
               "timestamp": "2026-08-23T07:09:15Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
                 "name": "GitHub",
@@ -2148,12 +2148,12 @@
               "message": "ci: harden provider release pipeline",
               "timestamp": "2026-08-23T07:06:57Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               }
             },
             "repository": {
@@ -2372,8 +2372,8 @@
               "message": "Finish the move out of the Dekopon tree (#1)\n\n* fix: depend on published dekopon crates instead of a deleted branch\n\nBoth SDK crates were pinned to branch `feat/broker-command-protocol`, which GitHub deleted\nwhen dekopon PR #90 merged. Cargo resolves a `branch =` dependency by fetching that ref, so\nthis repository could not build anywhere the git cache was cold — which is every CI runner.\nThe one CI run it has ever had failed before it got far enough to notice.\n\n`dekopon-provider-sdk` and `dekopon-provider-http` are both published at 0.9.0, and that\nrelease already carries the command-word surface this provider needs: `command_words`,\n`resolve_command`, `CommandInvocation`, and `export_provider_with_commands!`. So there is no\nreason to take a git dependency at all. Pinned exactly and together, because the two are\npublished from one workspace at one version and a skew between them would be invisible.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* build: restore the reproducibility harness the move dropped\n\nLeaving the tree cost this provider its build harness. `build.sh` had become a plain `cargo\nbuild` plus `wasm-tools component new`: no toolchain pin, no `-Cmetadata` normalization, no\npath remapping. That is a regression against its own in-tree ancestor, which still calls\ndekopon's shared `examples/providers/build-component.sh` and always did.\n\nThis is a self-contained port of that driver, keeping every mechanism: the `rustc` proxy that\nrewrites `-Cmetadata` to a fixed salt, the three `--remap-path-prefix` entries,\n`-Ccodegen-units=1`, `CARGO_ENCODED_RUSTFLAGS` so a stray `.cargo/config.toml` cannot outrank\nthem, the exact rustc gate, and the final scan that fails the build if a local path survives\ninto the component. The salt stays `dekopon-provider-repro-v1` — it already includes the\npackage name, so it cannot collide, and changing it would forfeit the comparison for nothing.\n\nIt also takes an output path and honours `CARGO_TARGET_DIR`, which is what lets CI and the\nrelease workflow build the component twice and byte-compare.\n\nVerified: the in-tree driver reproduces dekopon's shipped `gh-provider.wasm` byte for byte on\nthis machine, and this port lands on the same bytes from two independent target directories.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* ci: fix the toolchain install and prove the component\n\n`rustup toolchain install --component clippy rustfmt` reads the second name as a toolchain,\nnot a component, so rustup rejected the command and every later step skipped. That is the\nwhole of this repository's CI history: one run, seven seconds, red. dekopon-provider-turso-sql\nhit the same bug and fixed it the same way.\n\nInstalling a toolchain is also not pinning to one. Without `rustup override set` the pin was\ndecorative and every cargo step ran on the runner default — and the pin itself was wrong,\n1.89.0 being the crate's MSRV rather than the toolchain `build.sh` requires.\n\nThe larger gap was that nothing checked the artifact. Out of tree there is no shared WIT file\nkeeping the mirrors honest and no in-tree workflow rebuilding the checked-in component, so\nboth gates have to be re-created here:\n\n- the WIT mirrors are fetched from dekopon at the release `Cargo.lock` resolved and compared,\n  so an upstream interface change fails loudly instead of yielding a component that mismatches\n  the host it gets loaded into;\n- the component is built, rebuilt into a clean target directory, and byte-compared;\n- `wasm-bindgen`, `js-sys` and `wasi` are rejected — the ambient escape hatches wasm32 offers\n  a provider that is supposed to reach the world only through declared imports;\n- the core module's imports must be exactly `dekopon:http/client@1.0.0`, so a new authority\n  cannot arrive unreviewed.\n\nThe release workflow gains the same rebuild-and-compare before it attests. Reproducibility and\nprovenance answer different questions — who built this, and what it was built from — and a tag\nshould not ship without both.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* feat: adopt the pr-summarizer-linter walkthrough\n\nThe end-to-end example is built on this provider's capabilities — nineteen of them, a Cedar\npolicy naming them individually, and an agent prompt written around `gh pr view` and friends.\nIt exercises this component, not dekopon's own machinery, so it belongs beside the thing it\ndemonstrates and moves with it.\n\nPaths that pointed across the old tree are now absolute links to dekopon, and the two that\nstayed relative resolve inside this repository: the component at the root, and the provider\nREADME the walkthrough refers to. Nothing about the deployment changes — the broker still\nloads a component from a directory it owns.\n\nThe README's \"Using it\" section pointed at `examples/rubber-stamper`, which no longer exists\nin either repository; it points here now.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
               "timestamp": "2026-08-22T06:10:39Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
                 "name": "GitHub",
@@ -2596,8 +2596,8 @@
               "message": "Finish the move out of the Dekopon tree (#1)\n\n* fix: depend on published dekopon crates instead of a deleted branch\n\nBoth SDK crates were pinned to branch `feat/broker-command-protocol`, which GitHub deleted\nwhen dekopon PR #90 merged. Cargo resolves a `branch =` dependency by fetching that ref, so\nthis repository could not build anywhere the git cache was cold — which is every CI runner.\nThe one CI run it has ever had failed before it got far enough to notice.\n\n`dekopon-provider-sdk` and `dekopon-provider-http` are both published at 0.9.0, and that\nrelease already carries the command-word surface this provider needs: `command_words`,\n`resolve_command`, `CommandInvocation`, and `export_provider_with_commands!`. So there is no\nreason to take a git dependency at all. Pinned exactly and together, because the two are\npublished from one workspace at one version and a skew between them would be invisible.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* build: restore the reproducibility harness the move dropped\n\nLeaving the tree cost this provider its build harness. `build.sh` had become a plain `cargo\nbuild` plus `wasm-tools component new`: no toolchain pin, no `-Cmetadata` normalization, no\npath remapping. That is a regression against its own in-tree ancestor, which still calls\ndekopon's shared `examples/providers/build-component.sh` and always did.\n\nThis is a self-contained port of that driver, keeping every mechanism: the `rustc` proxy that\nrewrites `-Cmetadata` to a fixed salt, the three `--remap-path-prefix` entries,\n`-Ccodegen-units=1`, `CARGO_ENCODED_RUSTFLAGS` so a stray `.cargo/config.toml` cannot outrank\nthem, the exact rustc gate, and the final scan that fails the build if a local path survives\ninto the component. The salt stays `dekopon-provider-repro-v1` — it already includes the\npackage name, so it cannot collide, and changing it would forfeit the comparison for nothing.\n\nIt also takes an output path and honours `CARGO_TARGET_DIR`, which is what lets CI and the\nrelease workflow build the component twice and byte-compare.\n\nVerified: the in-tree driver reproduces dekopon's shipped `gh-provider.wasm` byte for byte on\nthis machine, and this port lands on the same bytes from two independent target directories.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* ci: fix the toolchain install and prove the component\n\n`rustup toolchain install --component clippy rustfmt` reads the second name as a toolchain,\nnot a component, so rustup rejected the command and every later step skipped. That is the\nwhole of this repository's CI history: one run, seven seconds, red. dekopon-provider-turso-sql\nhit the same bug and fixed it the same way.\n\nInstalling a toolchain is also not pinning to one. Without `rustup override set` the pin was\ndecorative and every cargo step ran on the runner default — and the pin itself was wrong,\n1.89.0 being the crate's MSRV rather than the toolchain `build.sh` requires.\n\nThe larger gap was that nothing checked the artifact. Out of tree there is no shared WIT file\nkeeping the mirrors honest and no in-tree workflow rebuilding the checked-in component, so\nboth gates have to be re-created here:\n\n- the WIT mirrors are fetched from dekopon at the release `Cargo.lock` resolved and compared,\n  so an upstream interface change fails loudly instead of yielding a component that mismatches\n  the host it gets loaded into;\n- the component is built, rebuilt into a clean target directory, and byte-compared;\n- `wasm-bindgen`, `js-sys` and `wasi` are rejected — the ambient escape hatches wasm32 offers\n  a provider that is supposed to reach the world only through declared imports;\n- the core module's imports must be exactly `dekopon:http/client@1.0.0`, so a new authority\n  cannot arrive unreviewed.\n\nThe release workflow gains the same rebuild-and-compare before it attests. Reproducibility and\nprovenance answer different questions — who built this, and what it was built from — and a tag\nshould not ship without both.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* feat: adopt the pr-summarizer-linter walkthrough\n\nThe end-to-end example is built on this provider's capabilities — nineteen of them, a Cedar\npolicy naming them individually, and an agent prompt written around `gh pr view` and friends.\nIt exercises this component, not dekopon's own machinery, so it belongs beside the thing it\ndemonstrates and moves with it.\n\nPaths that pointed across the old tree are now absolute links to dekopon, and the two that\nstayed relative resolve inside this repository: the component at the root, and the provider\nREADME the walkthrough refers to. Nothing about the deployment changes — the broker still\nloads a component from a directory it owns.\n\nThe README's \"Using it\" section pointed at `examples/rubber-stamper`, which no longer exists\nin either repository; it points here now.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
               "timestamp": "2026-08-22T06:10:39Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
                 "name": "GitHub",
@@ -2820,12 +2820,12 @@
               "message": "feat: adopt the pr-summarizer-linter walkthrough\n\nThe end-to-end example is built on this provider's capabilities — nineteen of them, a Cedar\npolicy naming them individually, and an agent prompt written around `gh pr view` and friends.\nIt exercises this component, not dekopon's own machinery, so it belongs beside the thing it\ndemonstrates and moves with it.\n\nPaths that pointed across the old tree are now absolute links to dekopon, and the two that\nstayed relative resolve inside this repository: the component at the root, and the provider\nREADME the walkthrough refers to. Nothing about the deployment changes — the broker still\nloads a component from a directory it owns.\n\nThe README's \"Using it\" section pointed at `examples/rubber-stamper`, which no longer exists\nin either repository; it points here now.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>",
               "timestamp": "2026-08-22T04:52:27Z",
               "author": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
-                "name": "Xavier Lange",
-                "email": "xrlange@gmail.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               }
             },
             "repository": {
@@ -3044,12 +3044,12 @@
               "message": "feat: the GitHub provider, out of the Dekopon tree\n\nNineteen narrow repository, pull-request, and issue capabilities, plus the\n`gh` command word that maps GitHub-CLI spellings onto them.\n\nThe subcommand table lived in `dekopon-shell` as 959 lines of GitHub\nknowledge inside the core interpreter. It moves here whole — every\nspelling, the --approve/--comment/--request-changes split, the rejected\nflags, and the `gh api` refusal — now that a provider can export\n`resolve-command`.\n\nMoving it also removes a class of drift. The table and the capability list\nit maps onto are compiled together, so a capability renamed in lib.rs and\nforgotten in commands.rs is a build error rather than an exit code 127 a\nmodel discovers mid-session. Nothing checked that before.\n\nThe SDK dependencies are pinned to the branch introducing\ndekopon:provider@0.2.0; they move to crates.io once dekopon publishes.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>",
               "timestamp": "2026-08-19T01:00:33Z",
               "author": {
-                "name": "xavier",
-                "email": "xavier@scientist.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               },
               "committer": {
-                "name": "xavier",
-                "email": "xavier@scientist.com"
+                "name": "Fixture Author",
+                "email": "fixture-author@example.com"
               }
             },
             "repository": {

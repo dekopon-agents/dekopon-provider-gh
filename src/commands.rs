@@ -1353,17 +1353,10 @@ mod tests {
         let cases: &[(&[&str], &str, Value)] = &[
             (
                 &[
-                    "pr",
-                    "list",
-                    "-R",
-                    "o/r",
-                    "--state",
-                    "open",
-                    "--author",
-                    "cpetersen",
+                    "pr", "list", "-R", "o/r", "--state", "open", "--author", "octocat",
                 ],
                 "gh.pull-request.list",
-                json!({"owner": "o", "repo": "r", "state": "open", "author": "cpetersen", "_cliLimit": 30}),
+                json!({"owner": "o", "repo": "r", "state": "open", "author": "octocat", "_cliLimit": 30}),
             ),
             (
                 &["pr", "view", "7", "-R", "o/r"],
@@ -1463,9 +1456,9 @@ mod tests {
                 json!({"owner": "o", "repo": "r", "ref": "abc123"}),
             ),
             (
-                &["api", "users/cpetersen"],
+                &["api", "users/octocat"],
                 "gh.user.read",
-                json!({"login": "cpetersen"}),
+                json!({"login": "octocat"}),
             ),
         ];
 
