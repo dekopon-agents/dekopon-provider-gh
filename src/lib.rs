@@ -2042,7 +2042,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 42);
+        assert_eq!(manifest.capabilities.len(), 45);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()
