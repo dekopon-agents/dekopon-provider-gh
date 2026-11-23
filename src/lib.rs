@@ -998,20 +998,19 @@ fn view_items(
 }
 
 /// Maps a non-success GitHub status to a stable, model-safe error code.
-///
-/// A 403 is rate limiting only when GitHub says the primary quota is exhausted; a plain 403 is an
-/// authorization refusal. A 429 is rate limiting by definition, with or without the header.
 fn status_error(response: &Response) -> ProviderError {
     match response.status {
         401 => ProviderError::new(
             "unauthorized",
             "credential rejected: expired, revoked or malformed",
         ),
-        403 if rate_limit_exhausted(response) => rate_limited(),
+        403 if rate_limit_exhausted(response) || header_text(response, "retry-after").is_some() => {
+            rate_limited(response)
+        }
         403 => forbidden(response),
         404 => ProviderError::new("not-found", "not found, or not visible to this credential"),
         422 => ProviderError::new("unprocessable", "endpoint refused the request as invalid"),
-        429 => rate_limited(),
+        429 => rate_limited(response),
         _ => unexpected_status(),
     }
 }
@@ -1038,8 +1037,75 @@ fn header_text<'a>(response: &'a Response, name: &'a str) -> Option<&'a str> {
         .find(|value| !value.trim().is_empty())
 }
 
-fn rate_limited() -> ProviderError {
-    ProviderError::new("rate-limited", "endpoint rate limit is exhausted")
+fn rate_limited(response: &Response) -> ProviderError {
+    let bucket = rate_limit_bucket(response);
+    let message = if let Some(seconds) = rate_limit_number(response, "retry-after") {
+        format!(
+            "GitHub is throttling this account{bucket}. Wait {seconds} s before the next request."
+        )
+    } else if let Some(refill) = rate_limit_refill(response) {
+        format!("GitHub API quota used up for this account{bucket}. It refills {refill}.")
+    } else {
+        format!("GitHub asks for at least one minute before retrying{bucket}.")
+    };
+    ProviderError::new(
+        "rate-limited",
+        truncate_text(&message, MAX_MESSAGE_OUT_BYTES).0,
+    )
+}
+
+fn rate_limit_number(response: &Response, name: &str) -> Option<u64> {
+    let value = header_text(response, name)?.trim();
+    if !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    value.parse().ok()
+}
+
+fn rate_limit_bucket(response: &Response) -> String {
+    let resource = header_text(response, "x-ratelimit-resource")
+        .map(str::trim)
+        .filter(|value| {
+            value.len() <= 32
+                && value.starts_with(|character: char| character.is_ascii_lowercase())
+                && value.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'_' | b'-')
+                })
+        });
+    match (resource, rate_limit_number(response, "x-ratelimit-limit")) {
+        (Some(resource), Some(limit)) => format!(" ({resource} bucket, limit {limit})"),
+        (Some(resource), None) => format!(" ({resource} bucket)"),
+        (None, Some(limit)) => format!(" (limit {limit})"),
+        (None, None) => String::new(),
+    }
+}
+
+fn rate_limit_refill(response: &Response) -> Option<String> {
+    use time::{OffsetDateTime, format_description::well_known::Rfc2822};
+
+    if !rate_limit_exhausted(response) {
+        return None;
+    }
+    let epoch = i64::try_from(rate_limit_number(response, "x-ratelimit-reset")?).ok()?;
+    let reset = OffsetDateTime::from_unix_timestamp(epoch).ok()?;
+    let now = OffsetDateTime::parse(header_text(response, "date")?.trim(), &Rfc2822).ok()?;
+    let seconds = (reset - now).whole_seconds();
+    if seconds <= 0 {
+        return Some("now".to_owned());
+    }
+    let wait = if seconds >= 60 {
+        format!("{}m {}s", seconds / 60, seconds % 60)
+    } else {
+        format!("{seconds}s")
+    };
+    Some(format!(
+        "at {:02}:{:02}:{:02}Z, in {wait}",
+        reset.hour(),
+        reset.minute(),
+        reset.second(),
+    ))
 }
 
 /// Returns all values for a case-insensitive header name, in wire order.
@@ -1399,7 +1465,7 @@ mod tests {
     use serde_json::json;
 
     use super::testutil::{capability, scripted, step};
-    use super::{Gh, HttpError, Response, invoke_with, truncate_text};
+    use super::{Gh, HttpError, MAX_MESSAGE_OUT_BYTES, Response, invoke_with, truncate_text};
 
     #[test]
     fn native_lists_stage_sparse_matches_and_refuse_bad_cursors_and_ceilings() {
@@ -1977,6 +2043,149 @@ mod tests {
             )
             .expect_err("non-200 fails");
             assert_eq!(error.code(), expected, "status {status}");
+        }
+    }
+
+    fn assert_native_rate_limit(status: u16, headers: &[(&str, &str)], message: &str) {
+        let error = invoke_with(
+            &capability("gh.repo.read"),
+            json!({"owner": "octo", "repo": "hello"}),
+            scripted(vec![step(
+                |request| {
+                    assert_eq!(request.method, "GET");
+                    assert_eq!(request.uri, "https://api.github.com/repos/octo/hello");
+                    assert!(
+                        !request
+                            .headers
+                            .iter()
+                            .any(|header| header.name.eq_ignore_ascii_case("authorization"))
+                    );
+                },
+                super::testutil::response_with_headers(
+                    status,
+                    headers,
+                    &json!({"message":"untrusted response body"}),
+                ),
+            )]),
+        )
+        .expect_err("GitHub refuses the request");
+        assert_eq!(error.code(), "rate-limited");
+        assert_eq!(error.message(), message);
+        assert!(error.message().len() <= MAX_MESSAGE_OUT_BYTES);
+    }
+
+    const GITHUB_DATE: (&str, &str) = ("Date", "Sun, 22 Nov 2026 19:23:42 GMT");
+    const RESET: (&str, &str) = ("x-ratelimit-reset", "1795375700");
+    const EXHAUSTED: (&str, &str) = ("x-ratelimit-remaining", "0");
+    const MINUTE_FALLBACK: &str = "GitHub asks for at least one minute before retrying.";
+
+    #[test]
+    fn native_retry_after_on_403_reports_throttling_without_primary_exhaustion() {
+        assert_native_rate_limit(
+            403,
+            &[("Retry-After", "60")],
+            "GitHub is throttling this account. Wait 60 s before the next request.",
+        );
+    }
+
+    #[test]
+    fn native_retry_after_on_429_takes_precedence_over_the_primary_reset() {
+        assert_native_rate_limit(
+            429,
+            &[
+                ("Retry-After", "60"),
+                EXHAUSTED,
+                RESET,
+                GITHUB_DATE,
+                ("x-ratelimit-resource", "core"),
+            ],
+            "GitHub is throttling this account (core bucket). Wait 60 s before the next request.",
+        );
+    }
+
+    #[test]
+    fn native_exhausted_quota_uses_github_date_for_the_refill_countdown() {
+        assert_native_rate_limit(
+            403,
+            &[
+                EXHAUSTED,
+                RESET,
+                GITHUB_DATE,
+                ("x-ratelimit-resource", "core"),
+                ("x-ratelimit-limit", "5000"),
+            ],
+            "GitHub API quota used up for this account (core bucket, limit 5000). It refills at 19:28:20Z, in 4m 38s.",
+        );
+    }
+
+    #[test]
+    fn native_rate_limiting_without_retry_after_or_primary_reset_gives_the_one_minute_fallback() {
+        assert_native_rate_limit(429, &[], MINUTE_FALLBACK);
+    }
+
+    #[test]
+    fn native_exhausted_quota_without_github_date_uses_the_one_minute_fallback() {
+        assert_native_rate_limit(403, &[EXHAUSTED, RESET], MINUTE_FALLBACK);
+    }
+
+    #[test]
+    fn native_a_past_or_current_reset_refills_now() {
+        for date in [
+            "Sun, 22 Nov 2026 19:28:20 GMT",
+            "Sun, 22 Nov 2026 19:29:00 GMT",
+        ] {
+            assert_native_rate_limit(
+                403,
+                &[EXHAUSTED, RESET, ("date", date)],
+                "GitHub API quota used up for this account. It refills now.",
+            );
+        }
+    }
+
+    #[test]
+    fn native_exhausted_search_quota_names_the_search_bucket_and_its_limit() {
+        assert_native_rate_limit(
+            429,
+            &[
+                EXHAUSTED,
+                RESET,
+                ("date", "Sun, 22 Nov 2026 19:28:12 GMT"),
+                ("x-ratelimit-resource", "search"),
+                ("x-ratelimit-limit", "30"),
+            ],
+            "GitHub API quota used up for this account (search bucket, limit 30). It refills at 19:28:20Z, in 8s.",
+        );
+    }
+
+    #[test]
+    fn native_unparsable_rate_limit_headers_fall_through_without_echoing_values() {
+        assert_native_rate_limit(403, &[("retry-after", "private text")], MINUTE_FALLBACK);
+        assert_native_rate_limit(
+            403,
+            &[
+                ("retry-after", "+60"),
+                EXHAUSTED,
+                RESET,
+                GITHUB_DATE,
+                ("x-ratelimit-resource", "private text"),
+                ("x-ratelimit-limit", "secret"),
+            ],
+            "GitHub API quota used up for this account. It refills at 19:28:20Z, in 4m 38s.",
+        );
+        for headers in [
+            [
+                EXHAUSTED,
+                ("x-ratelimit-reset", "18446744073709551615"),
+                GITHUB_DATE,
+            ],
+            [EXHAUSTED, RESET, ("date", "private text")],
+            [
+                ("x-ratelimit-remaining", "private text"),
+                RESET,
+                GITHUB_DATE,
+            ],
+        ] {
+            assert_native_rate_limit(429, &headers, MINUTE_FALLBACK);
         }
     }
 
