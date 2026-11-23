@@ -12,6 +12,12 @@ jobs:
   ci:
     uses: dekopon-agents/provider-workflows/.github/workflows/ci.yml@main
 
+  measure:
+    needs: ci
+    uses: dekopon-agents/provider-workflows/.github/workflows/size-measure.yml@main
+    with:
+      kind: provider
+
   fixture-deny:
     runs-on: ubuntu-24.04
     steps:
