@@ -290,7 +290,7 @@ pub(super) type Files = BTreeMap<String, File>;
 struct Edit<'a> {
     line: Line<'a>,
     range: Range<usize>,
-    value: &'a str,
+    replacement: Option<&'a str>,
     site: &'a Site,
 }
 
@@ -322,14 +322,12 @@ pub(super) fn rewrite(
                 if !pin.kind.admits(old, next) {
                     return Err(invalid_value(name));
                 }
-                if old != next {
-                    edits.entry(&site.path).or_default().push(Edit {
-                        line,
-                        range: capture.range(),
-                        value: next,
-                        site,
-                    });
-                }
+                edits.entry(&site.path).or_default().push(Edit {
+                    line,
+                    range: capture.range(),
+                    replacement: (old != next).then_some(next.as_str()),
+                    site,
+                });
             }
             if !matched {
                 return Err(no_match(name, site));
@@ -340,36 +338,51 @@ pub(super) fn rewrite(
     let mut changed = BTreeMap::new();
     for (path, mut edits) in edits {
         edits.sort_unstable_by_key(|edit| edit.line.offset);
-        let changed_lines: BTreeSet<_> = edits.iter().map(|edit| edit.line.offset).collect();
+        let changed_lines: BTreeSet<_> = edits
+            .iter()
+            .filter(|edit| edit.replacement.is_some())
+            .map(|edit| edit.line.offset)
+            .collect();
+        if changed_lines.is_empty() {
+            continue;
+        }
         let mut rendered = String::new();
         let mut cursor = 0;
         let text = &files[path].text;
         for edit in edits {
-            let start = edit.line.offset + edit.range.start;
-            let end = edit.line.offset + edit.range.end;
-            if cursor > edit.line.offset
-                || (edit.site.after.is_some()
-                    && edit.line.previous.is_some_and(|previous| {
-                        changed_lines.contains(&(edit.line.offset - previous.len()))
-                    }))
+            if edit.site.after.is_some()
+                && edit.line.previous.is_some_and(|previous| {
+                    changed_lines.contains(&(edit.line.offset - previous.len()))
+                })
             {
                 return Err(unsafe_diff());
             }
+            let Some(value) = edit.replacement else {
+                if changed_lines.contains(&edit.line.offset) {
+                    return Err(unsafe_diff());
+                }
+                continue;
+            };
+            if cursor > edit.line.offset {
+                return Err(unsafe_diff());
+            }
+            let start = edit.line.offset + edit.range.start;
+            let end = edit.line.offset + edit.range.end;
             let new_line = format!(
                 "{}{}{}",
                 &edit.line.raw[..edit.range.start],
-                edit.value,
+                value,
                 &edit.line.raw[edit.range.end..]
             );
             let after = Line {
                 raw: &new_line,
                 ..edit.line
             };
-            if edit.site.matches_change(edit.line, after) != Some((edit.value, edit.range)) {
+            if edit.site.matches_change(edit.line, after) != Some((value, edit.range)) {
                 return Err(unsafe_diff());
             }
             rendered.push_str(&text[cursor..start]);
-            rendered.push_str(edit.value);
+            rendered.push_str(value);
             cursor = end;
         }
         rendered.push_str(&text[cursor..]);

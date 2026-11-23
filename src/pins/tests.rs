@@ -264,6 +264,23 @@ fn native_update_rejects_disagreeing_sites_and_rejects_a_tag_on_a_digest_pin() {
     assert_eq!(error.code(), "invalid-pin-value");
 }
 
+#[test]
+fn native_update_refuses_overlapping_requests_even_when_one_pin_is_unchanged() {
+    let mut settings = app_settings();
+    settings["pins"]["chart-alias"] = settings["pins"]["dekopon-chart"].clone();
+    let error = call(
+        update,
+        settings,
+        update_input(&[("dekopon-chart", "0.82.0"), ("chart-alias", "0.81.0")]),
+        vec![
+            ref_step(),
+            file_step(APP, "a", "b", &app_file("0.81.0", &digest("a"))),
+        ],
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "unsafe-pin-diff");
+}
+
 fn pull(head: &str, user: &str, kind: &str) -> Value {
     json!({"number":7,"title":TITLE,"state":"open",
         "user":{"login":user,"type":kind},
