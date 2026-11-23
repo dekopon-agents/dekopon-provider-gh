@@ -1514,6 +1514,35 @@ fn scripted_component_get(
 }
 
 #[test]
+fn quota_exhaustion_prints_the_bucket_and_refill_from_github_date()
+-> Result<(), Box<dyn std::error::Error>> {
+    let output = scripted_component_get(
+        Response {
+            status: 403,
+            headers: vec![
+                Header::text("x-ratelimit-remaining", "0")?,
+                Header::text("x-ratelimit-reset", "1795375700")?,
+                Header::text("x-ratelimit-resource", "core")?,
+                Header::text("x-ratelimit-limit", "5000")?,
+                Header::text("Date", "Sun, 22 Nov 2026 19:23:42 GMT")?,
+            ],
+            body: br#"{"message":"untrusted response body"}"#.to_vec(),
+        },
+        "gh.repo.read",
+        json!({"owner":"octo","repo":"hello"}),
+        "/repos/octo/hello",
+    )?;
+    assert_eq!(output.status, 3);
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        output.stderr,
+        "GitHub API quota used up for this account (core bucket, limit 5000). It refills at 19:28:20Z, in 4m 38s.\n"
+    );
+    print!("{}", output.stderr);
+    Ok(())
+}
+
+#[test]
 fn forbidden_names_the_accepted_permission() -> Result<(), Box<dyn std::error::Error>> {
     let output = scripted_component_get(
         Response {

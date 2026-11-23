@@ -265,11 +265,13 @@ capabilities you enable (Read unless marked Write):
 | `forbidden` | `credential lacks a scope; GitHub accepts: <scopes>; credential has: <scopes>` | Compare accepted classic PAT scopes with held scopes; grant only what this call needs. Missing held-scope metadata is reported as `not reported`. |
 | `forbidden` | `credential is not permitted to make this call` | Check credential permissions, repository access, and organization restrictions; GitHub supplied no accepted-permission or accepted-scope header. |
 | `not-found` | `not found, or not visible to this credential` | Check the resource spelling and the token's repository access; a 404 does not prove absence. |
-| `rate-limited` | `endpoint rate limit is exhausted` | Wait for the quota reset or GitHub's retry guidance before retrying. |
+| `rate-limited` | GitHub's requested wait, quota refill time, or a one-minute minimum wait | Use the message to decide whether to retry. |
 
 Accepted GitHub permissions take precedence over OAuth scopes when both headers are present.
-A 403 with `x-ratelimit-remaining: 0` and every 429 retain the rate-limit error. Diagnostics quote
-only the named permission/scope headers, never the response body.
+A 403 with `Retry-After` or `x-ratelimit-remaining: 0` reports `rate-limited`, as does
+every 429. Retry-After seconds take precedence over a quota reset with a valid GitHub
+`Date` header. The message includes the quota bucket and limit when available. Without valid
+timing headers the message gives a minimum wait of one minute. Diagnostics omit the response body.
 
 ### `baseUrl`
 
