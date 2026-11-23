@@ -52,7 +52,7 @@ fn each_example_capability_has_one_github_app_binding_and_a_valid_cedar_policy()
             let mut set = sets[*id].clone();
             set["provider"] = json!("gh");
             set["effect"] = json!("external-write");
-            set["risk"] = json!("high");
+            set["risk"] = json!(dekopon_core::RiskLevel::High);
             let set: ConstraintSet = serde_json::from_value(set).expect("valid broker constraints");
             assert!(set.credential.is_none());
             let default = set.default_secret_use.expect("explicit source");
