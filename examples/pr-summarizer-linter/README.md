@@ -305,7 +305,7 @@ the review body can accompany them. The provider checks the aggregate serialized
 
 To enable `gh.pull-request.approve` in another reviewer, grant it separately in the catalog,
 Cedar actions and broker constraint sets. Allow `POST` to `api.github.com` with two requests
-per invocation and bind a credential with Pull requests: Write that can call GraphQL. The
+per invocation and bind a credential with Pull requests: Write. The
 approval query and mutation both go to `/graphql`. The COMMENT reviewer above uses its REST
 grant.
 

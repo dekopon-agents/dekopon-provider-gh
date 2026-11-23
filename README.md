@@ -147,7 +147,7 @@ comments even for PR numbers and do not depend on the PR head. With no matching 
 plain edit/delete return `not-found`; edit-or-create posts one new comment.
 
 `gh pr review --approve` uses the GraphQL quota for its pull lookup and review submission.
-`gh pr diff` uses the REST quota. If the bound credential lacks access to the approval
+If the bound credential lacks access to the approval
 mutation, the provider reports the permission or GraphQL error and stops.
 
 `pr checks --required`, `pr merge --author-email`, `repo view --branch` and
@@ -294,6 +294,10 @@ No capability input names the origin, so a model cannot choose where a call goes
 only moves where the component sends: the capability's `allowedHosts` (plus
 `allowPlaintextLoopback` for an `http://` loopback recorder) and the credential's `destinations`
 still decide what a call may reach, so a new `baseUrl` needs both updated to its authority.
+
+`gh.pull-request.approve`, `gh.issue.comment-edit`, `gh.issue.comment-delete`, and
+`gh.issue.comment-edit-or-create` send requests to `<baseUrl>/graphql` and return `not-found`
+with a GitHub Enterprise Server `/api/v3` base URL.
 
 ## Releases
 

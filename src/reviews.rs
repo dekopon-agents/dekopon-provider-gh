@@ -52,8 +52,8 @@ enum Side {
     Right,
 }
 
-fn review_body(input: &ReviewInput, event: ReviewEvent, sha: &str) -> Result<Value, ProviderError> {
-    let mut body = json!({"event": event.wire(), "commit_id": sha});
+fn review_body(input: &ReviewInput, event: &str, sha: &str) -> Result<Value, ProviderError> {
+    let mut body = json!({"event": event, "commit_id": sha});
     if let Some(text) = &input.body {
         body["body"] = json!(text);
     }
@@ -121,23 +121,6 @@ enum ReviewEvent {
 }
 
 impl ReviewEvent {
-    fn wire(self) -> &'static str {
-        match self {
-            Self::Approve => "APPROVE",
-            Self::Comment => "COMMENT",
-            Self::RequestChanges => "REQUEST_CHANGES",
-        }
-    }
-
-    /// The state GitHub echoes for a submitted review of this event.
-    fn expected_state(self) -> &'static str {
-        match self {
-            Self::Approve => "APPROVED",
-            Self::Comment => "COMMENTED",
-            Self::RequestChanges => "CHANGES_REQUESTED",
-        }
-    }
-
     fn body_required(self) -> bool {
         !matches!(self, Self::Approve)
     }
@@ -298,19 +281,20 @@ fn submit_review(
         None => {}
     }
 
+    let (wire_event, expected_state) = match event {
+        ReviewEvent::Approve => return submit_approval(&input, base, send),
+        ReviewEvent::Comment => ("COMMENT", "COMMENTED"),
+        ReviewEvent::RequestChanges => ("REQUEST_CHANGES", "CHANGES_REQUESTED"),
+    };
     if input.comments.is_some() {
-        review_body(&input, event, &"0".repeat(40))?;
-    }
-
-    if matches!(event, ReviewEvent::Approve) {
-        return submit_approval(&input, base, send);
+        review_body(&input, wire_event, &"0".repeat(40))?;
     }
 
     let pull = fetch_pull(send, base, &input.owner, &input.repo, input.number)?;
     require_open(&pull)?;
     require_expected_head(&pull.head.sha, input.expected_head_sha.as_deref())?;
 
-    let body = review_body(&input, event, &pull.head.sha)?;
+    let body = review_body(&input, wire_event, &pull.head.sha)?;
     let uri = url(
         base,
         &format!(
@@ -330,7 +314,7 @@ fn submit_review(
         decode(&response.body)?,
         pull.number,
         &pull.head.sha,
-        event.expected_state(),
+        expected_state,
     )
 }
 
@@ -393,7 +377,7 @@ fn submit_approval(
         },
         pull.number,
         &pull.head_ref_oid,
-        ReviewEvent::Approve.expected_state(),
+        "APPROVED",
     )
 }
 

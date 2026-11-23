@@ -233,7 +233,6 @@ async fn pr_review_approve_runs_two_graphql_posts_and_prints_the_pinned_review()
         json!({"reviewId":4242424242_u64,"state":"APPROVED","pullNumber":7,
             "headSha":"a".repeat(40),"author":"review-bot","submittedAt":"2026-08-16T00:00:00Z"})
     );
-    print!("{}", String::from_utf8(stdout).expect("approval output"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
