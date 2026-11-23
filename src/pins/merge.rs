@@ -106,7 +106,8 @@ fn verify_pull(pull: &RawPull, slug: &str, settings: &GhSettings) -> Result<(), 
         .head
         .repo
         .as_ref()
-        .is_some_and(|repo| repo.full_name.eq_ignore_ascii_case(slug));
+        .and_then(|repo| repo.full_name.as_deref())
+        .is_some_and(|full_name| full_name.eq_ignore_ascii_case(slug));
     let app_bot = pull.user.as_ref().is_some_and(|user| {
         user.account_type.as_deref() == Some("Bot")
             && settings

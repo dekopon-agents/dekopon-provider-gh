@@ -312,6 +312,26 @@ fn native_merge_refuses_a_non_pin_head_or_an_author_other_than_the_app_bot() {
     }
 }
 
+#[test]
+fn native_merge_requires_a_named_head_repository_matching_the_configured_repo() {
+    for repo in [
+        json!({"id":9}),
+        json!({"full_name":"fork/rpi-homelab"}),
+        Value::Null,
+    ] {
+        let mut pull = pull("pin/test", "pin-app[bot]", "Bot");
+        pull["head"]["repo"] = repo;
+        let error = call(
+            merge,
+            app_settings(),
+            merge_input(),
+            vec![wire("GET", "/pulls/7", 200, pull)],
+        )
+        .unwrap_err();
+        assert_eq!(error.code(), "unsafe-pin-diff");
+    }
+}
+
 fn tree_step(tree: &str, path: &str, mode: &str, blob: &str) -> Step {
     wire(
         "GET",

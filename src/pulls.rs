@@ -28,7 +28,7 @@ pub(crate) struct RawRef {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct RawRefRepository {
-    pub(crate) full_name: String,
+    pub(crate) full_name: Option<String>,
 }
 
 /// One pull request as GitHub returns it; list items omit the single-read counters.
