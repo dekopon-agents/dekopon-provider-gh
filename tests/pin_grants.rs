@@ -14,7 +14,7 @@ fn each_example_capability_has_one_github_app_binding_and_a_valid_cedar_policy()
             include_str!("../examples/pr-enqueue/policies.cedar"),
             "queue-writer",
             &["gh.pull-request.enqueue"][..],
-            "drn:secret:github/org",
+            "drn:com.xrl:secret:prod:github/org",
         ),
         (
             include_str!("../examples/pins/constraints.yaml"),
@@ -22,7 +22,7 @@ fn each_example_capability_has_one_github_app_binding_and_a_valid_cedar_policy()
             include_str!("../examples/pins/policies.cedar"),
             "pin-writer",
             &["gh.pin.update", "gh.pin.merge"][..],
-            "drn:secret:github/xrl",
+            "drn:com.xrl:secret:prod:github/xrl",
         ),
     ] {
         let constraints = yaml(constraints);

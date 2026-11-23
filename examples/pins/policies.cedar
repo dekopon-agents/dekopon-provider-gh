@@ -21,7 +21,7 @@ when { context has via && context.via == "pin-gateway"
 @id("pin-xrl-source")
 permit(principal == Dekopon::Principal::"pin-writer",
        action == Dekopon::Action::"secret.use",
-       resource == Dekopon::Secret::"drn:secret:github/xrl")
+       resource == Dekopon::Secret::"drn:com.xrl:secret:prod:github/xrl")
 when { (context.capability == "gh.pin.update" || context.capability == "gh.pin.merge")
     && context.provider == "gh" && context.sink == "httpBearer"
     && context has via && context.via == "pin-gateway"

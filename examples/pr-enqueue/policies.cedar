@@ -14,7 +14,7 @@ when { context has via && context.via == "queue-gateway"
 @id("enqueue-org-source")
 permit(principal == Dekopon::Principal::"queue-writer",
        action == Dekopon::Action::"secret.use",
-       resource == Dekopon::Secret::"drn:secret:github/org")
+       resource == Dekopon::Secret::"drn:com.xrl:secret:prod:github/org")
 when { context.capability == "gh.pull-request.enqueue" && context.provider == "gh"
     && context.sink == "httpBearer" && context has via && context.via == "queue-gateway"
     && context has agent && context.agent == "queue-writer" };

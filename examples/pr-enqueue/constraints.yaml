@@ -3,7 +3,7 @@ capabilities:
     capabilities:
       gh.pull-request.enqueue:
         # The org githubApp source and its two destinations are in secret-map.yaml.example.
-        defaultSecretUse: {drn: "drn:secret:github/org", sink: httpBearer}
+        defaultSecretUse: {drn: "drn:com.xrl:secret:prod:github/org", sink: httpBearer}
         constraints:
           timeoutMs: 15000
           http:

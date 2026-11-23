@@ -28,7 +28,7 @@ capabilities:
     capabilities:
       gh.pin.update:
         # One xrl githubApp source with a /repos/xrl/rpi-homelab segment-prefix destination.
-        defaultSecretUse: {drn: "drn:secret:github/xrl", sink: httpBearer}
+        defaultSecretUse: {drn: "drn:com.xrl:secret:prod:github/xrl", sink: httpBearer}
         constraints:
           timeoutMs: 45000
           http:
@@ -40,7 +40,7 @@ capabilities:
             allowPlaintextLoopback: false
       gh.pin.merge:
         # One xrl githubApp source with a /repos/xrl/rpi-homelab segment-prefix destination.
-        defaultSecretUse: {drn: "drn:secret:github/xrl", sink: httpBearer}
+        defaultSecretUse: {drn: "drn:com.xrl:secret:prod:github/xrl", sink: httpBearer}
         constraints:
           timeoutMs: 45000
           http:
