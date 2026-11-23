@@ -160,7 +160,10 @@ fn component_one_get_allows_a_read_but_no_write_reaches_http() {
         let result = harness.settings(json!({"baseUrl": base})).call(id, input);
         match result {
             Err(HarnessError::Invocation(failure)) => {
-                let expected_reads = usize::from(id != "gh.issue.comment");
+                let expected_reads = usize::from(!matches!(
+                    id,
+                    "gh.issue.comment" | "gh.pull-request.approve"
+                ));
                 assert_eq!(failure.http_calls.len(), expected_reads, "{id}");
                 for call in &failure.http_calls {
                     assert_eq!(call.method, "GET", "{id} wrote through a GET-only fixture");
@@ -174,13 +177,9 @@ fn component_one_get_allows_a_read_but_no_write_reaches_http() {
 }
 
 #[test]
-fn native_pr_write_pre_reads_use_the_scoped_uri_without_guest_authorization() {
+fn native_rest_pr_write_pre_reads_use_the_scoped_uri_without_guest_authorization() {
     let pull = json!({"number":7,"title":"Review","state":"open","draft":false,"merged":false,"user":{"login":"octo"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","head":{"ref":"feature","sha":"a".repeat(40)},"base":{"ref":"main","sha":"b".repeat(40)}});
     for (id, input) in [
-        (
-            "gh.pull-request.approve",
-            json!({"owner":"octo","repo":"hello","number":7}),
-        ),
         (
             "gh.pull-request.comment",
             json!({"owner":"octo","repo":"hello","number":7,"body":"review"}),
