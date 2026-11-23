@@ -10,7 +10,7 @@
       "authorization": "[redacted]",
       "connection": "close",
       "host": "127.0.0.1:8787",
-      "user-agent": "dekopon-gh-provider/0.1",
+      "user-agent": "dekopon-coordinator (campaign-trail)",
       "x-github-api-version": "2022-11-28"
     },
     "body": null
@@ -134,12 +134,12 @@
           "message": "docs: make repository guidance discoverable by Claude\n\nPoint Claude at the existing AGENTS.md contract rather than duplicating repository guidance or steering.",
           "timestamp": "2026-10-15T20:30:59Z",
           "author": {
-            "name": "Xavier Lange",
-            "email": "xrlange@gmail.com"
+            "name": "Fixture Author",
+            "email": "fixture-author@example.com"
           },
           "committer": {
-            "name": "Xavier Lange",
-            "email": "xrlange@gmail.com"
+            "name": "Fixture Author",
+            "email": "fixture-author@example.com"
           }
         },
         "repository": {

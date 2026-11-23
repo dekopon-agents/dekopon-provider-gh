@@ -462,7 +462,7 @@ mod tests {
                 },
                 json_response(
                     201,
-                    &json!({"id": 77, "user": {"login": "xavier"}, "created_at": "2026-08-16T00:00:00Z"}),
+                    &json!({"id": 77, "user": {"login": "octocat"}, "created_at": "2026-08-16T00:00:00Z"}),
                 ),
             )]),
         )
@@ -470,7 +470,7 @@ mod tests {
 
         assert_eq!(output["commentId"], 77);
         assert_eq!(output["issueNumber"], 5);
-        assert_eq!(output["author"], "xavier");
+        assert_eq!(output["author"], "octocat");
     }
 
     #[test]

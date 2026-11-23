@@ -847,7 +847,7 @@ mod tests {
             "draft": draft,
             "merged": merged,
             "body": "A body",
-            "user": {"login": "cpetersen"},
+            "user": {"login": "octocat"},
             "head": {"ref": "feature/x", "sha": "a".repeat(40)},
             "base": {"ref": "main", "sha": "b".repeat(40)},
             "additions": 10,
@@ -1065,7 +1065,7 @@ mod tests {
         .expect("read succeeds");
 
         assert_eq!(output["number"], 7);
-        assert_eq!(output["author"], "cpetersen");
+        assert_eq!(output["author"], "octocat");
         assert_eq!(output["headSha"], "a".repeat(40));
         assert_eq!(output["baseRef"], "main");
         assert_eq!(output["merged"], false);
@@ -1137,7 +1137,7 @@ mod tests {
         other["user"] = json!({"login": "someone-else"});
         let output = invoke_with(
             &capability("gh.pull-request.list"),
-            json!({"owner": "octo", "repo": "hello", "author": "cpetersen"}),
+            json!({"owner": "octo", "repo": "hello", "author": "octocat"}),
             scripted(vec![step(
                 |request| {
                     assert_eq!(

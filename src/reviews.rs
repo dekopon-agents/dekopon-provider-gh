@@ -529,7 +529,7 @@ mod tests {
             "state": state,
             "draft": draft,
             "merged": merged,
-            "user": {"login": "cpetersen"},
+            "user": {"login": "octocat"},
             "head": {"ref": "feature/x", "sha": "a".repeat(40)},
             "base": {"ref": "main", "sha": "b".repeat(40)},
             "created_at": "2026-08-01T00:00:00Z",
@@ -542,7 +542,7 @@ mod tests {
             "id": 4242,
             "state": state,
             "commit_id": "a".repeat(40),
-            "user": {"login": "xavier"},
+            "user": {"login": "octocat"},
             "submitted_at": "2026-08-16T00:00:00Z",
         })
     }

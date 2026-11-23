@@ -460,9 +460,9 @@ mod tests {
                         "committer": null,
                         "commit": {
                             "message": "fix: everything",
-                            "author": {"name": "Xavier", "date": "2026-08-15T00:00:00Z"},
+                            "author": {"name": "Fixture Author", "date": "2026-08-15T00:00:00Z"},
                         },
-                        "author": {"login": "xavier"},
+                        "author": {"login": "octocat"},
                         "stats": {"additions": 3, "deletions": 1, "total": 4},
                         "files": [
                             {"filename": "src/lib.rs", "status": "modified", "additions": 3, "deletions": 1},
@@ -476,8 +476,8 @@ mod tests {
         assert_eq!(output["sha"], "c".repeat(40));
         assert_eq!(output["html_url"], "https://github.com/octo/hello/commit/c");
         assert!(output["committer"].is_null());
-        assert_eq!(output["author"]["login"], "xavier");
-        assert_eq!(output["commit"]["author"]["name"], "Xavier");
+        assert_eq!(output["author"]["login"], "octocat");
+        assert_eq!(output["commit"]["author"]["name"], "Fixture Author");
         assert_eq!(output["stats"]["total"], 4);
         assert_eq!(output["files"][0]["filename"], "src/lib.rs");
     }
@@ -486,17 +486,17 @@ mod tests {
     fn user_read_matches_login_case_insensitively() {
         let output = invoke_with(
             &capability("gh.user.read"),
-            json!({"login": "CPetersen"}),
+            json!({"login": "Octocat"}),
             scripted(vec![step(
                 |request| {
-                    assert_eq!(request.uri, "https://api.github.com/users/CPetersen");
+                    assert_eq!(request.uri, "https://api.github.com/users/Octocat");
                 },
                 json_response(
                     200,
                     &json!({
-                        "login": "cpetersen",
+                        "login": "octocat",
                         "type": "User",
-                        "name": "Chris Petersen",
+                        "name": "Fixture Author",
                         "public_repos": 42,
                         "followers": 7,
                         "created_at": "2010-01-01T00:00:00Z",
@@ -506,8 +506,8 @@ mod tests {
         )
         .expect("user read succeeds");
 
-        assert_eq!(output["login"], "cpetersen");
+        assert_eq!(output["login"], "octocat");
         assert_eq!(output["type"], "User");
-        assert_eq!(output["name"], "Chris Petersen");
+        assert_eq!(output["name"], "Fixture Author");
     }
 }
