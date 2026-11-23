@@ -94,3 +94,129 @@ fn each_example_capability_has_one_github_app_binding_and_a_valid_cedar_policy()
         }
     }
 }
+
+#[tokio::test]
+async fn native_pin_update_grant_admits_contents_at_a_commit_sha() {
+    assert_pin_query(
+        "gh.pin.update",
+        &format!(
+            "https://api.github.com/repos/xrl/rpi-homelab/contents/apps/dekopon.yaml?ref={}",
+            "a".repeat(40)
+        ),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn native_pin_merge_grant_admits_the_queries_needed_to_verify_the_diff() {
+    let base = "a".repeat(40);
+    let head = "b".repeat(40);
+    for path in [
+        format!("/compare/{base}...{head}?per_page=1"),
+        format!("/git/trees/{base}?recursive=1"),
+        format!("/contents/apps/dekopon.yaml?ref={head}"),
+    ] {
+        assert_pin_query(
+            "gh.pin.merge",
+            &format!("https://api.github.com/repos/xrl/rpi-homelab{path}"),
+        )
+        .await;
+    }
+}
+
+async fn assert_pin_query(capability: &str, uri: &str) {
+    use dekopon_capability::SecretUseGrant;
+    use dekopon_core::SecretBytes;
+    use dekopon_http_host::{
+        BoundCredential, BufferedHttpClient, ErrorCode, HttpHostCeilings, Request, Response,
+        test_transport::Transport,
+    };
+    use std::time::Duration;
+
+    let constraints = yaml(include_str!("../examples/pins/constraints.yaml"));
+    let http = serde_json::from_value(
+        constraints["capabilities"]["gh"]["capabilities"][capability]["constraints"]["http"]
+            .clone(),
+    )
+    .expect("valid HTTP constraints");
+
+    let map = yaml(include_str!("../examples/pins/secret-map.yaml.example"));
+    let source = &map["secrets"][0];
+    let mut binding = source["bindings"]
+        .as_array()
+        .expect("pin App bindings")
+        .iter()
+        .find(|binding| binding["capabilities"] == json!([capability]))
+        .and_then(Value::as_object)
+        .expect("capability binding")
+        .clone();
+    binding.remove("capabilities").expect("capability list");
+    let id = binding.remove("id").expect("binding ID");
+    binding.insert("bindingId".into(), id);
+    binding.insert("secret".into(), source["drn"].clone());
+    let grant: SecretUseGrant =
+        serde_json::from_value(Value::Object(binding)).expect("valid secret-use grant");
+
+    let credential = BoundCredential::secret_bearer(
+        SecretBytes::new(b"fixture-pin-app-credential".to_vec()),
+        &grant,
+    )
+    .expect("fixture credential");
+    let reply = Response {
+        status: 200,
+        headers: Vec::new(),
+        body: Vec::new(),
+    };
+    let transport = Transport::new(
+        ("api.github.com".into(), vec![reply.clone()]),
+        ("unused.test".into(), reply),
+        1,
+    );
+    let mut client = BufferedHttpClient::authorized_with_secret_credential(
+        http,
+        grant,
+        credential,
+        HttpHostCeilings::default(),
+        Duration::from_secs(5),
+    )
+    .expect("valid HTTP authorization")
+    .with_test_transport(transport.clone());
+
+    let get = |uri: String| Request {
+        method: "GET".into(),
+        uri,
+        headers: Vec::new(),
+        body: Vec::new(),
+    };
+    let neighbor = uri.replacen("/rpi-homelab/", "/rpi-homelab-other/", 1);
+    let error = client
+        .send(get(neighbor))
+        .await
+        .expect_err("the neighboring repository is outside the allowed path");
+    assert_eq!(error.code, ErrorCode::Denied);
+    assert!(transport.requests().is_empty());
+
+    let reply = client
+        .send(get(uri.to_owned()))
+        .await
+        .unwrap_or_else(|error| panic!("{capability} must admit GET {uri}: {error}"));
+    assert_eq!(reply.status, 200);
+    let requests = transport.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].guest.uri, uri);
+    assert_eq!(requests[0].sent.uri, uri);
+    assert_eq!(requests[0].sent.method, "GET");
+    assert!(
+        requests[0]
+            .guest
+            .headers
+            .iter()
+            .all(|header| !header.name.eq_ignore_ascii_case("authorization"))
+    );
+    assert!(
+        client
+            .into_evidence()
+            .iter()
+            .any(|call| call.credential_injected)
+    );
+}
