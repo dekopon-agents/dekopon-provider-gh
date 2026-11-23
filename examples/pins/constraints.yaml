@@ -1,0 +1,52 @@
+providerSettings:
+  gh:
+    pinBotLogin: pin-app[bot]
+    pins:
+      dekopon-chart:
+        repo: xrl/rpi-homelab
+        kind: semver
+        sites:
+          - path: apps/dekopon.yaml
+            after: '      chart: dekopon'
+            pattern: '      targetRevision: ([0-9]+\.[0-9]+\.[0-9]+)'
+      dekopon-core:
+        repo: xrl/rpi-homelab
+        kind: digest
+        sites:
+          - path: apps/dekopon.yaml
+            after: '          image:'
+            pattern: '            digest: (sha256:[0-9a-f]{64})'
+      provider-curl:
+        repo: xrl/rpi-homelab
+        kind: digest
+        sites:
+          - path: manifests/dekopon/config/providers.yaml
+            pattern: '  - source: ghcr\.io/dekopon-agents/provider-curl@(sha256:[0-9a-f]{64})'
+
+capabilities:
+  gh:
+    capabilities:
+      gh.pin.update:
+        # One xrl githubApp source with a /repos/xrl/rpi-homelab segment-prefix destination.
+        defaultSecretUse: {drn: "drn:com.xrl:secret:prod:github/xrl", sink: httpBearer}
+        constraints:
+          timeoutMs: 45000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [GET, POST, PUT]
+            maxRequests: 24
+            maxRequestBytes: 131072
+            maxResponseBytes: 131072
+            allowPlaintextLoopback: false
+      gh.pin.merge:
+        # One xrl githubApp source with a /repos/xrl/rpi-homelab segment-prefix destination.
+        defaultSecretUse: {drn: "drn:com.xrl:secret:prod:github/xrl", sink: httpBearer}
+        constraints:
+          timeoutMs: 45000
+          http:
+            allowedHosts: [api.github.com]
+            allowedMethods: [GET, PUT]
+            maxRequests: 32
+            maxRequestBytes: 16384
+            maxResponseBytes: 2097152
+            allowPlaintextLoopback: false

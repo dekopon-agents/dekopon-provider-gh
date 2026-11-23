@@ -1,0 +1,4 @@
+apiVersion: dekopon.dev/provider-set/v1alpha1
+providers:
+  - source: ghcr.io/dekopon-agents/provider-curl@sha256:c7df09ab39a9d8b31ca3ef95f9f94fee8b3fc99916b9117d153de429401a57a6
+  - source: ghcr.io/dekopon-agents/provider-ripgrep@sha256:c6563e4c7584ae8e9a0bcaf8730dded89f9611d98cfeb8dd7152d34c161cf5fd

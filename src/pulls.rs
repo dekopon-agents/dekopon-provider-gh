@@ -23,12 +23,19 @@ pub(crate) struct RawRef {
     #[serde(rename = "ref")]
     pub(crate) name: String,
     pub(crate) sha: String,
+    pub(crate) repo: Option<RawRefRepository>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RawRefRepository {
+    pub(crate) full_name: Option<String>,
 }
 
 /// One pull request as GitHub returns it; list items omit the single-read counters.
 #[derive(Debug, Deserialize)]
 pub(crate) struct RawPull {
     pub(crate) number: u32,
+    pub(crate) node_id: Option<String>,
     pub(crate) title: String,
     pub(crate) state: String,
     #[serde(default)]
@@ -1289,7 +1296,7 @@ mod tests {
                 ));
                 let result = crate::typed::PrStatus::run_with(
                     typed,
-                    &crate::GITHUB_API,
+                    &serde_json::from_value(json!({})).expect("default settings"),
                     &mut send,
                     &mut stdout,
                 );

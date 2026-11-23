@@ -41,6 +41,31 @@ fn step(status: u16) -> Value {
 }
 
 async fn broker(path: &Path, base: &str) -> Broker<InMemoryAuditLog> {
+    let policy = include_str!("../examples/content-write/policies.cedar")
+        .split("@id(\"run-file-read\")")
+        .next()
+        .expect("write policy");
+    broker_for(
+        path,
+        base,
+        "gh.content.write",
+        &["PUT"],
+        RiskLevel::Medium,
+        1,
+        policy,
+    )
+    .await
+}
+
+async fn broker_for(
+    path: &Path,
+    base: &str,
+    capability: &str,
+    methods: &[&str],
+    risk: RiskLevel,
+    max_requests: u32,
+    policy: &str,
+) -> Broker<InMemoryAuditLog> {
     let registry = BrokerProviderRegistry::load_with_options(
         [path],
         BrokerHostLimits::default(),
@@ -56,15 +81,13 @@ async fn broker(path: &Path, base: &str) -> Broker<InMemoryAuditLog> {
     )
     .await
     .expect("registry");
-    let policy = include_str!("../examples/content-write/policies.cedar")
-        .split("@id(\"run-file-read\")")
-        .next()
-        .expect("write policy")
+    let policy = policy
         .replace("api.github.com", "127.0.0.1")
-        .replace("/repos/octo/", "/gh/repos/octo/");
+        .replace("/repos/octo/", "/gh/repos/octo/")
+        .replace("\"/graphql\"", "\"/gh/graphql\"");
     let world = PolicyWorld::new(
         ["content-writer", "other"].map(|s| s.parse().expect("principal")),
-        ["gh.content.write", "gh.content.read"].map(|s| {
+        [capability, "gh.content.read"].map(|s| {
             (
                 s.parse().expect("capability"),
                 "gh".parse().expect("provider"),
@@ -82,8 +105,8 @@ async fn broker(path: &Path, base: &str) -> Broker<InMemoryAuditLog> {
                     .expect("prefix")
                     .into(),
             ],
-            allowed_methods: vec!["PUT".into()],
-            max_requests: 1,
+            allowed_methods: methods.iter().map(|method| (*method).into()).collect(),
+            max_requests,
             max_request_bytes: 16384,
             max_response_bytes: 16384,
             allow_plaintext_loopback: true,
@@ -96,11 +119,11 @@ async fn broker(path: &Path, base: &str) -> Broker<InMemoryAuditLog> {
         secret_use: None,
     };
     let catalog = ConstraintCatalog::new([(
-        "gh.content.write".parse().expect("id"),
+        capability.parse().expect("id"),
         ConstraintSet {
             provider: "gh".parse().expect("provider"),
             effect: EffectKind::ExternalWrite,
-            risk: RiskLevel::Medium,
+            risk,
             credential: None,
             default_secret_use: None,
             route: CapabilityRoute::Generic,
@@ -137,6 +160,16 @@ async fn invoke(
     agent: &str,
     input: Value,
 ) -> (InvocationResult, Vec<u8>) {
+    invoke_for(broker, principal, agent, "gh.content.write", input).await
+}
+
+async fn invoke_for(
+    broker: &Broker<InMemoryAuditLog>,
+    principal: &str,
+    agent: &str,
+    capability: &str,
+    input: Value,
+) -> (InvocationResult, Vec<u8>) {
     let peer = AuthenticatedContext::new(
         "content-write-gateway".parse().expect("principal"),
         Actor::Service {
@@ -156,7 +189,7 @@ async fn invoke(
     .bound_to("content-write-test".parse().expect("invocation"));
     let request = InvocationRequest {
         id: "content-write-test".parse().expect("invocation"),
-        capability: "gh.content.write".parse().expect("capability"),
+        capability: capability.parse().expect("capability"),
         trace_parent: "00-0000000000000000000000000000f1c7-00000000000000f1-00"
             .parse()
             .expect("trace"),
@@ -347,4 +380,64 @@ async fn real_broker_confirmed_writes_with_unreadable_replies_are_unknown() {
             server.finish().await;
         }
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn real_broker_loads_the_component_and_queues_a_pinned_pull() {
+    let head = "a".repeat(40);
+    let steps = vec![
+        json!({"request":{"method":"GET","path":"/repos/octo/config/pulls/7","headers":{"accept":"application/vnd.github+json"}},
+        "response":{"status":200,"headers":{"content-type":"application/json"},"body":{"json":{
+            "number":7,"node_id":"PR_smoke","title":"Queue","state":"open",
+            "head":{"ref":"topic","sha":head},"base":{"ref":"main","sha":"b".repeat(40)},
+            "created_at":"2026-11-23T00:00:00Z","updated_at":"2026-11-23T00:00:00Z"
+        }}}}),
+        json!({"request":{"method":"POST","path":"/graphql","headers":{"accept":"application/vnd.github+json"},"body":{"json":{
+            "query":"mutation EnqueuePullRequest($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) { enqueuePullRequest(input: {pullRequestId: $pullRequestId, expectedHeadOid: $expectedHeadOid}) { mergeQueueEntry { id position } } }",
+            "variables":{"pullRequestId":"PR_smoke","expectedHeadOid":head}
+        }}},"response":{"status":200,"headers":{"content-type":"application/json"},"body":{"json":{
+            "data":{"enqueuePullRequest":{"mergeQueueEntry":{"id":"MQ_smoke","position":1}}}
+        }}}}),
+    ];
+    let server = github::GitHub::start(steps).await;
+    let example = include_str!("../examples/pr-enqueue/policies.cedar");
+    let (grants, rest) = example
+        .split_once("@id(\"enqueue-org-source\")")
+        .expect("example grants");
+    let (_, fence) = rest
+        .split_once("@id(\"enqueue-http-fence\")")
+        .expect("example fence");
+    let policy = format!("{grants}@id(\"enqueue-http-fence\"){fence}")
+        .replace("queue-writer", "content-writer")
+        .replace("queue-gateway", "content-write-gateway")
+        .replace(
+            "/repos/dekopon-agents/*/pulls/*",
+            "/repos/octo/config/pulls/7",
+        );
+    let capability = "gh.pull-request.enqueue";
+    let broker = broker_for(
+        &component(),
+        &server.base,
+        capability,
+        &["GET", "POST"],
+        RiskLevel::High,
+        2,
+        &policy,
+    )
+    .await;
+    let (result, stdout) = invoke_for(
+        &broker,
+        "content-writer",
+        "content-writer",
+        capability,
+        json!({"owner":"octo","repo":"config","number":7,"expectedHeadSha":head}),
+    )
+    .await;
+    assert_eq!(result.outcome, InvocationOutcome::Succeeded);
+    let result: Value = serde_json::from_slice(&stdout).expect("output");
+    assert_eq!(
+        result,
+        json!({"number":7,"headSha":head,"mergeQueueEntryId":"MQ_smoke","position":1,"outcome":"enqueued"})
+    );
+    server.finish().await;
 }

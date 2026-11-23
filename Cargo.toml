@@ -25,6 +25,7 @@ regex = "1.12.3"
 sha2 = "0.10.9"
 
 [dev-dependencies]
+serde_yaml_ng = "0.10.0"
 dekopon-broker-protocol = "=0.64.0"
 dekopon-broker = "=0.64.0"
 dekopon-provider-sdk-testkit = "=0.64.0"

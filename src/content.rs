@@ -167,18 +167,22 @@ fn project_content(
     }
 }
 
+pub(crate) fn decode_base64(raw: &str) -> Result<Vec<u8>, ProviderError> {
+    // GitHub wraps base64 with newlines; strip all ASCII whitespace before decoding.
+    let compact = raw
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<u8>>();
+    STANDARD.decode(&compact).map_err(|_| invalid_response())
+}
+
 /// Decodes a file body and re-projects it bounded: UTF-8 text when valid, base64 otherwise.
 fn project_file(content: RawContent, cli: bool) -> Result<Value, ProviderError> {
     if content.encoding.as_deref() != Some("base64") {
         return Err(invalid_response());
     }
     let raw = content.content.ok_or_else(invalid_response)?;
-    // GitHub wraps base64 with newlines; strip all ASCII whitespace before decoding.
-    let compact = raw
-        .bytes()
-        .filter(|byte| !byte.is_ascii_whitespace())
-        .collect::<Vec<u8>>();
-    let bytes = STANDARD.decode(&compact).map_err(|_| invalid_response())?;
+    let bytes = decode_base64(&raw)?;
 
     let (encoding, mut text, kept) = match core::str::from_utf8(&bytes) {
         Ok(text) => {

@@ -42,6 +42,7 @@ pub mod commands;
 mod content;
 mod content_write;
 mod diff;
+mod enqueue;
 pub mod error;
 pub mod graphql;
 mod issue_comments;
@@ -49,6 +50,7 @@ mod issues;
 mod list_filters;
 mod logs;
 mod output;
+mod pins;
 mod pulls;
 mod qualifiers;
 mod repos;
@@ -63,10 +65,36 @@ const GITHUB_API: Base = Base::from_static("https://api.github.com");
 /// The owner's `providerSettings.gh`: `baseUrl` replaces the GitHub API origin, for GitHub
 /// Enterprise Server or a recording proxy. The broker's grant decides what it may reach.
 #[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(try_from = "RawGhSettings")]
 pub struct GhSettings {
+    base_url: Base,
+    pins: pins::PinSet,
+    pin_bot_login: Option<pins::BotLogin>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RawGhSettings {
     #[serde(default = "default_base")]
     base_url: Base,
+    #[serde(default)]
+    pins: pins::PinSet,
+    pin_bot_login: Option<pins::BotLogin>,
+}
+
+impl TryFrom<RawGhSettings> for GhSettings {
+    type Error = &'static str;
+
+    fn try_from(raw: RawGhSettings) -> Result<Self, Self::Error> {
+        if !raw.pins.is_empty() && raw.pin_bot_login.is_none() {
+            return Err("pinBotLogin is required when pins are configured");
+        }
+        Ok(Self {
+            base_url: raw.base_url,
+            pins: raw.pins,
+            pin_bot_login: raw.pin_bot_login,
+        })
+    }
 }
 
 fn default_base() -> Base {
@@ -74,8 +102,8 @@ fn default_base() -> Base {
 }
 
 impl GhSettings {
-    fn base(self) -> Base {
-        self.base_url
+    fn base(&self) -> &Base {
+        &self.base_url
     }
 }
 
@@ -144,6 +172,9 @@ pub(crate) mod ids {
     pub(crate) const PR_COMMENT: &str = "gh.pull-request.comment";
     pub(crate) const PR_REQUEST_CHANGES: &str = "gh.pull-request.request-changes";
     pub(crate) const PR_MERGE: &str = "gh.pull-request.merge";
+    pub(crate) const PR_ENQUEUE: &str = "gh.pull-request.enqueue";
+    pub(crate) const PIN_UPDATE: &str = "gh.pin.update";
+    pub(crate) const PIN_MERGE: &str = "gh.pin.merge";
     pub(crate) const REPO_READ: &str = "gh.repo.read";
     pub(crate) const REPO_LIST: &str = "gh.repo.list";
     pub(crate) const SEARCH_PRS: &str = "gh.search.prs";
@@ -211,6 +242,9 @@ impl Provider for Gh {
         typed::IssueCommentDelete,
         typed::IssueCommentEditOrCreate,
         typed::PrMerge,
+        typed::PrEnqueue,
+        typed::PinUpdate,
+        typed::PinMerge,
         typed::UserRead,
         typed::UserSelfRead,
         typed::AuthStatus,
@@ -267,6 +301,7 @@ where
         ids::PR_COMMENT => reviews::comment(input, base, send),
         ids::PR_REQUEST_CHANGES => reviews::request_changes(input, base, send),
         ids::PR_MERGE => reviews::merge(input, base, send),
+        ids::PR_ENQUEUE => enqueue::enqueue(input, base, send),
         ids::REPO_READ => repos::repo(input, base, send),
         ids::REPO_LIST => repos::list(input, base, send),
         ids::SEARCH_PRS
@@ -597,6 +632,27 @@ fn capabilities() -> Vec<ProviderCapability> {
                 &["login"],
             ),
         ),
+        write(
+            ids::PR_ENQUEUE,
+            <typed::PrEnqueue as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
+            RiskLevel::High,
+            repo_schema(
+                json!({"number": number_property(), "expectedHeadSha": required_sha_property()}),
+                &["number", "expectedHeadSha"],
+            ),
+        ),
+        write(
+            ids::PIN_UPDATE,
+            <typed::PinUpdate as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
+            RiskLevel::High,
+            pins::update_schema(),
+        ),
+        write(
+            ids::PIN_MERGE,
+            <typed::PinMerge as dekopon_provider_sdk::provider::Capability>::DESCRIPTION,
+            RiskLevel::High,
+            pins::merge_schema(),
+        ),
     ];
     for (id, description, body) in [
         (
@@ -755,6 +811,10 @@ fn ref_property() -> Value {
 
 fn sha_property() -> Value {
     json!({"type": "string", "minLength": 40, "maxLength": 40, "description": "Optional 40-hex expected head SHA; the write refuses if the head moved."})
+}
+
+fn required_sha_property() -> Value {
+    json!({"type": "string", "pattern": "^[a-fA-F0-9]{40}$", "description": "Required expected head SHA."})
 }
 
 fn body_property(description: &str) -> Value {
@@ -1318,6 +1378,8 @@ fn login_out(value: Option<&RawUser>) -> Value {
 #[derive(Debug, serde::Deserialize)]
 struct RawUser {
     login: String,
+    #[serde(rename = "type")]
+    account_type: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1817,7 +1879,7 @@ mod tests {
     fn manifest_covers_the_full_designed_surface() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
         assert_eq!(manifest.id.as_str(), "gh");
-        assert_eq!(manifest.capabilities.len(), 42);
+        assert_eq!(manifest.capabilities.len(), 45);
 
         let external_writes = manifest
             .capabilities
@@ -1845,6 +1907,9 @@ mod tests {
                 "gh.issue.comment-delete",
                 "gh.issue.comment-edit-or-create",
                 "gh.pull-request.merge",
+                "gh.pull-request.enqueue",
+                "gh.pin.update",
+                "gh.pin.merge",
             ]
         );
 
@@ -1879,7 +1944,10 @@ mod tests {
             vec![
                 "gh.workflow.run",
                 "gh.pull-request.approve",
-                "gh.pull-request.merge"
+                "gh.pull-request.merge",
+                "gh.pull-request.enqueue",
+                "gh.pin.update",
+                "gh.pin.merge",
             ]
         );
     }
@@ -1974,7 +2042,7 @@ mod tests {
     #[test]
     fn no_capability_schema_names_an_origin() {
         let manifest = provider::manifest::<Gh>().expect("manifest");
-        assert_eq!(manifest.capabilities.len(), 42);
+        assert_eq!(manifest.capabilities.len(), 45);
         for capability in &manifest.capabilities {
             let properties = capability.input_schema["properties"]
                 .as_object()
