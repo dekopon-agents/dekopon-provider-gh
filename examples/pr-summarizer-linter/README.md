@@ -303,6 +303,12 @@ The COMMENT grant still allows one pre-read and one POST, with a 16384-byte requ
 Optional line-comment arrays fit that grant and require a positive line and validated content path;
 the review body can accompany them. The provider checks the aggregate serialized limit before HTTP.
 
+To enable `gh.pull-request.approve` in another reviewer, grant it separately in the catalog,
+Cedar actions and broker constraint sets. Allow `POST` to `api.github.com` with two requests
+per invocation and bind a credential with Pull requests: Write that can call GraphQL. The
+approval query and mutation both go to `/graphql`. The COMMENT reviewer above uses its REST
+grant.
+
 The three new issue-comment capabilities are deliberately absent from this reviewer. An owner
 who enables `gh.issue.comment-edit`, `gh.issue.comment-delete`, or `gh.issue.comment-edit-or-create`
 must add each chosen id separately to the catalog, Cedar actions and broker constraint sets:
